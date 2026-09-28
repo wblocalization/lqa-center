@@ -480,6 +480,10 @@
   }
 
   function today() { return new Date().toISOString().slice(0, 10); }
+  var ENGLISH_DIR = 'Английский ШТАТ';
+  function isEnglish(code) { return baseLang(code) === 'en'; }
+  function poName(r) { return r.component + '_' + r.language + '.po'; }
+  function archivePath(r) { return (isEnglish(r.language) ? ENGLISH_DIR : r.component) + '/' + poName(r); }
   function showResults(res, errs) {
     res.sort(function (a, b) { return (a.language + a.component).localeCompare(b.language + b.component); });
     results.textContent = '';
@@ -501,22 +505,23 @@
           el('td', { class: 'n', text: String(a.strings) }), el('td', { class: 'n', text: String(a.words) }),
           el('td', { class: 'n' }, [el('button', { class: 'b g s', text: 'Скачать .zip', onclick: function () {
             saveBlob(makeZip(res.filter(function (r) { return r.language === lang; })
-              .map(function (r) { return { name: r.component + '.po', text: r.text }; })), 'weblate_' + lang + '_' + today() + '.zip');
+              .map(function (r) { return { name: poName(r), text: r.text }; })), 'weblate_' + lang + '_' + today() + '.zip');
           } })])
         ]));
       });
-      results.appendChild(t);
       results.appendChild(el('div', { class: 'row' }, [
         el('button', { class: 'b', text: '⬇ Скачать всё одним архивом', onclick: function () {
-          var files = res.map(function (r) { return { name: r.language + '/' + r.component + '.po', text: r.text }; });
+          var files = res.map(function (r) { return { name: archivePath(r), text: r.text }; });
           var csv = '﻿component;language;strings;words\n' + res.map(function (r) {
             return [r.component, r.language, r.strings, r.words].join(';');
           }).join('\n') + '\n';
           files.push({ name: 'summary.csv', text: csv });
           saveBlob(makeZip(files), 'weblate_all_' + today() + '.zip');
         } }),
-        el('span', { class: 'muted', text: 'папки по языкам + summary.csv' })
+        el('span', { class: 'muted', text: 'папки по компонентам, английский — в «' + ENGLISH_DIR + '», + summary.csv' })
       ]));
+      results.appendChild(el('p', { class: 'muted', text: 'Или отдельный архив на язык:' }));
+      results.appendChild(t);
       var dt = el('table', {}, [el('tr', {}, [el('th', { text: 'Компонент' }), el('th', { text: 'Язык' }),
         el('th', { class: 'n', text: 'Строк' }), el('th', { class: 'n', text: 'Слов' })])]);
       res.forEach(function (r) {
@@ -551,8 +556,11 @@
     var m = /\/projects\/([^\/\s>]+)\/([^\/\s>]+)\/([^\/\s>]+)\//.exec(h['Language-Team'] || '');
     if (m) { u.p = m[1]; u.c = m[2]; u.lang = m[3]; return Promise.resolve(u); }
     var parts = f.name.split('/'), base = parts.pop().replace(/\.po$/i, '');
-    u.c = base; u.p = projectOf(base);
-    var wanted = h['Language'] || parts.pop() || '';
+    var suffix = /^(.+)_([a-z]{2,3}(?:[_@-][A-Za-z0-9]+)?)$/.exec(base);
+    u.c = suffix ? suffix[1] : base; u.p = projectOf(u.c);
+    var folder = parts.pop() || '';
+    if (folder === ENGLISH_DIR) folder = 'en';
+    var wanted = h['Language'] || (suffix && suffix[2]) || folder;
     if (!wanted) { u.error = 'не понятно, какой это язык'; return Promise.resolve(u); }
     return translations(u.p, u.c).then(function (trs) {
       u.lang = matchLanguage(wanted.replace('-', '_'), trs);

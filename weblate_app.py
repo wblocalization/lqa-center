@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from weblate_export import (
-    DEFAULT_URL, Weblate, filter_untranslated, match_language, parse_component_ref,
+    DEFAULT_URL, Weblate, archive_path, filter_untranslated, match_language, parse_component_ref, po_name,
 )
 
 HOST, PORT = "127.0.0.1", 8765
@@ -89,7 +89,7 @@ def build_zip(job, lang=None):
         for r in rows:
             if lang and r["language"] != lang:
                 continue
-            name = f"{r['component']}.po" if lang else f"{r['language']}/{r['component']}.po"
+            name = po_name(r["component"], r["language"]) if lang else archive_path(r["component"], r["language"])
             z.writestr(name, r["po"])
         if not lang:
             s = io.StringIO()
@@ -351,7 +351,7 @@ async function poll(job) {
       html += `<tr><td>${esc(l.language)}</td><td class="n">${l.files}</td><td class="n">${l.strings}</td>
                <td class="n">${l.words}</td><td class="n"><a class="dl" href="/api/download/${job}?lang=${encodeURIComponent(l.language)}">Скачать .zip</a></td></tr>`;
     html += `</table><div style="margin-top:16px"><a class="dl" href="/api/download/${job}">⬇ Скачать всё одним архивом</a>
-             <span class="hint"> — папки по языкам + summary.csv</span></div>`;
+             <span class="hint"> — папки по компонентам, английский — в «Английский ШТАТ», + summary.csv</span></div>`;
     html += '<details><summary>По компонентам</summary><table><tr><th>Компонент</th><th>Язык</th><th class="n">Строк</th><th class="n">Слов</th></tr>' +
       s.files.map(f => `<tr><td>${esc(f.component)}</td><td>${esc(f.language)}</td><td class="n">${f.strings}</td><td class="n">${f.words}</td></tr>`).join('') +
       '</table></details>';

@@ -153,6 +153,19 @@ def filter_untranslated(po_text):
 
 # ---------------------------------------------------------------- helpers
 
+ENGLISH_DIR = "Английский ШТАТ"
+
+
+def po_name(component, lang):
+    return f"{component}_{lang}.po"
+
+
+def archive_path(component, lang):
+    """Папка по компоненту; английский всегда отдельно в «Английский ШТАТ»."""
+    folder = ENGLISH_DIR if base_lang(lang) == "en" else component
+    return f"{folder}/{po_name(component, lang)}"
+
+
 def parse_component_ref(ref, default_project):
     """Accept URL like .../projects/global_site/wb-web-orders/#translations or slug."""
     ref = ref.strip()
@@ -256,9 +269,8 @@ def main():
             if n == 0:
                 print(f"   OK {code}: всё переведено")
                 continue
-            lang_dir = os.path.join(args.out, code)
-            os.makedirs(lang_dir, exist_ok=True)
-            path = os.path.join(lang_dir, f"{c}.po")
+            path = os.path.join(args.out, *archive_path(c, code).split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(text)
             print(f"   -> {code}: {n} строк, {words} слов")

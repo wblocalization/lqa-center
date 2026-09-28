@@ -90,8 +90,9 @@ python weblate_export.py --links links.txt --list-languages
 
 ```
 export_2026-09-28/
-  en/wb-web-orders.po
-  en/wb-web-kids.po
+  Английский ШТАТ/wb-web-orders_en.po   ← английский всегда отдельно
+  wb-web-orders/wb-web-orders_ka.po     ← остальные языки по компонентам
+  wb-web-orders/wb-web-orders_kk.po
   ...
   en.zip            ← все файлы языка, для подрядчика
   ka.zip
