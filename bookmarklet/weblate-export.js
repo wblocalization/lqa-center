@@ -82,9 +82,9 @@
     var m = s.match(/[\p{L}\p{N}_]+/gu);
     return m ? m.length : 0;
   }
-  function filterPo(text) {
-    var blocks = text.replace(/\r\n/g, '\n').split(/\n\s*\n/), keep = [], n = 0, words = 0;
-    blocks.forEach(function (b) {
+  function poEntries(text) {
+    var out = [];
+    text.replace(/\r\n/g, '\n').split(/\n\s*\n/).forEach(function (b) {
       var lines = b.split('\n').filter(function (l) { return l.trim() !== ''; });
       if (!lines.length) return;
       var fuzzy = lines.some(function (l) { return l.indexOf('#,') === 0 && l.indexOf('fuzzy') >= 0; });
@@ -97,16 +97,41 @@
         else if (l.trim()[0] === '"' && key) { f[key] += unquote(l); }
       });
       if (f.msgid === undefined) return;
-      if (f.msgid === '' && !f.msgid_plural) { keep.push(lines.join('\n')); return; }
-      if (obsolete) return;
       var strs = Object.keys(f).filter(function (k) { return k.indexOf('msgstr') === 0; }).map(function (k) { return f[k]; });
-      var done = strs.length && strs.every(function (s) { return s !== ''; }) && !fuzzy;
-      if (done) return;
-      keep.push(lines.join('\n'));
+      out.push({
+        lines: lines, fuzzy: fuzzy, obsolete: obsolete, msgid: f.msgid, plural: f.msgid_plural || '', strs: strs,
+        header: f.msgid === '' && !f.msgid_plural,
+        done: !!strs.length && strs.every(function (x) { return x !== ''; }) && !fuzzy
+      });
+    });
+    return out;
+  }
+  function filterPo(text) {
+    var keep = [], n = 0, words = 0;
+    poEntries(text).forEach(function (e) {
+      if (e.header) { keep.push(e.lines.join('\n')); return; }
+      if (e.obsolete || e.done) return;
+      keep.push(e.lines.join('\n'));
       n++;
-      words += wordCount(f.msgid) + wordCount(f.msgid_plural || '');
+      words += wordCount(e.msgid) + wordCount(e.plural);
     });
     return { text: keep.join('\n\n') + '\n', strings: n, words: words };
+  }
+  function poInfo(text) {
+    var headers = {}, filled = 0, total = 0;
+    poEntries(text).forEach(function (e) {
+      if (e.header) {
+        e.strs.join('').split('\\n').forEach(function (l) {
+          var i = l.indexOf(':');
+          if (i > 0) headers[l.slice(0, i).trim()] = l.slice(i + 1).trim();
+        });
+        return;
+      }
+      if (e.obsolete) return;
+      total++;
+      if (e.done) filled++;
+    });
+    return { headers: headers, filled: filled, total: total };
   }
 
   /* ---------- ZIP (store, UTF-8 names) ---------- */
@@ -156,6 +181,68 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
   }
 
+  /* ---------- ZIP read (stored / deflate) ---------- */
+  function readZip(buf) {
+    var dv = new DataView(buf), u8 = new Uint8Array(buf), dec = new TextDecoder('utf-8'), eocd = -1;
+    for (var i = buf.byteLength - 22; i >= 0; i--) { if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; } }
+    if (eocd < 0) return Promise.reject(new Error('не похоже на zip-архив'));
+    var count = dv.getUint16(eocd + 10, true), p = dv.getUint32(eocd + 16, true), jobs = [];
+    for (var k = 0; k < count; k++) {
+      var method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+      var nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+      var loc = dv.getUint32(p + 42, true);
+      var name = dec.decode(u8.subarray(p + 46, p + 46 + nlen));
+      var start = loc + 30 + dv.getUint16(loc + 26, true) + dv.getUint16(loc + 28, true);
+      var data = u8.slice(start, start + csize);
+      p += 46 + nlen + xlen + clen;
+      if (/\/$/.test(name) || /__MACOSX/.test(name) || !/\.po$/i.test(name)) continue;
+      jobs.push((function (name, method, data) {
+        var bytes = method === 0 ? Promise.resolve(data.buffer)
+          : new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer();
+        return bytes.then(function (b) { return { name: name, text: dec.decode(b) }; });
+      })(name, method, data));
+    }
+    return Promise.all(jobs);
+  }
+
+  /* ---------- upload ---------- */
+  function csrfToken() {
+    var i = document.querySelector('input[name=csrfmiddlewaretoken]');
+    if (i && i.value) return Promise.resolve(i.value);
+    var m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    if (m) return Promise.resolve(decodeURIComponent(m[1]));
+    return fetch('/', { credentials: 'same-origin' }).then(function (r) { return r.text(); }).then(function (t) {
+      var m2 = /name="csrfmiddlewaretoken"\s+value="([^"]+)"/.exec(t);
+      if (!m2) throw new Error('Не нашла CSRF-токен — открой любую страницу Weblate и попробуй ещё раз');
+      return m2[1];
+    });
+  }
+  function uploadPo(u, opts, token) {
+    function form(api) {
+      var fd = new FormData();
+      fd.append('file', new Blob([u.text], { type: 'text/x-gettext-translation' }), u.name.split('/').pop());
+      fd.append('method', opts.method); fd.append('fuzzy', opts.fuzzy); fd.append('conflicts', opts.conflicts);
+      if (!api) fd.append('csrfmiddlewaretoken', token);
+      return fd;
+    }
+    var path = u.p + '/' + u.c + '/' + u.lang + '/';
+    return fetch('/api/translations/' + path + 'file/', {
+      method: 'POST', credentials: 'same-origin', body: form(true),
+      headers: { 'X-CSRFToken': token, 'Accept': 'application/json' }
+    }).then(function (r) {
+      return r.text().then(function (t) {
+        if (r.ok) { try { return JSON.parse(t); } catch (e) { return { result: true }; } }
+        if (r.status === 403 || r.status === 405) {
+          return fetch('/upload/' + path, { method: 'POST', credentials: 'same-origin', body: form(false) }).then(function (r2) {
+            if (!r2.ok) throw new Error('HTTP ' + r2.status + ': ' + t.slice(0, 200));
+            return { viaForm: true };
+          });
+        }
+        throw new Error('HTTP ' + r.status + ': ' + t.slice(0, 300));
+      });
+    });
+  }
+
   /* ---------- UI ---------- */
   var CSS = [
     ':host{all:initial}',
@@ -187,6 +274,16 @@
     'details{margin-top:12px}summary{cursor:pointer;color:#6b7385;font-size:13px}',
     '.blk{display:block;margin-top:10px}',
     '.red{color:#c0392b}',
+    '.tabs{display:flex;gap:6px;margin:6px 0 4px;border-bottom:1px solid #eceef2;padding-bottom:10px}',
+    '.tab{font:inherit;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;background:#f3f5f8;color:#1d2330;font-weight:600}',
+    '.tab.on{background:#1b8a6b;color:#fff}',
+    '.drop{display:block;border:2px dashed #cfd5de;border-radius:10px;padding:22px;text-align:center;cursor:pointer;color:#6b7385}',
+    '.drop.over{border-color:#1b8a6b;background:#e8f5f0;color:#1b8a6b}',
+    '.drop input{display:none}',
+    '.opts{display:grid;grid-template-columns:1fr;gap:10px}',
+    '.opts label{display:block;font-size:13px;color:#6b7385}',
+    'select{display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid #d9dde5;border-radius:8px;font:inherit;color:#1d2330;background:#fff}',
+    '.ok{color:#1b8a6b}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -234,19 +331,66 @@
   ]);
   var resSec = el('div', { class: 'hide' }, [el('h2', { text: '3. Результат' }), progText, el('div', { class: 'bar' }, [barFill]), results]);
 
+  var exportPane = el('div', {}, [
+    el('p', { class: 'sub', text: 'Ссылки → языки → «Выгрузить». На выходе .po по каждому компоненту, архив на каждый язык.' }),
+    el('h2', { text: '1. Ссылки на компоненты' }),
+    links,
+    el('div', { class: 'row' }, [loadBtn, info]),
+    err1,
+    langSec,
+    resSec
+  ]);
+
+  /* ----- import pane ----- */
+  function select(options, value) {
+    var sel = el('select');
+    options.forEach(function (o) { sel.appendChild(el('option', { value: o[0], text: o[1] })); });
+    sel.value = value;
+    return sel;
+  }
+  function savedOr(k, def) { var v = sget(k); return v === null ? def : v; }
+  var fileInput = el('input', { type: 'file', multiple: '', accept: '.po,.zip' });
+  var drop = el('label', { class: 'drop' }, [fileInput, el('div', { text: 'Перетащи сюда .po или .zip от подрядчика — или нажми, чтобы выбрать' })]);
+  var preview = el('div');
+  var errU = el('div', { class: 'err' });
+  var optMethod = select([['translate', 'Добавить как перевод'], ['suggest', 'Добавить как предложение'], ['fuzzy', 'Добавить перевод как «На правку»']], savedOr('wlx_m', 'translate'));
+  var optFuzzy = select([['approve', 'Импортировать как переведённое'], ['process', 'Импортировать как «На правку»'], ['', 'Не импортировать']], savedOr('wlx_f', 'approve'));
+  var optConf = select([['replace-approved', 'Изменять переведённые и одобренные строки'], ['replace-translated', 'Изменять переведённые строки'], ['', 'Изменять только непереведённые строки']], savedOr('wlx_c', 'replace-approved'));
+  var upBtn = el('button', { class: 'b big', text: 'Загрузить в Weblate', onclick: runUpload });
+  var upResults = el('div', { class: 'blk' });
+  var upSec = el('div', { class: 'hide' }, [
+    el('h2', { text: '2. Как загружать' }),
+    el('div', { class: 'opts' }, [
+      el('label', {}, ['Режим загрузки файла', optMethod]),
+      el('label', {}, ['Обработка строк, отмеченных «На правку»', optFuzzy]),
+      el('label', {}, ['Разрешение конфликтов', optConf])
+    ]),
+    el('p', { class: 'muted', text: '«Заменить существующий файл перевода» здесь нет специально: в файлах только часть строк, и замена стёрла бы остальные переводы.' }),
+    el('div', { class: 'row' }, [upBtn]),
+    upResults
+  ]);
+  var importPane = el('div', { class: 'hide' }, [
+    el('p', { class: 'sub', text: 'Файлы → проверка → «Загрузить в Weblate». Компонент и язык определяются сами по заголовку файла.' }),
+    el('h2', { text: '1. Файлы от подрядчика' }),
+    drop, errU, preview, upSec
+  ]);
+
+  var tabExp = el('button', { class: 'tab on', text: '⬇ Выгрузить', onclick: function () { tab(true); } });
+  var tabImp = el('button', { class: 'tab', text: '⬆ Загрузить обратно', onclick: function () { tab(false); } });
+  function tab(exp) {
+    tabExp.classList.toggle('on', exp); tabImp.classList.toggle('on', !exp);
+    exportPane.classList.toggle('hide', !exp); importPane.classList.toggle('hide', exp);
+  }
+
   var back = el('div', { class: 'back', onclick: function (e) { if (e.target === back) hide(); } }, [
     el('div', { class: 'box' }, [
       el('div', { class: 'top' }, [
-        el('h1', { text: 'Выгрузка непереведённых строк' }),
+        el('h1', { text: 'Weblate: выгрузка и загрузка переводов' }),
         el('button', { class: 'x', title: 'Закрыть', text: '×', onclick: hide })
       ]),
-      el('p', { class: 'sub', text: 'Ссылки → языки → «Выгрузить». На выходе .po по каждому компоненту, архив на каждый язык.' }),
-      el('h2', { text: '1. Ссылки на компоненты' }),
-      links,
-      el('div', { class: 'row' }, [loadBtn, info]),
-      err1,
-      langSec,
-      resSec
+      el('div', { class: 'tabs' }, [tabExp, tabImp]),
+      exportPane,
+      importPane
     ])
   ]);
   root.appendChild(back);
@@ -386,6 +530,103 @@
       errs.forEach(function (e) { et.appendChild(el('tr', {}, e.map(function (v) { return el('td', { text: v }); }))); });
       results.appendChild(el('details', { open: '' }, [el('summary', { text: 'Проблемы: ' + errs.length, class: 'red' }), et]));
     }
+  }
+
+  /* ----- import logic ----- */
+  var uploads = [];
+  ['dragenter', 'dragover'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function (e) { addFiles(e.dataTransfer.files); });
+  fileInput.addEventListener('change', function () { addFiles(fileInput.files); fileInput.value = ''; });
+
+  function projectOf(component) {
+    var l = parseLinks((sget('wlx_links') || '') + '\n' + location.pathname);
+    for (var i = 0; i < l.length; i++) if (l[i].c === component) return l[i].p;
+    return l.length ? l[0].p : 'global_site';
+  }
+  function detect(f) {
+    var inf = poInfo(f.text), h = inf.headers;
+    var u = { name: f.name, text: f.text, filled: inf.filled, total: inf.total };
+    if (!inf.filled) u.skip = 'в файле нет переведённых строк — пропущу';
+    var m = /\/projects\/([^\/\s>]+)\/([^\/\s>]+)\/([^\/\s>]+)\//.exec(h['Language-Team'] || '');
+    if (m) { u.p = m[1]; u.c = m[2]; u.lang = m[3]; return Promise.resolve(u); }
+    var parts = f.name.split('/'), base = parts.pop().replace(/\.po$/i, '');
+    u.c = base; u.p = projectOf(base);
+    var wanted = h['Language'] || parts.pop() || '';
+    if (!wanted) { u.error = 'не понятно, какой это язык'; return Promise.resolve(u); }
+    return translations(u.p, u.c).then(function (trs) {
+      u.lang = matchLanguage(wanted.replace('-', '_'), trs);
+      if (!u.lang) u.error = 'язык «' + wanted + '» не найден в компоненте';
+      return u;
+    }, function () { u.error = 'компонент «' + u.p + '/' + u.c + '» не найден'; return u; });
+  }
+  function addFiles(list) {
+    errU.textContent = '';
+    var files = Array.prototype.slice.call(list || []);
+    Promise.all(files.map(function (file) {
+      if (/\.zip$/i.test(file.name)) return file.arrayBuffer().then(readZip);
+      if (/\.po$/i.test(file.name)) return file.text().then(function (t) { return [{ name: file.name, text: t }]; });
+      return Promise.resolve([]);
+    })).then(function (groups) {
+      var all = [].concat.apply([], groups);
+      if (!all.length) throw new Error('Не нашла .po файлов');
+      return Promise.all(all.map(detect));
+    }).then(function (found) {
+      found.forEach(function (u) {
+        if (!u.error) uploads = uploads.filter(function (x) { return !(x.p === u.p && x.c === u.c && x.lang === u.lang); });
+        uploads.push(u);
+      });
+      renderPreview();
+    }).catch(function (e) { errU.textContent = friendly(e); });
+  }
+  function renderPreview() {
+    preview.textContent = ''; upResults.textContent = '';
+    if (!uploads.length) { upSec.classList.add('hide'); return; }
+    var t = el('table', {}, [el('tr', {}, [el('th', { text: 'Файл' }), el('th', { text: 'Куда' }),
+      el('th', { class: 'n', text: 'С переводом' }), el('th', { text: 'Статус' })])]);
+    uploads.forEach(function (u) {
+      u.row = el('td', { class: u.error ? 'red' : (u.sent ? 'ok' : 'muted'), text: u.error || u.status || u.skip || 'готов' });
+      t.appendChild(el('tr', {}, [
+        el('td', { text: u.name }),
+        el('td', { text: u.lang ? u.c + ' · ' + u.lang : '—' }),
+        el('td', { class: 'n', text: u.filled + ' из ' + u.total }),
+        u.row
+      ]));
+    });
+    preview.appendChild(t);
+    preview.appendChild(el('div', { class: 'row' }, [
+      el('span', { class: 'muted', text: 'Файлов: ' + uploads.length }),
+      el('button', { class: 'b g s', text: 'Очистить список', onclick: function () { uploads = []; renderPreview(); } })
+    ]));
+    upSec.classList.remove('hide');
+  }
+  function setRow(u, cls, text) { u.status = text; u.row.className = cls; u.row.textContent = text; }
+  function runUpload() {
+    var todo = uploads.filter(function (u) { return !u.error && !u.skip && !u.sent; });
+    if (!todo.length) { upResults.textContent = 'Нечего загружать'; return; }
+    var opts = { method: optMethod.value, fuzzy: optFuzzy.value, conflicts: optConf.value };
+    sset('wlx_m', opts.method); sset('wlx_f', opts.fuzzy); sset('wlx_c', opts.conflicts);
+    upBtn.disabled = true; upResults.textContent = 'Загружаю…';
+    var ok = 0, bad = 0;
+    csrfToken().then(function (token) {
+      return pool(todo, 3, function (u) {
+        setRow(u, 'muted', 'загружаю…');
+        return uploadPo(u, opts, token).then(function (r) {
+          u.sent = true; ok++;
+          setRow(u, 'ok', r.viaForm ? '✓ отправлено (проверь в Weblate)'
+            : '✓ принято ' + (r.accepted != null ? r.accepted : '?') + ' из ' + (r.total != null ? r.total : '?') +
+              (r.skipped ? ', пропущено ' + r.skipped : '') + (r.not_found ? ', не найдено ' + r.not_found : ''));
+        }).catch(function (e) {
+          bad++;
+          setRow(u, 'red', friendly(e).split('\n')[0]);
+          u.row.title = String(e.message || e);
+        });
+      });
+    }).then(function () {
+      upResults.textContent = 'Готово: загружено ' + ok + (bad ? ', с ошибкой ' + bad + ' (наведи на ошибку, чтобы увидеть подробности)' : '');
+    }).catch(function (e) {
+      upResults.textContent = friendly(e);
+    }).then(function () { upBtn.disabled = false; });
   }
 
   document.body.appendChild(host);
