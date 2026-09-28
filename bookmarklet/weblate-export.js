@@ -145,16 +145,75 @@
     });
     return out;
   }
-  function filterPo(text) {
-    var keep = [], n = 0, words = 0;
+  function filterPo(text, dropPlurals) {
+    var keep = [], n = 0, words = 0, plurals = 0;
     poEntries(text).forEach(function (e) {
       if (e.header) { keep.push(e.lines.join('\n')); return; }
       if (e.obsolete || e.done) return;
+      if (e.plural) { plurals++; if (dropPlurals) return; }
       keep.push(e.lines.join('\n'));
       n++;
       words += wordCount(e.msgid) + wordCount(e.plural);
     });
-    return { text: keep.join('\n\n') + '\n', strings: n, words: words };
+    return { text: keep.join('\n\n') + '\n', strings: n, words: words, plurals: plurals };
+  }
+
+  /* ---------- плюралки → i18next JSON ---------- */
+  var CAT_ORDER = ['zero', 'one', 'two', 'few', 'many', 'other'];
+  function pluralCats(code) {
+    try {
+      var c = new Intl.PluralRules(code.replace(/_/g, '-')).resolvedOptions().pluralCategories;
+      return CAT_ORDER.filter(function (x) { return c.indexOf(x) >= 0; });
+    } catch (e) { return ['one', 'other']; }
+  }
+  /* подогнать категории CLDR под число форм в Weblate (у русского в Weblate 3 формы без other) */
+  function fitCats(cats, n) {
+    cats = cats.slice();
+    if (cats.length > n && cats.indexOf('other') >= 0) cats.splice(cats.indexOf('other'), 1);
+    return cats.length === n ? cats : null;
+  }
+  var FORMATS = {};
+  function componentFormat(p, c) {
+    var k = p + '/' + c;
+    if (!FORMATS[k]) FORMATS[k] = http('/api/components/' + p + '/' + c + '/').then(function (d) { return d.file_format || ''; }, function () { return ''; });
+    return FORMATS[k];
+  }
+  function units(p, c, lang, q) {
+    return paginate('/api/translations/' + p + '/' + c + '/' + lang + '/units/?q=' + encodeURIComponent(q));
+  }
+  function pluralSuffixes(fmt, code, n) {
+    var idx = [];
+    for (var i = 0; i < n; i++) idx.push('_' + i);
+    if (fmt === 'i18next') return n === 2 ? ['', '_plural'] : idx;
+    var cats = fitCats(pluralCats(code), n);
+    return cats ? cats.map(function (c) { return '_' + c; }) : idx;
+  }
+  /* непереведённые плюралки → { "ключ_one": "…", "ключ_other": "…" }; где перевода нет — русский исходник нужной формы */
+  function pluralJson(list, fmt, srcCode, tgtCode) {
+    var out = {}, strings = 0, words = 0;
+    list.forEach(function (u) {
+      if (!u.source || u.source.length < 2 || u.state >= 20 || !u.context) return;
+      var n = u.target && u.target.length > 1 ? u.target.length : pluralCats(tgtCode).length;
+      var sufs = pluralSuffixes(fmt, tgtCode, n);
+      var tgtCats = fitCats(pluralCats(tgtCode), n);
+      var srcCats = fitCats(pluralCats(srcCode), u.source.length);
+      sufs.forEach(function (suf, i) {
+        var val = u.target && u.target[i];
+        if (!val) {
+          var j = Math.min(i, u.source.length - 1);
+          if (tgtCats && srcCats) {
+            var cat = tgtCats[i];
+            j = srcCats.indexOf(cat);
+            if (j < 0) j = srcCats.indexOf('many') >= 0 ? srcCats.indexOf('many') : u.source.length - 1;
+          }
+          val = u.source[j];
+        }
+        out[u.context + suf] = val;
+      });
+      strings++;
+      words += u.num_words || wordCount(u.source[0]);
+    });
+    return { text: JSON.stringify(out, null, 2) + '\n', strings: strings, words: words };
   }
   function poInfo(text) {
     var headers = {}, filled = 0, total = 0;
@@ -234,7 +293,7 @@
       var start = loc + 30 + dv.getUint16(loc + 26, true) + dv.getUint16(loc + 28, true);
       var data = u8.slice(start, start + csize);
       p += 46 + nlen + xlen + clen;
-      if (/\/$/.test(name) || /__MACOSX/.test(name) || !/\.po$/i.test(name)) continue;
+      if (/\/$/.test(name) || /__MACOSX/.test(name) || !/\.(po|json)$/i.test(name)) continue;
       jobs.push((function (name, method, data) {
         var bytes = method === 0 ? Promise.resolve(data.buffer)
           : new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer();
@@ -259,7 +318,8 @@
   function uploadPo(u, opts, token) {
     function form(api) {
       var fd = new FormData();
-      fd.append('file', new Blob([u.text], { type: 'text/x-gettext-translation' }), u.name.split('/').pop());
+      var isJson = /\.json$/i.test(u.name);
+      fd.append('file', new Blob([u.text], { type: isJson ? 'application/json' : 'text/x-gettext-translation' }), u.name.split('/').pop());
       fd.append('method', opts.method); fd.append('fuzzy', opts.fuzzy); fd.append('conflicts', opts.conflicts);
       if (!api) fd.append('csrfmiddlewaretoken', token);
       return fd;
@@ -357,6 +417,9 @@
   var err1 = el('div', { class: 'err' });
   var langsBox = el('div', { class: 'langs' });
   var fuzzy = el('input', { type: 'checkbox' }); fuzzy.checked = true;
+  var pluralsJson = el('input', { type: 'checkbox' });
+  pluralsJson.checked = sget('wlx_pj') !== '0';
+  pluralsJson.addEventListener('change', function () { sset('wlx_pj', pluralsJson.checked ? '1' : '0'); });
   var err2 = el('div', { class: 'err' });
   var progText = el('div', { class: 'muted' });
   var barFill = el('div');
@@ -391,6 +454,7 @@
     ]),
     langsBox,
     el('label', { class: 'muted blk' }, [fuzzy, ' включать строки «требует правки»']),
+    el('label', { class: 'muted blk' }, [pluralsJson, ' плюралки (множественное число) — отдельным .json, как у нас принято']),
     el('h2', { text: 'Как разложить файлы в архиве' }),
     layoutBox,
     el('label', { class: 'muted blk' }, [englishApart, ' английский всегда отдельно — в папку «Английский ШТАТ»']),
@@ -417,8 +481,8 @@
     return sel;
   }
   function savedOr(k, def) { var v = sget(k); return v === null ? def : v; }
-  var fileInput = el('input', { type: 'file', multiple: '', accept: '.po,.zip' });
-  var drop = el('label', { class: 'drop' }, [fileInput, el('div', { text: 'Перетащи сюда .po или .zip от подрядчика — или нажми, чтобы выбрать' })]);
+  var fileInput = el('input', { type: 'file', multiple: '', accept: '.po,.json,.zip' });
+  var drop = el('label', { class: 'drop' }, [fileInput, el('div', { text: 'Перетащи сюда .po, .json (плюралки) или .zip от подрядчика — или нажми, чтобы выбрать' })]);
   var preview = el('div');
   var errU = el('div', { class: 'err' });
   var optMethod = select([['translate', 'Добавить как перевод'], ['suggest', 'Добавить как предложение'], ['fuzzy', 'Добавить перевод как «На правку»']], savedOr('wlx_m', 'translate'));
@@ -518,6 +582,7 @@
     if (!langs.length) { err2.textContent = 'Отметь хотя бы один язык'; return; }
     sset('wlx_langs', JSON.stringify(langs));
     var q = fuzzy.checked ? QUERY_ALL : QUERY_EMPTY;
+    var wantJson = pluralsJson.checked;
     var total = comps.length * langs.length, done = 0, res = [], errs = [];
     function tick() { done++; barFill.style.width = Math.round(100 * done / total) + '%'; progText.textContent = 'Скачиваю… ' + done + ' из ' + total; }
     goBtn.disabled = true; resSec.classList.remove('hide'); results.textContent = '';
@@ -529,9 +594,22 @@
           return chain.then(function () {
             var code = matchLanguage(wanted, trs);
             if (!code) { errs.push([x.c, wanted, 'языка нет в компоненте']); tick(); return; }
+            var src = trs.filter(function (t) { return t.is_source; })[0];
+            var srcCode = src ? src.language.code : 'ru';
             return downloadPo(x.p, x.c, code, q).then(function (raw) {
-              var r = filterPo(raw);
-              if (r.strings) res.push({ component: x.c, language: code, strings: r.strings, words: r.words, text: r.text });
+              var r = filterPo(raw, false);
+              if (!r.plurals || !wantJson) return r;
+              return Promise.all([units(x.p, x.c, code, q + ' AND has:plural'), componentFormat(x.p, x.c)]).then(function (a) {
+                var j = pluralJson(a[0], a[1], srcCode, code);
+                if (!j.strings) return r;
+                res.push({ component: x.c, language: code, strings: j.strings, words: j.words, text: j.text, ext: 'json' });
+                return filterPo(raw, true);
+              }, function (e) {
+                errs.push([x.c, code, 'плюралки не удалось выгрузить в .json, оставила их в .po: ' + friendly(e).split('\n')[0]]);
+                return r;
+              });
+            }).then(function (r) {
+              if (r.strings) res.push({ component: x.c, language: code, strings: r.strings, words: r.words, text: r.text, ext: 'po' });
             }).catch(function (e) { errs.push([x.c, code, friendly(e)]); }).then(tick);
           });
         }, Promise.resolve());
@@ -550,7 +628,7 @@
   function today() { return new Date().toISOString().slice(0, 10); }
   var ENGLISH_DIR = 'Английский ШТАТ';
   function isEnglish(code) { return baseLang(code) === 'en'; }
-  function poName(r) { return r.component + '_' + r.language + '.po'; }
+  function poName(r) { return r.component + '_' + r.language + '.' + (r.ext || 'po'); }
   function archivePath(r, layout, englishApart) {
     var folder = englishApart && isEnglish(r.language) ? ENGLISH_DIR
       : layout === 'language' ? langName(r.language)
@@ -597,8 +675,8 @@
           var layout = currentLayout(), eng = englishApart.checked;
           var files = res.map(function (r) { return { name: archivePath(r, layout, eng), text: r.text }; });
           files.sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
-          var csv = '﻿компонент;язык;код;строк;слов\n' + res.map(function (r) {
-            return [r.component, langName(r.language), r.language, r.strings, r.words].join(';');
+          var csv = '﻿компонент;язык;код;формат;строк;слов\n' + res.map(function (r) {
+            return [r.component, langName(r.language), r.language, r.ext || 'po', r.strings, r.words].join(';');
           }).join('\n') + '\n';
           files.push({ name: 'summary.csv', text: csv });
           saveBlob(makeZip(files), 'weblate_all_' + today() + '.zip');
@@ -610,7 +688,7 @@
       var dt = el('table', {}, [el('tr', {}, [el('th', { text: 'Компонент' }), el('th', { text: 'Язык' }),
         el('th', { class: 'n', text: 'Строк' }), el('th', { class: 'n', text: 'Слов' })])]);
       res.forEach(function (r) {
-        dt.appendChild(el('tr', {}, [el('td', { text: r.component }), el('td', { title: r.language }, [langLabel(r.language)]),
+        dt.appendChild(el('tr', {}, [el('td', { text: r.component + (r.ext === 'json' ? ' · плюралки .json' : '') }), el('td', { title: r.language }, [langLabel(r.language)]),
           el('td', { class: 'n', text: String(r.strings) }), el('td', { class: 'n', text: String(r.words) })]));
       });
       results.appendChild(el('details', {}, [el('summary', { text: 'По компонентам' }), dt]));
@@ -640,31 +718,69 @@
     var hit = trs.filter(function (t) { return langName(t.language.code).toLowerCase() === f; });
     return hit.length === 1 ? hit[0].language.code : null;
   }
+  function resolveComponent(p, c) {
+    return translations(p, c).then(function (trs) { return { p: p, c: c, trs: trs }; }, function () {
+      var seen = {}, cands = parseLinks((sget('wlx_links') || '') + '\n' + links.value).filter(function (l) {
+        var ok = (l.c === c || l.c.slice(-(c.length + 1)) === '-' + c) && !seen[l.p + '/' + l.c];
+        seen[l.p + '/' + l.c] = 1;
+        return ok;
+      });
+      if (cands.length !== 1) return null;
+      return translations(cands[0].p, cands[0].c).then(function (trs) { return { p: cands[0].p, c: cands[0].c, trs: trs }; }, function () { return null; });
+    });
+  }
+  /* из .json с плюралками убираем то, что осталось на русском (не переведено) */
+  function stripJson(u) {
+    var keys = Object.keys(u.obj);
+    if (keys.some(function (k) { return typeof u.obj[k] !== 'string'; })) return Promise.resolve(u);
+    return units(u.p, u.c, u.lang, 'has:plural').then(function (list) {
+      var src = {};
+      list.forEach(function (x) { (x.source || []).forEach(function (s) { src[s] = 1; }); });
+      var kept = {}, dropped = 0;
+      keys.forEach(function (k) { var v = u.obj[k]; if (!v || src[v]) dropped++; else kept[k] = v; });
+      u.filled = Object.keys(kept).length;
+      u.text = JSON.stringify(kept, null, 2) + '\n';
+      if (!u.filled) u.skip = 'всё ещё на русском — похоже, не переведено, пропущу';
+      else if (dropped) u.note = dropped + ' ещё на русском — их не отправлю';
+      return u;
+    }, function () { u.note = 'не смогла сверить с исходником'; return u; });
+  }
   function detect(f) {
-    var inf = poInfo(f.text), h = inf.headers;
-    var u = { name: f.name, text: f.text, filled: inf.filled, total: inf.total };
-    if (!inf.filled) u.skip = 'в файле нет переведённых строк — пропущу';
-    var m = /\/projects\/([^\/\s>]+)\/([^\/\s>]+)\/([^\/\s>]+)\//.exec(h['Language-Team'] || '');
-    if (m) { u.p = m[1]; u.c = m[2]; u.lang = m[3]; return Promise.resolve(u); }
-    var parts = f.name.split('/'), base = parts.pop().replace(/\.po$/i, '');
-    var suffix = /^(.+)_([a-z]{2,3}(?:[_@-][A-Za-z0-9]+)?)$/.exec(base);
+    var isJson = /\.json$/i.test(f.name), h = {};
+    var u = { name: f.name, text: f.text };
+    if (isJson) {
+      try { u.obj = JSON.parse(f.text); } catch (e) { u.error = 'файл .json не читается'; return Promise.resolve(u); }
+      var vals = Object.keys(u.obj).map(function (k) { return u.obj[k]; });
+      u.total = vals.length;
+      u.filled = vals.filter(function (v) { return v !== ''; }).length;
+    } else {
+      var inf = poInfo(f.text);
+      h = inf.headers; u.filled = inf.filled; u.total = inf.total;
+      if (!inf.filled) u.skip = 'в файле нет переведённых строк — пропущу';
+      var m = /\/projects\/([^\/\s>]+)\/([^\/\s>]+)\/([^\/\s>]+)\//.exec(h['Language-Team'] || '');
+      if (m) { u.p = m[1]; u.c = m[2]; u.lang = m[3]; return Promise.resolve(u); }
+    }
+    var parts = f.name.split('/'), base = parts.pop().replace(/\.(po|json)$/i, '');
+    var suffix = /^(.+)[._]([a-z]{2,3}(?:[_@-][A-Za-z0-9]+)?)$/.exec(base);
     u.c = suffix ? suffix[1] : base; u.p = projectOf(u.c);
     var folder = parts.pop() || '';
     if (folder === ENGLISH_DIR) folder = 'en';
     var wanted = h['Language'] || (suffix && suffix[2]) || folder;
     if (!wanted) { u.error = 'не понятно, какой это язык'; return Promise.resolve(u); }
-    return translations(u.p, u.c).then(function (trs) {
-      u.lang = matchLanguage(wanted.replace('-', '_'), trs) || byRuName(folder, trs);
-      if (!u.lang) u.error = 'язык «' + wanted + '» не найден в компоненте';
-      return u;
-    }, function () { u.error = 'компонент «' + u.p + '/' + u.c + '» не найден'; return u; });
+    return resolveComponent(u.p, u.c).then(function (r) {
+      if (!r) { u.error = 'компонент «' + u.c + '» не найден — переименуй файл в <компонент>_<язык>'; return u; }
+      u.p = r.p; u.c = r.c;
+      u.lang = matchLanguage(wanted.replace('-', '_'), r.trs) || byRuName(folder, r.trs);
+      if (!u.lang) { u.error = 'язык «' + wanted + '» не найден в компоненте'; return u; }
+      return isJson ? stripJson(u) : u;
+    });
   }
   function addFiles(list) {
     errU.textContent = '';
     var files = Array.prototype.slice.call(list || []);
     Promise.all(files.map(function (file) {
       if (/\.zip$/i.test(file.name)) return file.arrayBuffer().then(readZip);
-      if (/\.po$/i.test(file.name)) return file.text().then(function (t) { return [{ name: file.name, text: t }]; });
+      if (/\.(po|json)$/i.test(file.name)) return file.text().then(function (t) { return [{ name: file.name, text: t }]; });
       return Promise.resolve([]);
     })).then(function (groups) {
       var all = [].concat.apply([], groups);
@@ -672,7 +788,8 @@
       return Promise.all(all.map(detect));
     }).then(function (found) {
       found.forEach(function (u) {
-        if (!u.error) uploads = uploads.filter(function (x) { return !(x.p === u.p && x.c === u.c && x.lang === u.lang); });
+        var kind = function (x) { return /\.json$/i.test(x.name) ? 'json' : 'po'; };
+        if (!u.error) uploads = uploads.filter(function (x) { return !(x.p === u.p && x.c === u.c && x.lang === u.lang && kind(x) === kind(u)); });
         uploads.push(u);
       });
       renderPreview();
@@ -684,7 +801,7 @@
     var t = el('table', {}, [el('tr', {}, [el('th', { text: 'Файл' }), el('th', { text: 'Куда' }),
       el('th', { class: 'n', text: 'С переводом' }), el('th', { text: 'Статус' })])]);
     uploads.forEach(function (u) {
-      u.row = el('td', { class: u.error ? 'red' : (u.sent ? 'ok' : 'muted'), text: u.error || u.status || u.skip || 'готов' });
+      u.row = el('td', { class: u.error ? 'red' : (u.sent ? 'ok' : 'muted'), text: u.error || u.status || u.skip || (u.note ? 'готов · ' + u.note : 'готов') });
       t.appendChild(el('tr', {}, [
         el('td', { text: u.name }),
         u.lang ? el('td', { title: u.p + '/' + u.c + '/' + u.lang }, [el('div', { text: u.c }), langLabel(u.lang)]) : el('td', { text: '—' }),
