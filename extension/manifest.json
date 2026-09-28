@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Weblate: выгрузка и загрузка переводов",
   "short_name": "Weblate LQA",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "description": "Выгрузка непереведённых строк в .po по всем компонентам и языкам и загрузка переводов обратно — в пару кликов.",
   "action": {
     "default_title": "Weblate: выгрузка / загрузка переводов",
@@ -11,5 +11,5 @@
   "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
   "background": { "service_worker": "background.js" },
   "permissions": ["activeTab", "scripting"],
-  "host_permissions": ["https://weblate.wb.ru/*", "https://script.google.com/*", "https://script.googleusercontent.com/*"]
+  "host_permissions": ["https://weblate.wb.ru/*"]
 }

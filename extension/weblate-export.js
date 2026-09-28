@@ -161,94 +161,6 @@
     return same.length === 1 ? same[0] : null;
   }
 
-  /* ---------- сообщение бота: языки, ключи, номер задачи ---------- */
-  function normKey(line) { return line.replace(/\s+/g, ''); }
-  function isKey(k) { return /^[A-Za-z_$][\w$-]*(\.[\w$-]+)+$/.test(k); }
-  function parseTask(text) {
-    var lines = text.split(/\r?\n/).map(function (l) { return l.replace(/^[\s•·*\-–—]+/, '').trim(); });
-    var keys = [], langs = [], start = -1;
-    lines.forEach(function (l, i) { if (start < 0 && /^ключи\s*:?\s*$/i.test(l)) start = i; });
-    if (start >= 0) {
-      for (var i = start + 1; i < lines.length; i++) {
-        var l = lines[i];
-        if (!l) continue;
-        if (/:|@|https?:/.test(l)) break;
-        if (isKey(normKey(l))) keys.push(normKey(l));
-      }
-    } else {
-      lines.forEach(function (l) { if (!/:|@|\//.test(l) && isKey(normKey(l))) keys.push(normKey(l)); });
-    }
-    lines.forEach(function (l) {
-      var m = /^языки\s*:\s*(.+)$/i.exec(l);
-      if (!m) return;
-      m[1].split(',').forEach(function (part) {
-        var name = part.replace(/\([^)]*\)/g, '').replace(/[-–—]\s*\d[\d\s]*$/, '').trim().toLowerCase();
-        if (name) langs.push(name);
-      });
-    });
-    var t = /\/([A-Z][A-Z0-9]+-\d+)(?:[\/\s?#]|$)/.exec(text) || /\b([A-Z][A-Z0-9]+-\d+)\b/.exec(text);
-    var field = function (re) { for (var i = 0; i < lines.length; i++) { var m = re.exec(lines[i]); if (m) return m[1].trim(); } return ''; };
-    var taskLine = field(/^задача\s*:\s*(.+)$/i), url = /https?:\/\/\S+/.exec(taskLine);
-    return {
-      keys: keys.filter(function (k, i) { return keys.indexOf(k) === i; }), langs: langs, task: t ? t[1] : '',
-      taskUrl: url ? url[0] : '', team: field(/^команда\s*:\s*(.+)$/i),
-      deadline: field(/(?:срок|дедлайн|deadline)\s*:?\s*(\d{1,2}[.\/]\d{1,2}(?:[.\/]\d{2,4})?)/i)
-    };
-  }
-  function keyFilter(keys) {
-    var set = {}, found = {};
-    keys.forEach(function (k) { set[k] = 1; });
-    return {
-      found: found,
-      match: function (ctx) { if (ctx && set[ctx]) { found[ctx] = 1; return true; } return false; },
-      matchPlural: function (ctx) {
-        var hit = false;
-        keys.forEach(function (k) { if (k === ctx || k.indexOf(ctx + '_') === 0) { found[k] = 1; hit = true; } });
-        return hit;
-      },
-      missing: function () { return keys.filter(function (k) { return !found[k]; }); }
-    };
-  }
-
-  /* ---------- трекер задач: Google Таблица через Apps Script (tracker/Code.gs) ---------- */
-  var TRACKER_DEFAULT = {};
-  function trCfg() {
-    return {
-      url: sget('wlx_tr_url') || TRACKER_DEFAULT.url || '',
-      token: sget('wlx_tr_token') || TRACKER_DEFAULT.token || '',
-      who: sget('wlx_tr_who') || ''
-    };
-  }
-  function trRequest(method, url, body) {
-    var ext = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage;
-    var p = ext ? new Promise(function (resolve, reject) {
-      chrome.runtime.sendMessage({ type: 'wlx-tracker', method: method, url: url, body: body }, function (r) {
-        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-        if (!r || !r.ok) return reject(new Error((r && r.error) || 'нет ответа'));
-        resolve(r.text);
-      });
-    }) : fetch(url, method === 'POST' ? { method: 'POST', body: body, headers: { 'Content-Type': 'text/plain;charset=utf-8' } } : {})
-      .then(function (r) { return r.text(); });
-    return p.then(function (t) {
-      var j;
-      try { j = JSON.parse(t); } catch (e) { throw new Error('таблица ответила не JSON — проверь ссылку и доступ «Все»: ' + String(t).slice(0, 120)); }
-      if (!j.ok) throw new Error(j.error || 'ошибка таблицы');
-      return j;
-    }, function (e) {
-      throw new Error(ext ? String(e.message || e) : 'из закладки таблица может быть недоступна (защита Weblate) — используй расширение. ' + (e.message || e));
-    });
-  }
-  function trGet(params) {
-    var c = trCfg(), q = Object.keys(params).map(function (k) { return k + '=' + encodeURIComponent(params[k]); }).join('&');
-    return trRequest('GET', c.url + (c.url.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(c.token) + (q ? '&' + q : ''));
-  }
-  function trPost(body) { body.token = trCfg().token; return trRequest('POST', trCfg().url, JSON.stringify(body)); }
-  var TRANSLATORS = null;
-  function loadTranslators() {
-    if (!TRANSLATORS) TRANSLATORS = trGet({ action: 'translators' }).then(function (j) { return j.translators || []; }, function () { TRANSLATORS = null; return []; });
-    return TRANSLATORS;
-  }
-
   /* ---------- PO filter: keep header + empty / fuzzy entries ---------- */
   function unquote(s) {
     s = s.trim();
@@ -276,19 +188,18 @@
       if (f.msgid === undefined) return;
       var strs = Object.keys(f).filter(function (k) { return k.indexOf('msgstr') === 0; }).map(function (k) { return f[k]; });
       out.push({
-        lines: lines, fuzzy: fuzzy, obsolete: obsolete, msgid: f.msgid, plural: f.msgid_plural || '', strs: strs, ctx: f.msgctxt,
+        lines: lines, fuzzy: fuzzy, obsolete: obsolete, msgid: f.msgid, plural: f.msgid_plural || '', strs: strs,
         header: f.msgid === '' && !f.msgid_plural,
         done: !!strs.length && strs.every(function (x) { return x !== ''; }) && !fuzzy
       });
     });
     return out;
   }
-  function filterPo(text, dropPlurals, kf) {
+  function filterPo(text, dropPlurals) {
     var keep = [], n = 0, words = 0, plurals = 0;
     poEntries(text).forEach(function (e) {
       if (e.header) { keep.push(e.lines.join('\n')); return; }
       if (e.obsolete || e.done) return;
-      if (kf && !kf.match(e.ctx || e.msgid)) return;
       if (e.plural) { plurals++; if (dropPlurals) return; }
       keep.push(e.lines.join('\n'));
       n++;
@@ -328,11 +239,10 @@
     return cats ? cats.map(function (c) { return '_' + c; }) : idx;
   }
   /* непереведённые плюралки → { "ключ_one": "…", "ключ_other": "…" }; где перевода нет — русский исходник нужной формы */
-  function pluralJson(list, fmt, srcCode, tgtCode, kf) {
+  function pluralJson(list, fmt, srcCode, tgtCode) {
     var out = {}, strings = 0, words = 0;
     list.forEach(function (u) {
       if (!u.source || u.source.length < 2 || u.state >= 20 || !u.context) return;
-      if (kf && !kf.matchPlural(u.context)) return;
       var n = u.target && u.target.length > 1 ? u.target.length : pluralCats(tgtCode).length;
       var sufs = pluralSuffixes(fmt, tgtCode, n);
       var tgtCats = fitCats(pluralCats(tgtCode), n);
@@ -530,14 +440,6 @@
     '.layouts label{display:flex;gap:8px;align-items:baseline;padding:5px 7px;border-radius:6px;cursor:pointer}',
     '.layouts label:hover{background:#f3f5f8}',
     '.complist{max-height:220px;overflow:auto;font:12.5px/1.6 Consolas,ui-monospace,monospace;color:#1d2330;padding:6px 0}',
-    '.seg{display:flex;gap:6px;margin-bottom:8px}',
-    '.seg button.on{background:#1b8a6b;color:#fff}',
-    '.task{margin-top:12px;padding:10px 12px;border-radius:8px;background:#f3f5f8;font-size:13.5px}',
-    '.settings{margin:6px 0 10px;padding:12px 14px;border-radius:10px;background:#f3f5f8}',
-    '.settings label,.grid2 label{display:block;font-size:13px;color:#6b7385;margin-top:8px}',
-    '.settings input,.grid2 input,.track td input{display:block;width:100%;box-sizing:border-box;margin-top:3px;padding:7px 9px;border:1px solid #d9dde5;border-radius:7px;font:inherit;color:#1d2330;background:#fff}',
-    '.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}',
-    '.track{margin-top:18px;border-top:1px solid #eceef2;padding-top:4px}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -561,15 +463,7 @@
     root.appendChild(el('style', { text: CSS }));
   }
 
-  var links = el('textarea', { placeholder: 'Вставь ссылки на компоненты, категории или проект — можно кусок сообщения из чата целиком' });
-  var botArea = el('textarea', { placeholder: 'Вставь сообщение от бота целиком: ссылку, «Языки: …» и «ключи:» закладка найдёт сама' });
-  var mode = sget('wlx_mode') === 'bot' ? 'bot' : 'links';
-  var modeLinks = el('button', { class: 'b g s', text: 'Ссылки', onclick: function () { setMode('links'); } });
-  var modeBot = el('button', { class: 'b g s', text: 'Задача от бота', onclick: function () { setMode('bot'); } });
-  var onlyKeys = el('input', { type: 'checkbox' }); onlyKeys.checked = true;
-  var taskBox = el('div', { class: 'task hide' });
-  var currentTask = null, exportTag = '';
-  function srcText() { return mode === 'bot' ? botArea.value : links.value; }
+  var links = el('textarea', { placeholder: 'Вставь ссылки на компоненты — можно прямо сообщение из чата целиком' });
   var info = el('span', { class: 'muted' });
   var compList = el('div');
   var err1 = el('div', { class: 'err' });
@@ -585,8 +479,7 @@
   var loadBtn = el('button', { class: 'b g', text: 'Загрузить языки', onclick: loadLangs });
   var goBtn = el('button', { class: 'b big', text: 'Выгрузить', onclick: runExport });
   var clearBtn = el('button', { class: 'b g s', text: 'Очистить', onclick: function () {
-    (mode === 'bot' ? botArea : links).value = ''; (mode === 'bot' ? botArea : links).focus();
-    info.textContent = ''; err1.textContent = ''; compList.textContent = ''; taskBox.classList.add('hide'); currentTask = null;
+    links.value = ''; links.focus(); info.textContent = ''; err1.textContent = ''; compList.textContent = '';
     langSec.classList.add('hide'); resSec.classList.add('hide');
   } });
   var restoreBtn = el('button', { class: 'b g s', text: 'Вернуть прошлые ссылки', onclick: function () {
@@ -631,13 +524,10 @@
 
   var exportPane = el('div', {}, [
     el('p', { class: 'sub', text: 'Ссылки → языки → «Выгрузить». На выходе .po по каждому компоненту и языку, в архиве — как удобнее: по компонентам, по языкам или всё вместе.' }),
-    el('h2', { text: '1. Что выгружаем' }),
-    el('div', { class: 'seg' }, [modeLinks, modeBot]),
+    el('h2', { text: '1. Ссылки на компоненты' }),
     links,
-    botArea,
     el('div', { class: 'row' }, [loadBtn, clearBtn, restoreBtn, info]),
     err1,
-    taskBox,
     compList,
     langSec,
     resSec
@@ -684,44 +574,12 @@
     exportPane.classList.toggle('hide', !exp); importPane.classList.toggle('hide', exp);
   }
 
-  /* ----- настройки таблицы задач ----- */
-  var stUrl = el('input', { type: 'text', placeholder: 'https://script.google.com/macros/s/…/exec' });
-  var stToken = el('input', { type: 'password', placeholder: 'токен из скрипта (TOKEN)' });
-  var stWho = el('input', { type: 'text', placeholder: 'например: Настя Лисовая' });
-  var stMsg = el('div', { class: 'muted' });
-  function fillSettings() { var c = trCfg(); stUrl.value = c.url; stToken.value = c.token; stWho.value = c.who; }
-  fillSettings();
-  var settingsPane = el('div', { class: 'settings hide' }, [
-    el('h2', { text: 'Таблица задач переводчиков (Google Таблица)' }),
-    el('p', { class: 'muted', text: 'Если подключить, выгрузки можно записывать в общую таблицу, а загрузка обратно сама отмечает их выполненными. Как создать таблицу — tracker/README.md.' }),
-    el('label', {}, ['Ссылка на веб-приложение', stUrl]),
-    el('label', {}, ['Токен', stToken]),
-    el('label', {}, ['Твоё имя (кто выгрузил / загрузил)', stWho]),
-    el('div', { class: 'row' }, [
-      el('button', { class: 'b s', text: 'Сохранить', onclick: function () {
-        sset('wlx_tr_url', stUrl.value.trim()); sset('wlx_tr_token', stToken.value.trim()); sset('wlx_tr_who', stWho.value.trim());
-        TRANSLATORS = null; stMsg.textContent = 'Сохранено';
-      } }),
-      el('button', { class: 'b g s', text: 'Проверить подключение', onclick: function () {
-        sset('wlx_tr_url', stUrl.value.trim()); sset('wlx_tr_token', stToken.value.trim()); sset('wlx_tr_who', stWho.value.trim());
-        TRANSLATORS = null; stMsg.textContent = 'Проверяю…';
-        trGet({}).then(function (j) { stMsg.textContent = '✓ Подключено: таблица «' + (j.sheet || '') + '»'; },
-          function (e) { stMsg.textContent = '✗ ' + (e.message || e); });
-      } }),
-      stMsg
-    ])
-  ]);
-
   var back = el('div', { class: 'back', onclick: function (e) { if (e.target === back) hide(); } }, [
     el('div', { class: 'box' }, [
       el('div', { class: 'top' }, [
         el('h1', { text: 'Weblate: выгрузка и загрузка переводов' }),
-        el('div', {}, [
-          el('button', { class: 'x', title: 'Таблица задач (настройки)', text: '⚙', onclick: function () { settingsPane.classList.toggle('hide'); } }),
-          el('button', { class: 'x', title: 'Закрыть', text: '×', onclick: hide })
-        ])
+        el('button', { class: 'x', title: 'Закрыть', text: '×', onclick: hide })
       ]),
-      settingsPane,
       el('div', { class: 'tabs' }, [tabExp, tabImp]),
       exportPane,
       importPane
@@ -742,51 +600,15 @@
 
   /* поле ссылок при открытии пустое; прошлые ссылки можно вернуть кнопкой */
   var saved = sget('wlx_links');
-  function setMode(m) {
-    mode = m; sset('wlx_mode', m);
-    modeLinks.classList.toggle('on', m === 'links'); modeBot.classList.toggle('on', m === 'bot');
-    links.classList.toggle('hide', m !== 'links'); botArea.classList.toggle('hide', m !== 'bot');
-    restoreBtn.classList.toggle('hide', m !== 'links' || !sget('wlx_links'));
-    taskBox.classList.add('hide'); err1.textContent = ''; info.textContent = ''; compList.textContent = '';
-    langSec.classList.add('hide'); resSec.classList.add('hide');
-  }
-  setMode(mode);
-  /* задача от бота: отметить её языки, показать ключи */
-  function applyTask(t, langs) {
-    var codes = Object.keys(langs), picked = [], unknown = [];
-    t.langs.forEach(function (name) {
-      var hit = codes.filter(function (c) {
-        var n = langName(c).toLowerCase();
-        return n === name || n.indexOf(name + ' (') === 0 || n.indexOf(name + ',') === 0;
-      });
-      if (hit.length) picked = picked.concat(hit); else unknown.push(name);
-    });
-    if (picked.length) langsBox.querySelectorAll('input').forEach(function (i) { i.checked = picked.indexOf(i.value) >= 0; });
-    taskBox.textContent = '';
-    taskBox.appendChild(el('div', {}, [el('b', { text: 'Из задачи' + (t.task ? ' ' + t.task : '') + ': ' }),
-      el('span', { text: 'языков ' + picked.length + (t.langs.length ? ' из ' + t.langs.length : '') + ', ключей ' + t.keys.length })]));
-    if (unknown.length) taskBox.appendChild(el('div', { class: 'red', text: 'Не нашла в компонентах языки: ' + unknown.join(', ') }));
-    if (!t.langs.length) taskBox.appendChild(el('div', { class: 'muted', text: 'Строку «Языки: …» не нашла — отметь языки сама.' }));
-    if (t.keys.length) {
-      taskBox.appendChild(el('label', { class: 'blk' }, [onlyKeys, ' выгружать только эти ключи']));
-      var kl = el('div', { class: 'complist' });
-      t.keys.forEach(function (k) { kl.appendChild(el('div', { text: k })); });
-      taskBox.appendChild(el('details', {}, [el('summary', { text: 'Ключи (' + t.keys.length + ')' }), kl]));
-    } else {
-      taskBox.appendChild(el('div', { class: 'muted', text: 'Список ключей не нашла — выгружу все непереведённые строки.' }));
-    }
-    taskBox.classList.remove('hide');
-  }
+  if (!saved) restoreBtn.classList.add('hide');
 
   var comps = [];
   function loadLangs() {
     err1.textContent = ''; compList.textContent = '';
-    var text = srcText();
-    if (mode === 'links') sset('wlx_links', text);
-    taskBox.classList.add('hide'); currentTask = mode === 'bot' ? parseTask(text) : null;
-    if (!parseLinks(text).length) { err1.textContent = 'Не нашла ни одной ссылки вида …/projects/<проект>/…'; return; }
+    sset('wlx_links', links.value);
+    if (!parseLinks(links.value).length) { err1.textContent = 'Не нашла ни одной ссылки вида …/projects/<проект>/…'; return; }
     loadBtn.disabled = true; info.textContent = 'Разбираю ссылки…';
-    resolveLinks(text).then(function (r) {
+    resolveLinks(links.value).then(function (r) {
       comps = r.comps;
       if (r.missing.length) err1.textContent = 'Не нашла компоненты по ссылкам:\n' + r.missing.join('\n');
       if (!comps.length) throw new Error('Не нашла ни одного компонента');
@@ -812,7 +634,6 @@
         cb.checked = prev ? prev.indexOf(code) >= 0 : !/generated/i.test(langs[code]);
         langsBox.appendChild(el('label', { title: code }, [cb, langLabel(code)]));
       });
-      if (currentTask) applyTask(currentTask, langs);
       info.textContent = 'Компонентов: ' + comps.length + (comps.length > 100 ? ' — много, выгрузка займёт время' : '');
       var ul = el('div', { class: 'complist' });
       comps.forEach(function (x) { ul.appendChild(el('div', { text: x.p + ' / ' + x.c })); });
@@ -838,8 +659,6 @@
     sset('wlx_langs', JSON.stringify(langs));
     var q = fuzzy.checked ? QUERY_ALL : QUERY_EMPTY;
     var wantJson = pluralsJson.checked;
-    var kf = currentTask && currentTask.keys.length && onlyKeys.checked ? keyFilter(currentTask.keys) : null;
-    exportTag = currentTask && currentTask.task ? currentTask.task : 'all';
     var total = comps.length * langs.length, done = 0, res = [], errs = [];
     function tick() { done++; barFill.style.width = Math.round(100 * done / total) + '%'; progText.textContent = 'Скачиваю… ' + done + ' из ' + total; }
     goBtn.disabled = true; resSec.classList.remove('hide'); results.textContent = '';
@@ -854,13 +673,13 @@
             var src = trs.filter(function (t) { return t.is_source; })[0];
             var srcCode = src ? src.language.code : 'ru';
             return downloadPo(x.p, x.c, code, q).then(function (raw) {
-              var r = filterPo(raw, false, kf);
+              var r = filterPo(raw, false);
               if (!r.plurals || !wantJson) return r;
               return Promise.all([units(x.p, x.c, code, q + ' AND has:plural'), componentFormat(x.p, x.c)]).then(function (a) {
-                var j = pluralJson(a[0], a[1], srcCode, code, kf);
+                var j = pluralJson(a[0], a[1], srcCode, code);
                 if (!j.strings) return r;
                 res.push({ component: x.c, language: code, strings: j.strings, words: j.words, text: j.text, ext: 'json' });
-                return filterPo(raw, true, kf);
+                return filterPo(raw, true);
               }, function (e) {
                 errs.push([x.c, code, 'плюралки не удалось выгрузить в .json, оставила их в .po: ' + friendly(e).split('\n')[0]]);
                 return r;
@@ -878,7 +697,6 @@
       goBtn.disabled = false;
       progText.textContent = 'Готово!';
       barFill.style.width = '100%';
-      if (kf && kf.missing().length) errs.push(['—', '—', 'ключи не нашлись среди непереведённых (уже переведены или нет в компонентах): ' + kf.missing().join(', ')]);
       showResults(res, errs);
     });
   }
@@ -938,7 +756,7 @@
             return [r.component, langName(r.language), r.language, r.ext || 'po', r.strings, r.words].join(';');
           }).join('\n') + '\n';
           files.push({ name: 'summary.csv', text: csv });
-          saveBlob(makeZip(files), 'weblate_' + (exportTag || 'all') + '_' + today() + '.zip');
+          saveBlob(makeZip(files), 'weblate_all_' + today() + '.zip');
         } }),
         layoutHint
       ]));
@@ -957,85 +775,6 @@
       errs.forEach(function (e) { et.appendChild(el('tr', {}, e.map(function (v) { return el('td', { text: v }); }))); });
       results.appendChild(el('details', { open: '' }, [el('summary', { text: 'Проблемы: ' + errs.length, class: 'red' }), et]));
     }
-    renderTracker(res);
-  }
-
-  /* ----- шаг «Записать в таблицу» после выгрузки ----- */
-  function renderTracker(res) {
-    if (!res.length) return;
-    var box = el('div', { class: 'track' }, [el('h2', { text: '4. Записать задачу в таблицу' })]);
-    results.appendChild(box);
-    var c = trCfg();
-    if (!c.url) {
-      box.appendChild(el('p', { class: 'muted', text: 'Можно фиксировать, кому и что ушло на перевод, в общей Google Таблице — подключи её в ⚙ вверху окна.' }));
-      return;
-    }
-    var t = currentTask || {};
-    var by = {};
-    res.forEach(function (r) {
-      var a = by[r.language] = by[r.language] || { strings: 0, words: 0, comps: [] };
-      a.strings += r.strings; a.words += r.words;
-      if (a.comps.indexOf(r.component) < 0) a.comps.push(r.component);
-    });
-    var fTask = el('input', { type: 'text', value: t.task || '', placeholder: 'TRN-480' });
-    var fUrl = el('input', { type: 'text', value: t.taskUrl || '', placeholder: 'ссылка на задачу' });
-    var fTeam = el('input', { type: 'text', value: t.team || '' });
-    var fDeadline = el('input', { type: 'text', value: t.deadline || '', placeholder: '01.10' });
-    var fSmartcat = el('input', { type: 'text', placeholder: 'ссылка на проект в Smartcat' });
-    var fComment = el('input', { type: 'text' });
-    box.appendChild(el('div', { class: 'grid2' }, [
-      el('label', {}, ['Задача', fTask]), el('label', {}, ['Ссылка на задачу', fUrl]),
-      el('label', {}, ['Команда', fTeam]), el('label', {}, ['Срок', fDeadline]),
-      el('label', {}, ['Smartcat', fSmartcat]), el('label', {}, ['Комментарий', fComment])
-    ]));
-    var tb = el('table', {}, [el('tr', {}, [el('th', { text: 'Язык' }), el('th', { class: 'n', text: 'Строк' }),
-      el('th', { class: 'n', text: 'Слов' }), el('th', { text: 'Переводчик' }), el('th', { text: 'Редактор' })])]);
-    var inputs = {}, lists = {}, edInputs = {}, edLists = {};
-    Object.keys(by).sort(function (a, b) { return langName(a).localeCompare(langName(b), 'ru'); }).forEach(function (code) {
-      var dl = el('datalist', { id: 'wlx-tr-' + code.replace(/[^A-Za-z0-9_-]/g, '_') });
-      var inp = el('input', { type: 'text', list: dl.id, value: sget('wlx_tr_last_' + code) || '', placeholder: 'кто переводит' });
-      var edl = el('datalist', { id: dl.id + '-ed' });
-      var ed = el('input', { type: 'text', list: edl.id, value: sget('wlx_ed_last_' + code) || '', placeholder: 'кто редактирует' });
-      inputs[code] = inp; lists[code] = dl; edInputs[code] = ed; edLists[code] = edl;
-      tb.appendChild(el('tr', {}, [el('td', {}, [langLabel(code)]), el('td', { class: 'n', text: String(by[code].strings) }),
-        el('td', { class: 'n', text: String(by[code].words) }), el('td', {}, [inp, dl]), el('td', {}, [ed, edl])]));
-    });
-    box.appendChild(tb);
-    loadTranslators().then(function (list) {
-      Object.keys(inputs).forEach(function (code) {
-        var forLang = list.filter(function (x) {
-          var l = x.lang.toLowerCase();
-          return l === '*' || l === code.toLowerCase() || l === baseLang(code) || l === langName(code).toLowerCase();
-        });
-        var trNames = forLang.filter(function (x) { return x.translator !== false; }).map(function (x) { return x.name; });
-        var edNames = forLang.filter(function (x) { return x.editor !== false && x.role !== 'подрядчик'; }).map(function (x) { return x.name; });
-        trNames.forEach(function (n) { lists[code].appendChild(el('option', { value: n })); });
-        edNames.forEach(function (n) { edLists[code].appendChild(el('option', { value: n })); });
-        var own = forLang.filter(function (x) { return x.translator !== false && x.role !== 'подрядчик' && x.lang !== '*'; });
-        if (!inputs[code].value && own.length === 1) inputs[code].value = own[0].name;
-      });
-    });
-    var msg = el('span', { class: 'muted' });
-    var btn = el('button', { class: 'b', text: 'Записать в таблицу', onclick: function () {
-      var who = trCfg().who;
-      var rows = Object.keys(inputs).map(function (code) {
-        if (inputs[code].value) sset('wlx_tr_last_' + code, inputs[code].value);
-        if (edInputs[code].value) sset('wlx_ed_last_' + code, edInputs[code].value);
-        return {
-          task: fTask.value.trim(), taskUrl: fUrl.value.trim(), team: fTeam.value.trim(), components: by[code].comps,
-          lang: code, langName: langName(code), strings: by[code].strings, words: by[code].words,
-          translator: inputs[code].value.trim(), editor: edInputs[code].value.trim(), deadline: fDeadline.value.trim(), smartcat: fSmartcat.value.trim(),
-          comment: fComment.value.trim(), who: who
-        };
-      });
-      btn.disabled = true; msg.textContent = 'Записываю…';
-      trPost({ action: 'export', rows: rows }).then(function (j) {
-        msg.className = 'ok';
-        msg.textContent = '✓ В таблице: новых строк ' + j.added + (j.updated ? ', обновлено ' + j.updated : '');
-      }, function (e) { msg.className = 'red'; msg.textContent = '✗ ' + (e.message || e); btn.disabled = false; });
-    } });
-    box.appendChild(el('div', { class: 'row' }, [btn, msg]));
-    if (!c.who) box.appendChild(el('p', { class: 'muted', text: 'Совет: впиши своё имя в ⚙ — оно попадёт в колонку «Выгрузил(а)».' }));
   }
 
   /* ----- import logic ----- */
@@ -1188,15 +927,6 @@
       });
     }).then(function () {
       upResults.textContent = 'Готово: загружено ' + ok + (bad ? ', с ошибкой ' + bad + ' (наведи на ошибку, чтобы увидеть подробности)' : '');
-      var sent = todo.filter(function (u) { return u.sent; });
-      if (!sent.length || !trCfg().url) return;
-      var note = el('div', { class: 'muted', text: 'Отмечаю в таблице задач…' });
-      upResults.appendChild(note);
-      trPost({ action: 'upload', who: trCfg().who, items: sent.map(function (u) { return { component: u.c, lang: u.lang }; }) }).then(function (j) {
-        note.className = 'ok';
-        note.textContent = j.marked ? '✓ В таблице отмечено строк: ' + j.marked + ' (' + Object.keys(j.rows).map(function (k) { return k + ' — ' + j.rows[k]; }).join('; ') + ')'
-          : 'В таблице нет открытых задач на эти компоненты и языки';
-      }, function (e) { note.className = 'red'; note.textContent = 'Таблица задач: ' + (e.message || e); });
     }).catch(function (e) {
       upResults.textContent = friendly(e);
     }).then(function () { upBtn.disabled = false; });

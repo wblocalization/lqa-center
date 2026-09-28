@@ -32,13 +32,8 @@ def load_flags():
 def build_source():
     src = (HERE / "weblate-export.js").read_text(encoding="utf-8")
     flags = json.dumps(load_flags(), ensure_ascii=False)
-    assert "{} /*FLAGS*/" in src and "{} /*TRACKER*/" in src
-    src = src.replace("{} /*FLAGS*/", flags)
-    # необязательно: ссылка и токен таблицы задач по умолчанию для всей команды
-    # (bookmarklet/tracker.config.json: {"url": "...", "token": "..."}; в git не хранится)
-    cfg = HERE / "tracker.config.json"
-    tracker = json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}
-    return src.replace("{} /*TRACKER*/", json.dumps(tracker, ensure_ascii=False))
+    assert "{} /*FLAGS*/" in src
+    return src.replace("{} /*FLAGS*/", flags)
 
 
 def build_bookmarklet(src):
