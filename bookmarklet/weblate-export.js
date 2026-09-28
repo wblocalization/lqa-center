@@ -13,7 +13,7 @@
 
   /* ---------- языки: русские названия и флаги ---------- */
   var FLAGS = {} /*FLAGS*/;
-  var RU_NAMES = { ky: 'Киргизский', en_US: 'Английский (США)', en_GB: 'Английский (Великобритания)' };
+  var RU_NAMES = { ky: 'Киргизский', zh_Hans: 'Китайский (упрощённый)', zh_Hant: 'Китайский (традиционный)', en_US: 'Английский (США)', en_GB: 'Английский (Великобритания)' };
   var WL_NAMES = {};
   var displayNames = null;
   try { displayNames = new Intl.DisplayNames(['ru'], { type: 'language' }); } catch (e) {}
@@ -161,6 +161,49 @@
     return same.length === 1 ? same[0] : null;
   }
 
+  /* ---------- сообщение бота: языки, ключи, номер задачи ---------- */
+  function normKey(line) { return line.replace(/\s+/g, ''); }
+  function isKey(k) { return /^[A-Za-z_$][\w$-]*(\.[\w$-]+)+$/.test(k); }
+  function parseTask(text) {
+    var lines = text.split(/\r?\n/).map(function (l) { return l.replace(/^[\s•·*\-–—]+/, '').trim(); });
+    var keys = [], langs = [], start = -1;
+    lines.forEach(function (l, i) { if (start < 0 && /^ключи\s*:?\s*$/i.test(l)) start = i; });
+    if (start >= 0) {
+      for (var i = start + 1; i < lines.length; i++) {
+        var l = lines[i];
+        if (!l) continue;
+        if (/:|@|https?:/.test(l)) break;
+        if (isKey(normKey(l))) keys.push(normKey(l));
+      }
+    } else {
+      lines.forEach(function (l) { if (!/:|@|\//.test(l) && isKey(normKey(l))) keys.push(normKey(l)); });
+    }
+    lines.forEach(function (l) {
+      var m = /^языки\s*:\s*(.+)$/i.exec(l);
+      if (!m) return;
+      m[1].split(',').forEach(function (part) {
+        var name = part.replace(/\([^)]*\)/g, '').replace(/[-–—]\s*\d[\d\s]*$/, '').trim().toLowerCase();
+        if (name) langs.push(name);
+      });
+    });
+    var t = /\/([A-Z][A-Z0-9]+-\d+)(?:[\/\s?#]|$)/.exec(text) || /\b([A-Z][A-Z0-9]+-\d+)\b/.exec(text);
+    return { keys: keys.filter(function (k, i) { return keys.indexOf(k) === i; }), langs: langs, task: t ? t[1] : '' };
+  }
+  function keyFilter(keys) {
+    var set = {}, found = {};
+    keys.forEach(function (k) { set[k] = 1; });
+    return {
+      found: found,
+      match: function (ctx) { if (ctx && set[ctx]) { found[ctx] = 1; return true; } return false; },
+      matchPlural: function (ctx) {
+        var hit = false;
+        keys.forEach(function (k) { if (k === ctx || k.indexOf(ctx + '_') === 0) { found[k] = 1; hit = true; } });
+        return hit;
+      },
+      missing: function () { return keys.filter(function (k) { return !found[k]; }); }
+    };
+  }
+
   /* ---------- PO filter: keep header + empty / fuzzy entries ---------- */
   function unquote(s) {
     s = s.trim();
@@ -188,18 +231,19 @@
       if (f.msgid === undefined) return;
       var strs = Object.keys(f).filter(function (k) { return k.indexOf('msgstr') === 0; }).map(function (k) { return f[k]; });
       out.push({
-        lines: lines, fuzzy: fuzzy, obsolete: obsolete, msgid: f.msgid, plural: f.msgid_plural || '', strs: strs,
+        lines: lines, fuzzy: fuzzy, obsolete: obsolete, msgid: f.msgid, plural: f.msgid_plural || '', strs: strs, ctx: f.msgctxt,
         header: f.msgid === '' && !f.msgid_plural,
         done: !!strs.length && strs.every(function (x) { return x !== ''; }) && !fuzzy
       });
     });
     return out;
   }
-  function filterPo(text, dropPlurals) {
+  function filterPo(text, dropPlurals, kf) {
     var keep = [], n = 0, words = 0, plurals = 0;
     poEntries(text).forEach(function (e) {
       if (e.header) { keep.push(e.lines.join('\n')); return; }
       if (e.obsolete || e.done) return;
+      if (kf && !kf.match(e.ctx || e.msgid)) return;
       if (e.plural) { plurals++; if (dropPlurals) return; }
       keep.push(e.lines.join('\n'));
       n++;
@@ -239,10 +283,11 @@
     return cats ? cats.map(function (c) { return '_' + c; }) : idx;
   }
   /* непереведённые плюралки → { "ключ_one": "…", "ключ_other": "…" }; где перевода нет — русский исходник нужной формы */
-  function pluralJson(list, fmt, srcCode, tgtCode) {
+  function pluralJson(list, fmt, srcCode, tgtCode, kf) {
     var out = {}, strings = 0, words = 0;
     list.forEach(function (u) {
       if (!u.source || u.source.length < 2 || u.state >= 20 || !u.context) return;
+      if (kf && !kf.matchPlural(u.context)) return;
       var n = u.target && u.target.length > 1 ? u.target.length : pluralCats(tgtCode).length;
       var sufs = pluralSuffixes(fmt, tgtCode, n);
       var tgtCats = fitCats(pluralCats(tgtCode), n);
@@ -440,6 +485,9 @@
     '.layouts label{display:flex;gap:8px;align-items:baseline;padding:5px 7px;border-radius:6px;cursor:pointer}',
     '.layouts label:hover{background:#f3f5f8}',
     '.complist{max-height:220px;overflow:auto;font:12.5px/1.6 Consolas,ui-monospace,monospace;color:#1d2330;padding:6px 0}',
+    '.seg{display:flex;gap:6px;margin-bottom:8px}',
+    '.seg button.on{background:#1b8a6b;color:#fff}',
+    '.task{margin-top:12px;padding:10px 12px;border-radius:8px;background:#f3f5f8;font-size:13.5px}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -463,7 +511,15 @@
     root.appendChild(el('style', { text: CSS }));
   }
 
-  var links = el('textarea', { placeholder: 'Вставь ссылки на компоненты — можно прямо сообщение из чата целиком' });
+  var links = el('textarea', { placeholder: 'Вставь ссылки на компоненты, категории или проект — можно кусок сообщения из чата целиком' });
+  var botArea = el('textarea', { placeholder: 'Вставь сообщение от бота целиком: ссылку, «Языки: …» и «ключи:» закладка найдёт сама' });
+  var mode = sget('wlx_mode') === 'bot' ? 'bot' : 'links';
+  var modeLinks = el('button', { class: 'b g s', text: 'Ссылки', onclick: function () { setMode('links'); } });
+  var modeBot = el('button', { class: 'b g s', text: 'Задача от бота', onclick: function () { setMode('bot'); } });
+  var onlyKeys = el('input', { type: 'checkbox' }); onlyKeys.checked = true;
+  var taskBox = el('div', { class: 'task hide' });
+  var currentTask = null, exportTag = '';
+  function srcText() { return mode === 'bot' ? botArea.value : links.value; }
   var info = el('span', { class: 'muted' });
   var compList = el('div');
   var err1 = el('div', { class: 'err' });
@@ -479,7 +535,8 @@
   var loadBtn = el('button', { class: 'b g', text: 'Загрузить языки', onclick: loadLangs });
   var goBtn = el('button', { class: 'b big', text: 'Выгрузить', onclick: runExport });
   var clearBtn = el('button', { class: 'b g s', text: 'Очистить', onclick: function () {
-    links.value = ''; links.focus(); info.textContent = ''; err1.textContent = ''; compList.textContent = '';
+    (mode === 'bot' ? botArea : links).value = ''; (mode === 'bot' ? botArea : links).focus();
+    info.textContent = ''; err1.textContent = ''; compList.textContent = ''; taskBox.classList.add('hide'); currentTask = null;
     langSec.classList.add('hide'); resSec.classList.add('hide');
   } });
   var restoreBtn = el('button', { class: 'b g s', text: 'Вернуть прошлые ссылки', onclick: function () {
@@ -524,10 +581,13 @@
 
   var exportPane = el('div', {}, [
     el('p', { class: 'sub', text: 'Ссылки → языки → «Выгрузить». На выходе .po по каждому компоненту и языку, в архиве — как удобнее: по компонентам, по языкам или всё вместе.' }),
-    el('h2', { text: '1. Ссылки на компоненты' }),
+    el('h2', { text: '1. Что выгружаем' }),
+    el('div', { class: 'seg' }, [modeLinks, modeBot]),
     links,
+    botArea,
     el('div', { class: 'row' }, [loadBtn, clearBtn, restoreBtn, info]),
     err1,
+    taskBox,
     compList,
     langSec,
     resSec
@@ -600,15 +660,51 @@
 
   /* поле ссылок при открытии пустое; прошлые ссылки можно вернуть кнопкой */
   var saved = sget('wlx_links');
-  if (!saved) restoreBtn.classList.add('hide');
+  function setMode(m) {
+    mode = m; sset('wlx_mode', m);
+    modeLinks.classList.toggle('on', m === 'links'); modeBot.classList.toggle('on', m === 'bot');
+    links.classList.toggle('hide', m !== 'links'); botArea.classList.toggle('hide', m !== 'bot');
+    restoreBtn.classList.toggle('hide', m !== 'links' || !sget('wlx_links'));
+    taskBox.classList.add('hide'); err1.textContent = ''; info.textContent = ''; compList.textContent = '';
+    langSec.classList.add('hide'); resSec.classList.add('hide');
+  }
+  setMode(mode);
+  /* задача от бота: отметить её языки, показать ключи */
+  function applyTask(t, langs) {
+    var codes = Object.keys(langs), picked = [], unknown = [];
+    t.langs.forEach(function (name) {
+      var hit = codes.filter(function (c) {
+        var n = langName(c).toLowerCase();
+        return n === name || n.indexOf(name + ' (') === 0 || n.indexOf(name + ',') === 0;
+      });
+      if (hit.length) picked = picked.concat(hit); else unknown.push(name);
+    });
+    if (picked.length) langsBox.querySelectorAll('input').forEach(function (i) { i.checked = picked.indexOf(i.value) >= 0; });
+    taskBox.textContent = '';
+    taskBox.appendChild(el('div', {}, [el('b', { text: 'Из задачи' + (t.task ? ' ' + t.task : '') + ': ' }),
+      el('span', { text: 'языков ' + picked.length + (t.langs.length ? ' из ' + t.langs.length : '') + ', ключей ' + t.keys.length })]));
+    if (unknown.length) taskBox.appendChild(el('div', { class: 'red', text: 'Не нашла в компонентах языки: ' + unknown.join(', ') }));
+    if (!t.langs.length) taskBox.appendChild(el('div', { class: 'muted', text: 'Строку «Языки: …» не нашла — отметь языки сама.' }));
+    if (t.keys.length) {
+      taskBox.appendChild(el('label', { class: 'blk' }, [onlyKeys, ' выгружать только эти ключи']));
+      var kl = el('div', { class: 'complist' });
+      t.keys.forEach(function (k) { kl.appendChild(el('div', { text: k })); });
+      taskBox.appendChild(el('details', {}, [el('summary', { text: 'Ключи (' + t.keys.length + ')' }), kl]));
+    } else {
+      taskBox.appendChild(el('div', { class: 'muted', text: 'Список ключей не нашла — выгружу все непереведённые строки.' }));
+    }
+    taskBox.classList.remove('hide');
+  }
 
   var comps = [];
   function loadLangs() {
     err1.textContent = ''; compList.textContent = '';
-    sset('wlx_links', links.value);
-    if (!parseLinks(links.value).length) { err1.textContent = 'Не нашла ни одной ссылки вида …/projects/<проект>/…'; return; }
+    var text = srcText();
+    if (mode === 'links') sset('wlx_links', text);
+    taskBox.classList.add('hide'); currentTask = mode === 'bot' ? parseTask(text) : null;
+    if (!parseLinks(text).length) { err1.textContent = 'Не нашла ни одной ссылки вида …/projects/<проект>/…'; return; }
     loadBtn.disabled = true; info.textContent = 'Разбираю ссылки…';
-    resolveLinks(links.value).then(function (r) {
+    resolveLinks(text).then(function (r) {
       comps = r.comps;
       if (r.missing.length) err1.textContent = 'Не нашла компоненты по ссылкам:\n' + r.missing.join('\n');
       if (!comps.length) throw new Error('Не нашла ни одного компонента');
@@ -634,6 +730,7 @@
         cb.checked = prev ? prev.indexOf(code) >= 0 : !/generated/i.test(langs[code]);
         langsBox.appendChild(el('label', { title: code }, [cb, langLabel(code)]));
       });
+      if (currentTask) applyTask(currentTask, langs);
       info.textContent = 'Компонентов: ' + comps.length + (comps.length > 100 ? ' — много, выгрузка займёт время' : '');
       var ul = el('div', { class: 'complist' });
       comps.forEach(function (x) { ul.appendChild(el('div', { text: x.p + ' / ' + x.c })); });
@@ -659,6 +756,8 @@
     sset('wlx_langs', JSON.stringify(langs));
     var q = fuzzy.checked ? QUERY_ALL : QUERY_EMPTY;
     var wantJson = pluralsJson.checked;
+    var kf = currentTask && currentTask.keys.length && onlyKeys.checked ? keyFilter(currentTask.keys) : null;
+    exportTag = currentTask && currentTask.task ? currentTask.task : 'all';
     var total = comps.length * langs.length, done = 0, res = [], errs = [];
     function tick() { done++; barFill.style.width = Math.round(100 * done / total) + '%'; progText.textContent = 'Скачиваю… ' + done + ' из ' + total; }
     goBtn.disabled = true; resSec.classList.remove('hide'); results.textContent = '';
@@ -673,13 +772,13 @@
             var src = trs.filter(function (t) { return t.is_source; })[0];
             var srcCode = src ? src.language.code : 'ru';
             return downloadPo(x.p, x.c, code, q).then(function (raw) {
-              var r = filterPo(raw, false);
+              var r = filterPo(raw, false, kf);
               if (!r.plurals || !wantJson) return r;
               return Promise.all([units(x.p, x.c, code, q + ' AND has:plural'), componentFormat(x.p, x.c)]).then(function (a) {
-                var j = pluralJson(a[0], a[1], srcCode, code);
+                var j = pluralJson(a[0], a[1], srcCode, code, kf);
                 if (!j.strings) return r;
                 res.push({ component: x.c, language: code, strings: j.strings, words: j.words, text: j.text, ext: 'json' });
-                return filterPo(raw, true);
+                return filterPo(raw, true, kf);
               }, function (e) {
                 errs.push([x.c, code, 'плюралки не удалось выгрузить в .json, оставила их в .po: ' + friendly(e).split('\n')[0]]);
                 return r;
@@ -697,6 +796,7 @@
       goBtn.disabled = false;
       progText.textContent = 'Готово!';
       barFill.style.width = '100%';
+      if (kf && kf.missing().length) errs.push(['—', '—', 'ключи не нашлись среди непереведённых (уже переведены или нет в компонентах): ' + kf.missing().join(', ')]);
       showResults(res, errs);
     });
   }
@@ -756,7 +856,7 @@
             return [r.component, langName(r.language), r.language, r.ext || 'po', r.strings, r.words].join(';');
           }).join('\n') + '\n';
           files.push({ name: 'summary.csv', text: csv });
-          saveBlob(makeZip(files), 'weblate_all_' + today() + '.zip');
+          saveBlob(makeZip(files), 'weblate_' + (exportTag || 'all') + '_' + today() + '.zip');
         } }),
         layoutHint
       ]));
