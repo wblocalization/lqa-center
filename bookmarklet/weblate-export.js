@@ -11,6 +11,42 @@
   var QUERY_ALL = 'state:<translated';
   var QUERY_EMPTY = 'state:empty';
 
+  /* ---------- языки: русские названия и флаги ---------- */
+  var FLAGS = {} /*FLAGS*/;
+  var RU_NAMES = { ky: 'Киргизский', en_US: 'Английский (США)', en_GB: 'Английский (Великобритания)' };
+  var WL_NAMES = {};
+  var displayNames = null;
+  try { displayNames = new Intl.DisplayNames(['ru'], { type: 'language' }); } catch (e) {}
+  function langName(code) {
+    if (RU_NAMES[code]) return RU_NAMES[code];
+    var wl = WL_NAMES[code] || code;
+    if (/generated/i.test(wl)) return wl;
+    try {
+      var n = displayNames && displayNames.of(code.replace(/_/g, '-'));
+      if (n && n.toLowerCase() !== code.toLowerCase().replace(/_/g, '-')) return n[0].toUpperCase() + n.slice(1);
+    } catch (e) {}
+    return wl;
+  }
+  function flag(code) {
+    var svg = FLAGS[code] || FLAGS[code.toLowerCase().split(/[_\-@]/)[0]];
+    var box = document.createElement('span');
+    box.className = 'flag';
+    if (svg) {
+      try {
+        var doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+        box.appendChild(document.importNode(doc.documentElement, true));
+      } catch (e) {}
+    }
+    return box;
+  }
+  function langLabel(code) {
+    var s = document.createElement('span');
+    s.className = 'lang';
+    s.appendChild(flag(code));
+    s.appendChild(document.createTextNode(langName(code)));
+    return s;
+  }
+
   /* ---------- storage ---------- */
   function sget(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -44,7 +80,10 @@
     return step(url);
   }
   function translations(p, c) {
-    return paginate('/api/components/' + p + '/' + c + '/translations/');
+    return paginate('/api/components/' + p + '/' + c + '/translations/').then(function (trs) {
+      trs.forEach(function (t) { WL_NAMES[t.language.code] = t.language.name; });
+      return trs;
+    });
   }
   function downloadPo(p, c, lang, q) {
     var qs = '?format=po&q=' + encodeURIComponent(q);
@@ -260,7 +299,7 @@
     'button.s{padding:5px 11px;font-size:13px}',
     'button.big{font-size:16px;padding:12px 26px}',
     'button:disabled{opacity:.5;cursor:default}',
-    '.langs{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:2px;margin-top:8px}',
+    '.langs{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px;margin-top:8px}',
     '.langs label{display:flex;gap:7px;align-items:center;padding:5px 7px;border-radius:6px;cursor:pointer}',
     '.langs label:hover{background:#f3f5f8}',
     '.muted{color:#6b7385;font-size:12.5px}',
@@ -284,6 +323,12 @@
     '.opts label{display:block;font-size:13px;color:#6b7385}',
     'select{display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid #d9dde5;border-radius:8px;font:inherit;color:#1d2330;background:#fff}',
     '.ok{color:#1b8a6b}',
+    '.flag{display:inline-block;width:24px;height:18px;flex:none;vertical-align:middle}',
+    '.flag svg{width:24px;height:18px;display:block}',
+    '.lang{display:inline-flex;align-items:center;gap:8px}',
+    '.layouts{display:grid;gap:4px}',
+    '.layouts label{display:flex;gap:8px;align-items:baseline;padding:5px 7px;border-radius:6px;cursor:pointer}',
+    '.layouts label:hover{background:#f3f5f8}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -318,6 +363,26 @@
   var results = el('div');
   var loadBtn = el('button', { class: 'b g', text: 'Загрузить языки', onclick: loadLangs });
   var goBtn = el('button', { class: 'b big', text: 'Выгрузить', onclick: runExport });
+  var LAYOUTS = [
+    ['component', 'По компонентам', 'папка на каждый компонент: wb-web-resale/, wb-web-rqx/…'],
+    ['language', 'По языкам', 'папка на каждый язык: Грузинский/, Казахский/…'],
+    ['flat', 'Всё в одну папку', 'все файлы вместе, без подпапок']
+  ];
+  var layoutBox = el('div', { class: 'layouts' });
+  var savedLayout = sget('wlx_layout') || 'component';
+  LAYOUTS.forEach(function (l) {
+    var r = el('input', { type: 'radio', name: 'wlx-layout', value: l[0] });
+    r.checked = l[0] === savedLayout;
+    r.addEventListener('change', function () { sset('wlx_layout', l[0]); });
+    layoutBox.appendChild(el('label', {}, [r, el('span', {}, [el('b', { text: l[1] }), el('span', { class: 'muted', text: ' — ' + l[2] })])]));
+  });
+  function currentLayout() {
+    var r = layoutBox.querySelector('input:checked');
+    return r ? r.value : 'component';
+  }
+  var englishApart = el('input', { type: 'checkbox' });
+  englishApart.checked = sget('wlx_en') !== '0';
+  englishApart.addEventListener('change', function () { sset('wlx_en', englishApart.checked ? '1' : '0'); });
   var langSec = el('div', { class: 'hide' }, [
     el('h2', { text: '2. Языки' }),
     el('div', { class: 'row' }, [
@@ -326,13 +391,16 @@
     ]),
     langsBox,
     el('label', { class: 'muted blk' }, [fuzzy, ' включать строки «требует правки»']),
+    el('h2', { text: 'Как разложить файлы в архиве' }),
+    layoutBox,
+    el('label', { class: 'muted blk' }, [englishApart, ' английский всегда отдельно — в папку «Английский ШТАТ»']),
     el('div', { class: 'row' }, [goBtn]),
     err2
   ]);
   var resSec = el('div', { class: 'hide' }, [el('h2', { text: '3. Результат' }), progText, el('div', { class: 'bar' }, [barFill]), results]);
 
   var exportPane = el('div', {}, [
-    el('p', { class: 'sub', text: 'Ссылки → языки → «Выгрузить». На выходе .po по каждому компоненту, архив на каждый язык.' }),
+    el('p', { class: 'sub', text: 'Ссылки → языки → «Выгрузить». На выходе .po по каждому компоненту и языку, в архиве — как удобнее: по компонентам, по языкам или всё вместе.' }),
     el('h2', { text: '1. Ссылки на компоненты' }),
     links,
     el('div', { class: 'row' }, [loadBtn, info]),
@@ -424,10 +492,10 @@
       var prev = null;
       try { prev = JSON.parse(sget('wlx_langs') || 'null'); } catch (e) {}
       langsBox.textContent = '';
-      Object.keys(langs).sort(function (a, b) { return langs[a].localeCompare(langs[b]); }).forEach(function (code) {
+      Object.keys(langs).sort(function (a, b) { return langName(a).localeCompare(langName(b), 'ru'); }).forEach(function (code) {
         var cb = el('input', { type: 'checkbox', value: code });
         cb.checked = prev ? prev.indexOf(code) >= 0 : !/generated/i.test(langs[code]);
-        langsBox.appendChild(el('label', {}, [cb, langs[code] + ' ', el('span', { class: 'muted', text: code })]));
+        langsBox.appendChild(el('label', { title: code }, [cb, langLabel(code)]));
       });
       info.textContent = 'Компонентов: ' + comps.length;
       langSec.classList.remove('hide');
@@ -483,7 +551,13 @@
   var ENGLISH_DIR = 'Английский ШТАТ';
   function isEnglish(code) { return baseLang(code) === 'en'; }
   function poName(r) { return r.component + '_' + r.language + '.po'; }
-  function archivePath(r) { return (isEnglish(r.language) ? ENGLISH_DIR : r.component) + '/' + poName(r); }
+  function archivePath(r, layout, englishApart) {
+    var folder = englishApart && isEnglish(r.language) ? ENGLISH_DIR
+      : layout === 'language' ? langName(r.language)
+      : layout === 'flat' ? ''
+      : r.component;
+    return (folder ? folder + '/' : '') + poName(r);
+  }
   function showResults(res, errs) {
     res.sort(function (a, b) { return (a.language + a.component).localeCompare(b.language + b.component); });
     results.textContent = '';
@@ -498,10 +572,10 @@
         el('th', { text: 'Язык' }), el('th', { class: 'n', text: 'Файлов' }),
         el('th', { class: 'n', text: 'Строк' }), el('th', { class: 'n', text: 'Слов' }), el('th')
       ])]);
-      Object.keys(by).sort().forEach(function (lang) {
+      Object.keys(by).sort(function (a, b) { return langName(a).localeCompare(langName(b), 'ru'); }).forEach(function (lang) {
         var a = by[lang];
         t.appendChild(el('tr', {}, [
-          el('td', { text: lang }), el('td', { class: 'n', text: String(a.files) }),
+          el('td', { title: lang }, [langLabel(lang)]), el('td', { class: 'n', text: String(a.files) }),
           el('td', { class: 'n', text: String(a.strings) }), el('td', { class: 'n', text: String(a.words) }),
           el('td', { class: 'n' }, [el('button', { class: 'b g s', text: 'Скачать .zip', onclick: function () {
             saveBlob(makeZip(res.filter(function (r) { return r.language === lang; })
@@ -509,23 +583,34 @@
           } })])
         ]));
       });
+      var layoutHint = el('span', { class: 'muted' });
+      function updateHint() {
+        var l = currentLayout();
+        layoutHint.textContent = (l === 'language' ? 'папки по языкам' : l === 'flat' ? 'все файлы в одной папке' : 'папки по компонентам') +
+          (englishApart.checked ? ', английский — в «' + ENGLISH_DIR + '»' : '') + ' + summary.csv (раскладку можно поменять выше)';
+      }
+      updateHint();
+      layoutBox.addEventListener('change', updateHint);
+      englishApart.addEventListener('change', updateHint);
       results.appendChild(el('div', { class: 'row' }, [
         el('button', { class: 'b', text: '⬇ Скачать всё одним архивом', onclick: function () {
-          var files = res.map(function (r) { return { name: archivePath(r), text: r.text }; });
-          var csv = '﻿component;language;strings;words\n' + res.map(function (r) {
-            return [r.component, r.language, r.strings, r.words].join(';');
+          var layout = currentLayout(), eng = englishApart.checked;
+          var files = res.map(function (r) { return { name: archivePath(r, layout, eng), text: r.text }; });
+          files.sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+          var csv = '﻿компонент;язык;код;строк;слов\n' + res.map(function (r) {
+            return [r.component, langName(r.language), r.language, r.strings, r.words].join(';');
           }).join('\n') + '\n';
           files.push({ name: 'summary.csv', text: csv });
           saveBlob(makeZip(files), 'weblate_all_' + today() + '.zip');
         } }),
-        el('span', { class: 'muted', text: 'папки по компонентам, английский — в «' + ENGLISH_DIR + '», + summary.csv' })
+        layoutHint
       ]));
       results.appendChild(el('p', { class: 'muted', text: 'Или отдельный архив на язык:' }));
       results.appendChild(t);
       var dt = el('table', {}, [el('tr', {}, [el('th', { text: 'Компонент' }), el('th', { text: 'Язык' }),
         el('th', { class: 'n', text: 'Строк' }), el('th', { class: 'n', text: 'Слов' })])]);
       res.forEach(function (r) {
-        dt.appendChild(el('tr', {}, [el('td', { text: r.component }), el('td', { text: r.language }),
+        dt.appendChild(el('tr', {}, [el('td', { text: r.component }), el('td', { title: r.language }, [langLabel(r.language)]),
           el('td', { class: 'n', text: String(r.strings) }), el('td', { class: 'n', text: String(r.words) })]));
       });
       results.appendChild(el('details', {}, [el('summary', { text: 'По компонентам' }), dt]));
@@ -549,6 +634,12 @@
     for (var i = 0; i < l.length; i++) if (l[i].c === component) return l[i].p;
     return l.length ? l[0].p : 'global_site';
   }
+  function byRuName(folder, trs) {
+    var f = (folder || '').trim().toLowerCase();
+    if (!f) return null;
+    var hit = trs.filter(function (t) { return langName(t.language.code).toLowerCase() === f; });
+    return hit.length === 1 ? hit[0].language.code : null;
+  }
   function detect(f) {
     var inf = poInfo(f.text), h = inf.headers;
     var u = { name: f.name, text: f.text, filled: inf.filled, total: inf.total };
@@ -563,7 +654,7 @@
     var wanted = h['Language'] || (suffix && suffix[2]) || folder;
     if (!wanted) { u.error = 'не понятно, какой это язык'; return Promise.resolve(u); }
     return translations(u.p, u.c).then(function (trs) {
-      u.lang = matchLanguage(wanted.replace('-', '_'), trs);
+      u.lang = matchLanguage(wanted.replace('-', '_'), trs) || byRuName(folder, trs);
       if (!u.lang) u.error = 'язык «' + wanted + '» не найден в компоненте';
       return u;
     }, function () { u.error = 'компонент «' + u.p + '/' + u.c + '» не найден'; return u; });
@@ -596,7 +687,7 @@
       u.row = el('td', { class: u.error ? 'red' : (u.sent ? 'ok' : 'muted'), text: u.error || u.status || u.skip || 'готов' });
       t.appendChild(el('tr', {}, [
         el('td', { text: u.name }),
-        el('td', { text: u.lang ? u.c + ' · ' + u.lang : '—' }),
+        u.lang ? el('td', { title: u.p + '/' + u.c + '/' + u.lang }, [el('div', { text: u.c }), langLabel(u.lang)]) : el('td', { text: '—' }),
         el('td', { class: 'n', text: u.filled + ' из ' + u.total }),
         u.row
       ]));
