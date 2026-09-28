@@ -989,25 +989,30 @@
       el('label', {}, ['Smartcat', fSmartcat]), el('label', {}, ['Комментарий', fComment])
     ]));
     var tb = el('table', {}, [el('tr', {}, [el('th', { text: 'Язык' }), el('th', { class: 'n', text: 'Строк' }),
-      el('th', { class: 'n', text: 'Слов' }), el('th', { text: 'Переводчик' })])]);
-    var inputs = {}, lists = {};
+      el('th', { class: 'n', text: 'Слов' }), el('th', { text: 'Переводчик' }), el('th', { text: 'Редактор' })])]);
+    var inputs = {}, lists = {}, edInputs = {}, edLists = {};
     Object.keys(by).sort(function (a, b) { return langName(a).localeCompare(langName(b), 'ru'); }).forEach(function (code) {
       var dl = el('datalist', { id: 'wlx-tr-' + code.replace(/[^A-Za-z0-9_-]/g, '_') });
       var inp = el('input', { type: 'text', list: dl.id, value: sget('wlx_tr_last_' + code) || '', placeholder: 'кто переводит' });
-      inputs[code] = inp; lists[code] = dl;
+      var edl = el('datalist', { id: dl.id + '-ed' });
+      var ed = el('input', { type: 'text', list: edl.id, value: sget('wlx_ed_last_' + code) || '', placeholder: 'кто редактирует' });
+      inputs[code] = inp; lists[code] = dl; edInputs[code] = ed; edLists[code] = edl;
       tb.appendChild(el('tr', {}, [el('td', {}, [langLabel(code)]), el('td', { class: 'n', text: String(by[code].strings) }),
-        el('td', { class: 'n', text: String(by[code].words) }), el('td', {}, [inp, dl])]));
+        el('td', { class: 'n', text: String(by[code].words) }), el('td', {}, [inp, dl]), el('td', {}, [ed, edl])]));
     });
     box.appendChild(tb);
     loadTranslators().then(function (list) {
       Object.keys(inputs).forEach(function (code) {
-        var names = list.filter(function (x) {
+        var forLang = list.filter(function (x) {
           var l = x.lang.toLowerCase();
-          return l === code.toLowerCase() || l === baseLang(code) || l === langName(code).toLowerCase();
-        }).map(function (x) { return x.name; });
-        var dl = lists[code];
-        if (dl) names.forEach(function (n) { dl.appendChild(el('option', { value: n })); });
-        if (!inputs[code].value && names.length === 1) inputs[code].value = names[0];
+          return l === '*' || l === code.toLowerCase() || l === baseLang(code) || l === langName(code).toLowerCase();
+        });
+        var trNames = forLang.filter(function (x) { return x.translator !== false; }).map(function (x) { return x.name; });
+        var edNames = forLang.filter(function (x) { return x.editor !== false && x.role !== 'подрядчик'; }).map(function (x) { return x.name; });
+        trNames.forEach(function (n) { lists[code].appendChild(el('option', { value: n })); });
+        edNames.forEach(function (n) { edLists[code].appendChild(el('option', { value: n })); });
+        var own = forLang.filter(function (x) { return x.translator !== false && x.role !== 'подрядчик' && x.lang !== '*'; });
+        if (!inputs[code].value && own.length === 1) inputs[code].value = own[0].name;
       });
     });
     var msg = el('span', { class: 'muted' });
@@ -1015,10 +1020,11 @@
       var who = trCfg().who;
       var rows = Object.keys(inputs).map(function (code) {
         if (inputs[code].value) sset('wlx_tr_last_' + code, inputs[code].value);
+        if (edInputs[code].value) sset('wlx_ed_last_' + code, edInputs[code].value);
         return {
           task: fTask.value.trim(), taskUrl: fUrl.value.trim(), team: fTeam.value.trim(), components: by[code].comps,
           lang: code, langName: langName(code), strings: by[code].strings, words: by[code].words,
-          translator: inputs[code].value.trim(), deadline: fDeadline.value.trim(), smartcat: fSmartcat.value.trim(),
+          translator: inputs[code].value.trim(), editor: edInputs[code].value.trim(), deadline: fDeadline.value.trim(), smartcat: fSmartcat.value.trim(),
           comment: fComment.value.trim(), who: who
         };
       });
