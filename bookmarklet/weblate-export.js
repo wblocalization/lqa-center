@@ -426,6 +426,13 @@
   var results = el('div');
   var loadBtn = el('button', { class: 'b g', text: 'Загрузить языки', onclick: loadLangs });
   var goBtn = el('button', { class: 'b big', text: 'Выгрузить', onclick: runExport });
+  var clearBtn = el('button', { class: 'b g s', text: 'Очистить', onclick: function () {
+    links.value = ''; links.focus(); info.textContent = ''; err1.textContent = '';
+    langSec.classList.add('hide'); resSec.classList.add('hide');
+  } });
+  var restoreBtn = el('button', { class: 'b g s', text: 'Вернуть прошлые ссылки', onclick: function () {
+    links.value = sget('wlx_links') || '';
+  } });
   var LAYOUTS = [
     ['component', 'По компонентам', 'папка на каждый компонент: wb-web-resale/, wb-web-rqx/…'],
     ['language', 'По языкам', 'папка на каждый язык: Грузинский/, Казахский/…'],
@@ -467,7 +474,7 @@
     el('p', { class: 'sub', text: 'Ссылки → языки → «Выгрузить». На выходе .po по каждому компоненту и языку, в архиве — как удобнее: по компонентам, по языкам или всё вместе.' }),
     el('h2', { text: '1. Ссылки на компоненты' }),
     links,
-    el('div', { class: 'row' }, [loadBtn, info]),
+    el('div', { class: 'row' }, [loadBtn, clearBtn, restoreBtn, info]),
     err1,
     langSec,
     resSec
@@ -538,8 +545,9 @@
     return m;
   }
 
+  /* поле ссылок при открытии пустое; прошлые ссылки можно вернуть кнопкой */
   var saved = sget('wlx_links');
-  links.value = saved || (parseLinks(location.pathname).length ? location.href : '');
+  if (!saved) restoreBtn.classList.add('hide');
 
   var comps = [];
   function loadLangs() {
@@ -628,7 +636,8 @@
   function today() { return new Date().toISOString().slice(0, 10); }
   var ENGLISH_DIR = 'Английский ШТАТ';
   function isEnglish(code) { return baseLang(code) === 'en'; }
-  function poName(r) { return r.component + '_' + r.language + '.' + (r.ext || 'po'); }
+  var PLURAL_MARK = '_plural form';
+  function poName(r) { return r.component + '_' + r.language + (r.ext === 'json' ? PLURAL_MARK + '.json' : '.po'); }
   function archivePath(r, layout, englishApart) {
     var folder = englishApart && isEnglish(r.language) ? ENGLISH_DIR
       : layout === 'language' ? langName(r.language)
@@ -760,7 +769,7 @@
       var m = /\/projects\/([^\/\s>]+)\/([^\/\s>]+)\/([^\/\s>]+)\//.exec(h['Language-Team'] || '');
       if (m) { u.p = m[1]; u.c = m[2]; u.lang = m[3]; return Promise.resolve(u); }
     }
-    var parts = f.name.split('/'), base = parts.pop().replace(/\.(po|json)$/i, '');
+    var parts = f.name.split('/'), base = parts.pop().replace(/\.(po|json)$/i, '').replace(/[ _.-]*plurals?([ _-]*forms?)?$/i, '');
     var suffix = /^(.+)[._]([a-z]{2,3}(?:[_@-][A-Za-z0-9]+)?)$/.exec(base);
     u.c = suffix ? suffix[1] : base; u.p = projectOf(u.c);
     var folder = parts.pop() || '';
