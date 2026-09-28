@@ -79,29 +79,79 @@
     }
     return step(url);
   }
+  /* ---------- компоненты, в т.ч. внутри категорий: c = «категория/компонент» ---------- */
+  var COMP_API = {}, TR_API = {}, PROJECT_COMPS = {};
+  function pathOf(u) {
+    try { var x = new URL(u, location.origin).pathname; return x.slice(-1) === '/' ? x : x + '/'; } catch (e) { return null; }
+  }
+  function compApi(p, c) { return COMP_API[p + '/' + c] || '/api/components/' + p + '/' + c.split('/').join('%252F') + '/'; }
+  function trApi(p, c, lang) { return TR_API[p + '/' + c + '/' + lang] || '/api/translations/' + p + '/' + c.split('/').join('%252F') + '/' + lang + '/'; }
+  function fileKey(c) { return c.split('/').join('__'); }
+  function projectComponents(p) {
+    if (!PROJECT_COMPS[p]) {
+      PROJECT_COMPS[p] = paginate('/api/projects/' + p + '/components/?page_size=1000').then(function (list) {
+        return list.map(function (x) {
+          var web = x.web_url ? pathOf(x.web_url) : null, pre = '/projects/' + p + '/';
+          var c = web && web.indexOf(pre) === 0 ? decodeURIComponent(web.slice(pre.length, -1)) : x.slug;
+          if (x.url) COMP_API[p + '/' + c] = pathOf(x.url);
+          return { p: p, c: c, glossary: !!x.is_glossary };
+        });
+      });
+      PROJECT_COMPS[p].catch(function () { delete PROJECT_COMPS[p]; });
+    }
+    return PROJECT_COMPS[p];
+  }
   function translations(p, c) {
-    return paginate('/api/components/' + p + '/' + c + '/translations/').then(function (trs) {
-      trs.forEach(function (t) { WL_NAMES[t.language.code] = t.language.name; });
+    return paginate(compApi(p, c) + 'translations/').then(function (trs) {
+      trs.forEach(function (t) {
+        WL_NAMES[t.language.code] = t.language.name;
+        if (t.url) TR_API[p + '/' + c + '/' + t.language.code] = pathOf(t.url);
+      });
       return trs;
     });
   }
   function downloadPo(p, c, lang, q) {
     var qs = '?format=po&q=' + encodeURIComponent(q);
-    return http('/api/translations/' + p + '/' + c + '/' + lang + '/file/' + qs, true)
+    return http(trApi(p, c, lang) + 'file/' + qs, true)
       .catch(function (e) {
         return http('/download/' + p + '/' + c + '/' + lang + '/' + qs, true).catch(function () { throw e; });
       });
   }
 
-  /* ---------- links / languages ---------- */
+  /* ---------- ссылки ---------- */
   function parseLinks(text) {
     var seen = {}, out = [];
-    var re = /\/projects\/([^\/\s#?]+)\/([^\/\s#?]+)/g, m;
+    var re = /\/projects\/([^\s#?"'<>]+)/g, m;
     while ((m = re.exec(text))) {
-      var key = m[1] + '/' + m[2];
-      if (!seen[key]) { seen[key] = 1; out.push({ p: m[1], c: m[2] }); }
+      var segs = m[1].split('/').filter(Boolean).map(function (x) { try { return decodeURIComponent(x); } catch (e) { return x; } });
+      if (!segs.length || seen[segs.join('/')]) continue;
+      seen[segs.join('/')] = 1;
+      out.push({ p: segs[0], segs: segs.slice(1), text: segs.join('/') });
     }
     return out;
+  }
+  /* ссылка → компоненты: на компонент, на категорию (все компоненты в ней) или на проект (все) */
+  function resolveLinks(text) {
+    var list = parseLinks(text), out = [], seen = {}, missing = [];
+    function add(p, c) { if (!seen[p + '/' + c]) { seen[p + '/' + c] = 1; out.push({ p: p, c: c }); } }
+    return Promise.all(list.map(function (l) {
+      return projectComponents(l.p).then(function (all) { return { l: l, all: all }; }, function () { return { l: l, all: null }; });
+    })).then(function (rs) {
+      rs.forEach(function (r) {
+        var l = r.l, before = out.length;
+        if (!r.all) { if (l.segs.length) add(l.p, l.segs[0]); else missing.push(l.text); return; }
+        var known = {};
+        r.all.forEach(function (x) { known[x.c] = 1; });
+        for (var k = l.segs.length; k > 0; k--) {
+          var path = l.segs.slice(0, k).join('/');
+          if (known[path]) { add(l.p, path); return; }
+        }
+        var prefix = l.segs.length ? l.segs.join('/') + '/' : '';
+        r.all.forEach(function (x) { if (!x.glossary && x.c.indexOf(prefix) === 0) add(l.p, x.c); });
+        if (out.length === before) missing.push(l.text);
+      });
+      return { comps: out, missing: missing };
+    });
   }
   function baseLang(code) { return code.toLowerCase().split(/[_\-@]/)[0]; }
   function matchLanguage(wanted, trs) {
@@ -175,11 +225,11 @@
   var FORMATS = {};
   function componentFormat(p, c) {
     var k = p + '/' + c;
-    if (!FORMATS[k]) FORMATS[k] = http('/api/components/' + p + '/' + c + '/').then(function (d) { return d.file_format || ''; }, function () { return ''; });
+    if (!FORMATS[k]) FORMATS[k] = http(compApi(p, c)).then(function (d) { return d.file_format || ''; }, function () { return ''; });
     return FORMATS[k];
   }
   function units(p, c, lang, q) {
-    return paginate('/api/translations/' + p + '/' + c + '/' + lang + '/units/?q=' + encodeURIComponent(q));
+    return paginate(trApi(p, c, lang) + 'units/?q=' + encodeURIComponent(q));
   }
   function pluralSuffixes(fmt, code, n) {
     var idx = [];
@@ -325,7 +375,7 @@
       return fd;
     }
     var path = u.p + '/' + u.c + '/' + u.lang + '/';
-    return fetch('/api/translations/' + path + 'file/', {
+    return fetch(trApi(u.p, u.c, u.lang) + 'file/', {
       method: 'POST', credentials: 'same-origin', body: form(true),
       headers: { 'X-CSRFToken': token, 'Accept': 'application/json' }
     }).then(function (r) {
@@ -389,6 +439,7 @@
     '.layouts{display:grid;gap:4px}',
     '.layouts label{display:flex;gap:8px;align-items:baseline;padding:5px 7px;border-radius:6px;cursor:pointer}',
     '.layouts label:hover{background:#f3f5f8}',
+    '.complist{max-height:220px;overflow:auto;font:12.5px/1.6 Consolas,ui-monospace,monospace;color:#1d2330;padding:6px 0}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -414,6 +465,7 @@
 
   var links = el('textarea', { placeholder: 'Вставь ссылки на компоненты — можно прямо сообщение из чата целиком' });
   var info = el('span', { class: 'muted' });
+  var compList = el('div');
   var err1 = el('div', { class: 'err' });
   var langsBox = el('div', { class: 'langs' });
   var fuzzy = el('input', { type: 'checkbox' }); fuzzy.checked = true;
@@ -427,7 +479,7 @@
   var loadBtn = el('button', { class: 'b g', text: 'Загрузить языки', onclick: loadLangs });
   var goBtn = el('button', { class: 'b big', text: 'Выгрузить', onclick: runExport });
   var clearBtn = el('button', { class: 'b g s', text: 'Очистить', onclick: function () {
-    links.value = ''; links.focus(); info.textContent = ''; err1.textContent = '';
+    links.value = ''; links.focus(); info.textContent = ''; err1.textContent = ''; compList.textContent = '';
     langSec.classList.add('hide'); resSec.classList.add('hide');
   } });
   var restoreBtn = el('button', { class: 'b g s', text: 'Вернуть прошлые ссылки', onclick: function () {
@@ -476,6 +528,7 @@
     links,
     el('div', { class: 'row' }, [loadBtn, clearBtn, restoreBtn, info]),
     err1,
+    compList,
     langSec,
     resSec
   ]);
@@ -551,12 +604,24 @@
 
   var comps = [];
   function loadLangs() {
-    err1.textContent = '';
+    err1.textContent = ''; compList.textContent = '';
     sset('wlx_links', links.value);
-    comps = parseLinks(links.value);
-    if (!comps.length) { err1.textContent = 'Не нашла ни одной ссылки вида …/projects/<проект>/<компонент>/'; return; }
-    loadBtn.disabled = true; info.textContent = 'Загружаю языки…';
-    Promise.all(comps.map(function (x) { return translations(x.p, x.c); })).then(function (all) {
+    if (!parseLinks(links.value).length) { err1.textContent = 'Не нашла ни одной ссылки вида …/projects/<проект>/…'; return; }
+    loadBtn.disabled = true; info.textContent = 'Разбираю ссылки…';
+    resolveLinks(links.value).then(function (r) {
+      comps = r.comps;
+      if (r.missing.length) err1.textContent = 'Не нашла компоненты по ссылкам:\n' + r.missing.join('\n');
+      if (!comps.length) throw new Error('Не нашла ни одного компонента');
+      sset('wlx_comps', JSON.stringify(comps));
+      info.textContent = 'Нашла компонентов: ' + comps.length + '. Загружаю языки…';
+      var all = [], done = 0;
+      return pool(comps, 6, function (x) {
+        return translations(x.p, x.c).then(function (trs) {
+          all.push(trs); done++;
+          info.textContent = 'Нашла компонентов: ' + comps.length + '. Загружаю языки… ' + done + ' из ' + comps.length;
+        });
+      }).then(function () { return all; });
+    }).then(function (all) {
       var langs = {};
       all.forEach(function (trs) {
         trs.forEach(function (t) { if (!t.is_source) langs[t.language.code] = t.language.name; });
@@ -569,10 +634,13 @@
         cb.checked = prev ? prev.indexOf(code) >= 0 : !/generated/i.test(langs[code]);
         langsBox.appendChild(el('label', { title: code }, [cb, langLabel(code)]));
       });
-      info.textContent = 'Компонентов: ' + comps.length;
+      info.textContent = 'Компонентов: ' + comps.length + (comps.length > 100 ? ' — много, выгрузка займёт время' : '');
+      var ul = el('div', { class: 'complist' });
+      comps.forEach(function (x) { ul.appendChild(el('div', { text: x.p + ' / ' + x.c })); });
+      compList.appendChild(el('details', {}, [el('summary', { text: 'Какие компоненты нашлись (' + comps.length + ')' }), ul]));
       langSec.classList.remove('hide');
     }).catch(function (e) {
-      err1.textContent = friendly(e); info.textContent = '';
+      err1.textContent = (err1.textContent ? err1.textContent + '\n\n' : '') + friendly(e); info.textContent = '';
     }).then(function () { loadBtn.disabled = false; });
   }
 
@@ -637,12 +705,12 @@
   var ENGLISH_DIR = 'Английский ШТАТ';
   function isEnglish(code) { return baseLang(code) === 'en'; }
   var PLURAL_MARK = '_plural form';
-  function poName(r) { return r.component + '_' + r.language + (r.ext === 'json' ? PLURAL_MARK + '.json' : '.po'); }
+  function poName(r) { return fileKey(r.component) + '_' + r.language + (r.ext === 'json' ? PLURAL_MARK + '.json' : '.po'); }
   function archivePath(r, layout, englishApart) {
     var folder = englishApart && isEnglish(r.language) ? ENGLISH_DIR
       : layout === 'language' ? langName(r.language)
       : layout === 'flat' ? ''
-      : r.component;
+      : fileKey(r.component);
     return (folder ? folder + '/' : '') + poName(r);
   }
   function showResults(res, errs) {
@@ -716,10 +784,14 @@
   drop.addEventListener('drop', function (e) { addFiles(e.dataTransfer.files); });
   fileInput.addEventListener('change', function () { addFiles(fileInput.files); fileInput.value = ''; });
 
-  function projectOf(component) {
-    var l = parseLinks((sget('wlx_links') || '') + '\n' + location.pathname);
-    for (var i = 0; i < l.length; i++) if (l[i].c === component) return l[i].p;
-    return l.length ? l[0].p : 'global_site';
+  function savedComps() { try { return JSON.parse(sget('wlx_comps') || '[]'); } catch (e) { return []; } }
+  function defaultProject() {
+    var sc = savedComps(), l = parseLinks(location.pathname);
+    return sc.length ? sc[0].p : l.length ? l[0].p : 'global_site';
+  }
+  function withTranslations(p, c) {
+    return projectComponents(p).catch(function () {}).then(function () { return translations(p, c); })
+      .then(function (trs) { return { p: p, c: c, trs: trs }; }, function () { return null; });
   }
   function byRuName(folder, trs) {
     var f = (folder || '').trim().toLowerCase();
@@ -727,16 +799,15 @@
     var hit = trs.filter(function (t) { return langName(t.language.code).toLowerCase() === f; });
     return hit.length === 1 ? hit[0].language.code : null;
   }
-  function resolveComponent(p, c) {
-    return translations(p, c).then(function (trs) { return { p: p, c: c, trs: trs }; }, function () {
-      var seen = {}, cands = parseLinks((sget('wlx_links') || '') + '\n' + links.value).filter(function (l) {
-        var ok = (l.c === c || l.c.slice(-(c.length + 1)) === '-' + c) && !seen[l.p + '/' + l.c];
-        seen[l.p + '/' + l.c] = 1;
-        return ok;
-      });
-      if (cands.length !== 1) return null;
-      return translations(cands[0].p, cands[0].c).then(function (trs) { return { p: cands[0].p, c: cands[0].c, trs: trs }; }, function () { return null; });
-    });
+  /* имя файла без языка → компонент: сначала среди компонентов прошлой выгрузки */
+  function resolveComponent(key) {
+    var sc = savedComps(), last = function (c) { return c.split('/').pop(); };
+    var cands = sc.filter(function (x) { return fileKey(x.c) === key || x.c === key; });
+    if (!cands.length) cands = sc.filter(function (x) { return last(x.c) === key; });
+    if (!cands.length) cands = sc.filter(function (x) { return last(x.c).slice(-(key.length + 1)) === '-' + key; });
+    if (cands.length > 1) return Promise.resolve(null);
+    var pick = cands[0] || { p: defaultProject(), c: key.split('__').join('/') };
+    return withTranslations(pick.p, pick.c);
   }
   /* из .json с плюралками убираем то, что осталось на русском (не переведено) */
   function stripJson(u) {
@@ -766,17 +837,24 @@
       var inf = poInfo(f.text);
       h = inf.headers; u.filled = inf.filled; u.total = inf.total;
       if (!inf.filled) u.skip = 'в файле нет переведённых строк — пропущу';
-      var m = /\/projects\/([^\/\s>]+)\/([^\/\s>]+)\/([^\/\s>]+)\//.exec(h['Language-Team'] || '');
-      if (m) { u.p = m[1]; u.c = m[2]; u.lang = m[3]; return Promise.resolve(u); }
+      var lt = /\/projects\/([^\s>"]+)/.exec(h['Language-Team'] || '');
+      var segs = lt ? lt[1].split('/').filter(Boolean) : [];
+      if (segs.length >= 3) {
+        u.p = segs[0]; u.c = segs.slice(1, -1).join('/'); u.lang = segs[segs.length - 1];
+        return withTranslations(u.p, u.c).then(function (r) {
+          if (!r) u.error = 'компонент «' + u.c + '» не найден';
+          return u;
+        });
+      }
     }
     var parts = f.name.split('/'), base = parts.pop().replace(/\.(po|json)$/i, '').replace(/[ _.-]*plurals?([ _-]*forms?)?$/i, '');
     var suffix = /^(.+)[._]([a-z]{2,3}(?:[_@-][A-Za-z0-9]+)?)$/.exec(base);
-    u.c = suffix ? suffix[1] : base; u.p = projectOf(u.c);
+    u.c = suffix ? suffix[1] : base;
     var folder = parts.pop() || '';
     if (folder === ENGLISH_DIR) folder = 'en';
     var wanted = h['Language'] || (suffix && suffix[2]) || folder;
     if (!wanted) { u.error = 'не понятно, какой это язык'; return Promise.resolve(u); }
-    return resolveComponent(u.p, u.c).then(function (r) {
+    return resolveComponent(u.c).then(function (r) {
       if (!r) { u.error = 'компонент «' + u.c + '» не найден — переименуй файл в <компонент>_<язык>'; return u; }
       u.p = r.p; u.c = r.c;
       u.lang = matchLanguage(wanted.replace('-', '_'), r.trs) || byRuName(folder, r.trs);
