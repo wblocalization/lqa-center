@@ -187,7 +187,13 @@
       });
     });
     var t = /\/([A-Z][A-Z0-9]+-\d+)(?:[\/\s?#]|$)/.exec(text) || /\b([A-Z][A-Z0-9]+-\d+)\b/.exec(text);
-    return { keys: keys.filter(function (k, i) { return keys.indexOf(k) === i; }), langs: langs, task: t ? t[1] : '' };
+    var field = function (re) { for (var i = 0; i < lines.length; i++) { var m = re.exec(lines[i]); if (m) return m[1].trim(); } return ''; };
+    var taskLine = field(/^задача\s*:\s*(.+)$/i), url = /https?:\/\/\S+/.exec(taskLine);
+    return {
+      keys: keys.filter(function (k, i) { return keys.indexOf(k) === i; }), langs: langs, task: t ? t[1] : '',
+      taskUrl: url ? url[0] : '', team: field(/^команда\s*:\s*(.+)$/i),
+      deadline: field(/(?:срок|дедлайн|deadline)\s*:?\s*(\d{1,2}[.\/]\d{1,2}(?:[.\/]\d{2,4})?)/i)
+    };
   }
   function keyFilter(keys) {
     var set = {}, found = {};
@@ -202,6 +208,45 @@
       },
       missing: function () { return keys.filter(function (k) { return !found[k]; }); }
     };
+  }
+
+  /* ---------- трекер задач: Google Таблица через Apps Script (tracker/Code.gs) ---------- */
+  var TRACKER_DEFAULT = {};
+  function trCfg() {
+    return {
+      url: sget('wlx_tr_url') || TRACKER_DEFAULT.url || '',
+      token: sget('wlx_tr_token') || TRACKER_DEFAULT.token || '',
+      who: sget('wlx_tr_who') || ''
+    };
+  }
+  function trRequest(method, url, body) {
+    var ext = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage;
+    var p = ext ? new Promise(function (resolve, reject) {
+      chrome.runtime.sendMessage({ type: 'wlx-tracker', method: method, url: url, body: body }, function (r) {
+        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+        if (!r || !r.ok) return reject(new Error((r && r.error) || 'нет ответа'));
+        resolve(r.text);
+      });
+    }) : fetch(url, method === 'POST' ? { method: 'POST', body: body, headers: { 'Content-Type': 'text/plain;charset=utf-8' } } : {})
+      .then(function (r) { return r.text(); });
+    return p.then(function (t) {
+      var j;
+      try { j = JSON.parse(t); } catch (e) { throw new Error('таблица ответила не JSON — проверь ссылку и доступ «Все»: ' + String(t).slice(0, 120)); }
+      if (!j.ok) throw new Error(j.error || 'ошибка таблицы');
+      return j;
+    }, function (e) {
+      throw new Error(ext ? String(e.message || e) : 'из закладки таблица может быть недоступна (защита Weblate) — используй расширение. ' + (e.message || e));
+    });
+  }
+  function trGet(params) {
+    var c = trCfg(), q = Object.keys(params).map(function (k) { return k + '=' + encodeURIComponent(params[k]); }).join('&');
+    return trRequest('GET', c.url + (c.url.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(c.token) + (q ? '&' + q : ''));
+  }
+  function trPost(body) { body.token = trCfg().token; return trRequest('POST', trCfg().url, JSON.stringify(body)); }
+  var TRANSLATORS = null;
+  function loadTranslators() {
+    if (!TRANSLATORS) TRANSLATORS = trGet({ action: 'translators' }).then(function (j) { return j.translators || []; }, function () { TRANSLATORS = null; return []; });
+    return TRANSLATORS;
   }
 
   /* ---------- PO filter: keep header + empty / fuzzy entries ---------- */
@@ -488,6 +533,11 @@
     '.seg{display:flex;gap:6px;margin-bottom:8px}',
     '.seg button.on{background:#1b8a6b;color:#fff}',
     '.task{margin-top:12px;padding:10px 12px;border-radius:8px;background:#f3f5f8;font-size:13.5px}',
+    '.settings{margin:6px 0 10px;padding:12px 14px;border-radius:10px;background:#f3f5f8}',
+    '.settings label,.grid2 label{display:block;font-size:13px;color:#6b7385;margin-top:8px}',
+    '.settings input,.grid2 input,.track td input{display:block;width:100%;box-sizing:border-box;margin-top:3px;padding:7px 9px;border:1px solid #d9dde5;border-radius:7px;font:inherit;color:#1d2330;background:#fff}',
+    '.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}',
+    '.track{margin-top:18px;border-top:1px solid #eceef2;padding-top:4px}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -634,12 +684,44 @@
     exportPane.classList.toggle('hide', !exp); importPane.classList.toggle('hide', exp);
   }
 
+  /* ----- настройки таблицы задач ----- */
+  var stUrl = el('input', { type: 'text', placeholder: 'https://script.google.com/macros/s/…/exec' });
+  var stToken = el('input', { type: 'password', placeholder: 'токен из скрипта (TOKEN)' });
+  var stWho = el('input', { type: 'text', placeholder: 'например: Настя Лисовая' });
+  var stMsg = el('div', { class: 'muted' });
+  function fillSettings() { var c = trCfg(); stUrl.value = c.url; stToken.value = c.token; stWho.value = c.who; }
+  fillSettings();
+  var settingsPane = el('div', { class: 'settings hide' }, [
+    el('h2', { text: 'Таблица задач переводчиков (Google Таблица)' }),
+    el('p', { class: 'muted', text: 'Если подключить, выгрузки можно записывать в общую таблицу, а загрузка обратно сама отмечает их выполненными. Как создать таблицу — tracker/README.md.' }),
+    el('label', {}, ['Ссылка на веб-приложение', stUrl]),
+    el('label', {}, ['Токен', stToken]),
+    el('label', {}, ['Твоё имя (кто выгрузил / загрузил)', stWho]),
+    el('div', { class: 'row' }, [
+      el('button', { class: 'b s', text: 'Сохранить', onclick: function () {
+        sset('wlx_tr_url', stUrl.value.trim()); sset('wlx_tr_token', stToken.value.trim()); sset('wlx_tr_who', stWho.value.trim());
+        TRANSLATORS = null; stMsg.textContent = 'Сохранено';
+      } }),
+      el('button', { class: 'b g s', text: 'Проверить подключение', onclick: function () {
+        sset('wlx_tr_url', stUrl.value.trim()); sset('wlx_tr_token', stToken.value.trim()); sset('wlx_tr_who', stWho.value.trim());
+        TRANSLATORS = null; stMsg.textContent = 'Проверяю…';
+        trGet({}).then(function (j) { stMsg.textContent = '✓ Подключено: таблица «' + (j.sheet || '') + '»'; },
+          function (e) { stMsg.textContent = '✗ ' + (e.message || e); });
+      } }),
+      stMsg
+    ])
+  ]);
+
   var back = el('div', { class: 'back', onclick: function (e) { if (e.target === back) hide(); } }, [
     el('div', { class: 'box' }, [
       el('div', { class: 'top' }, [
         el('h1', { text: 'Weblate: выгрузка и загрузка переводов' }),
-        el('button', { class: 'x', title: 'Закрыть', text: '×', onclick: hide })
+        el('div', {}, [
+          el('button', { class: 'x', title: 'Таблица задач (настройки)', text: '⚙', onclick: function () { settingsPane.classList.toggle('hide'); } }),
+          el('button', { class: 'x', title: 'Закрыть', text: '×', onclick: hide })
+        ])
       ]),
+      settingsPane,
       el('div', { class: 'tabs' }, [tabExp, tabImp]),
       exportPane,
       importPane
@@ -875,6 +957,79 @@
       errs.forEach(function (e) { et.appendChild(el('tr', {}, e.map(function (v) { return el('td', { text: v }); }))); });
       results.appendChild(el('details', { open: '' }, [el('summary', { text: 'Проблемы: ' + errs.length, class: 'red' }), et]));
     }
+    renderTracker(res);
+  }
+
+  /* ----- шаг «Записать в таблицу» после выгрузки ----- */
+  function renderTracker(res) {
+    if (!res.length) return;
+    var box = el('div', { class: 'track' }, [el('h2', { text: '4. Записать задачу в таблицу' })]);
+    results.appendChild(box);
+    var c = trCfg();
+    if (!c.url) {
+      box.appendChild(el('p', { class: 'muted', text: 'Можно фиксировать, кому и что ушло на перевод, в общей Google Таблице — подключи её в ⚙ вверху окна.' }));
+      return;
+    }
+    var t = currentTask || {};
+    var by = {};
+    res.forEach(function (r) {
+      var a = by[r.language] = by[r.language] || { strings: 0, words: 0, comps: [] };
+      a.strings += r.strings; a.words += r.words;
+      if (a.comps.indexOf(r.component) < 0) a.comps.push(r.component);
+    });
+    var fTask = el('input', { type: 'text', value: t.task || '', placeholder: 'TRN-480' });
+    var fUrl = el('input', { type: 'text', value: t.taskUrl || '', placeholder: 'ссылка на задачу' });
+    var fTeam = el('input', { type: 'text', value: t.team || '' });
+    var fDeadline = el('input', { type: 'text', value: t.deadline || '', placeholder: '01.10' });
+    var fSmartcat = el('input', { type: 'text', placeholder: 'ссылка на проект в Smartcat' });
+    var fComment = el('input', { type: 'text' });
+    box.appendChild(el('div', { class: 'grid2' }, [
+      el('label', {}, ['Задача', fTask]), el('label', {}, ['Ссылка на задачу', fUrl]),
+      el('label', {}, ['Команда', fTeam]), el('label', {}, ['Срок', fDeadline]),
+      el('label', {}, ['Smartcat', fSmartcat]), el('label', {}, ['Комментарий', fComment])
+    ]));
+    var tb = el('table', {}, [el('tr', {}, [el('th', { text: 'Язык' }), el('th', { class: 'n', text: 'Строк' }),
+      el('th', { class: 'n', text: 'Слов' }), el('th', { text: 'Переводчик' })])]);
+    var inputs = {}, lists = {};
+    Object.keys(by).sort(function (a, b) { return langName(a).localeCompare(langName(b), 'ru'); }).forEach(function (code) {
+      var dl = el('datalist', { id: 'wlx-tr-' + code.replace(/[^A-Za-z0-9_-]/g, '_') });
+      var inp = el('input', { type: 'text', list: dl.id, value: sget('wlx_tr_last_' + code) || '', placeholder: 'кто переводит' });
+      inputs[code] = inp; lists[code] = dl;
+      tb.appendChild(el('tr', {}, [el('td', {}, [langLabel(code)]), el('td', { class: 'n', text: String(by[code].strings) }),
+        el('td', { class: 'n', text: String(by[code].words) }), el('td', {}, [inp, dl])]));
+    });
+    box.appendChild(tb);
+    loadTranslators().then(function (list) {
+      Object.keys(inputs).forEach(function (code) {
+        var names = list.filter(function (x) {
+          var l = x.lang.toLowerCase();
+          return l === code.toLowerCase() || l === baseLang(code) || l === langName(code).toLowerCase();
+        }).map(function (x) { return x.name; });
+        var dl = lists[code];
+        if (dl) names.forEach(function (n) { dl.appendChild(el('option', { value: n })); });
+        if (!inputs[code].value && names.length === 1) inputs[code].value = names[0];
+      });
+    });
+    var msg = el('span', { class: 'muted' });
+    var btn = el('button', { class: 'b', text: 'Записать в таблицу', onclick: function () {
+      var who = trCfg().who;
+      var rows = Object.keys(inputs).map(function (code) {
+        if (inputs[code].value) sset('wlx_tr_last_' + code, inputs[code].value);
+        return {
+          task: fTask.value.trim(), taskUrl: fUrl.value.trim(), team: fTeam.value.trim(), components: by[code].comps,
+          lang: code, langName: langName(code), strings: by[code].strings, words: by[code].words,
+          translator: inputs[code].value.trim(), deadline: fDeadline.value.trim(), smartcat: fSmartcat.value.trim(),
+          comment: fComment.value.trim(), who: who
+        };
+      });
+      btn.disabled = true; msg.textContent = 'Записываю…';
+      trPost({ action: 'export', rows: rows }).then(function (j) {
+        msg.className = 'ok';
+        msg.textContent = '✓ В таблице: новых строк ' + j.added + (j.updated ? ', обновлено ' + j.updated : '');
+      }, function (e) { msg.className = 'red'; msg.textContent = '✗ ' + (e.message || e); btn.disabled = false; });
+    } });
+    box.appendChild(el('div', { class: 'row' }, [btn, msg]));
+    if (!c.who) box.appendChild(el('p', { class: 'muted', text: 'Совет: впиши своё имя в ⚙ — оно попадёт в колонку «Выгрузил(а)».' }));
   }
 
   /* ----- import logic ----- */
@@ -1027,6 +1182,15 @@
       });
     }).then(function () {
       upResults.textContent = 'Готово: загружено ' + ok + (bad ? ', с ошибкой ' + bad + ' (наведи на ошибку, чтобы увидеть подробности)' : '');
+      var sent = todo.filter(function (u) { return u.sent; });
+      if (!sent.length || !trCfg().url) return;
+      var note = el('div', { class: 'muted', text: 'Отмечаю в таблице задач…' });
+      upResults.appendChild(note);
+      trPost({ action: 'upload', who: trCfg().who, items: sent.map(function (u) { return { component: u.c, lang: u.lang }; }) }).then(function (j) {
+        note.className = 'ok';
+        note.textContent = j.marked ? '✓ В таблице отмечено строк: ' + j.marked + ' (' + Object.keys(j.rows).map(function (k) { return k + ' — ' + j.rows[k]; }).join('; ') + ')'
+          : 'В таблице нет открытых задач на эти компоненты и языки';
+      }, function (e) { note.className = 'red'; note.textContent = 'Таблица задач: ' + (e.message || e); });
     }).catch(function (e) {
       upResults.textContent = friendly(e);
     }).then(function () { upBtn.disabled = false; });
