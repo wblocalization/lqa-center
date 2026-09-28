@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Выгрузка из Weblate</title>
+<!-- Сгенерировано bookmarklet/build.py из bookmarklet/index.template.html — правь шаблон, не этот файл. -->
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#6b7385; --line:#e3e6ec; --accent:#1b8a6b; --accent-2:#e8f5f0; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:40px 16px 64px; }
+  h1 { font-size:26px; margin:0 0 6px; }
+  .sub { color:var(--muted); margin:0 0 28px; }
+  .step { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:14px; display:flex; gap:14px; }
+  .num { flex:none; width:28px; height:28px; border-radius:50%; background:var(--accent); color:#fff; display:grid; place-items:center; font-weight:700; }
+  .step h2 { font-size:16px; margin:2px 0 6px; }
+  .step p { margin:4px 0; }
+  kbd { background:#fff; border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:1px 6px; font:13px ui-monospace,Consolas,monospace; }
+  .bm { display:inline-block; margin:10px 0 4px; padding:12px 22px; border-radius:10px; background:var(--accent); color:#fff; font-weight:700;
+        font-size:16px; text-decoration:none; cursor:grab; box-shadow:0 3px 10px rgba(27,138,107,.3); }
+  .bm:active { cursor:grabbing; }
+  .muted { color:var(--muted); font-size:13.5px; }
+  .note { margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--accent-2); color:#135e49; font-size:14px; display:none; }
+  details { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 20px; margin-top:22px; }
+  summary { cursor:pointer; font-weight:600; }
+  button { font:inherit; border:0; border-radius:8px; padding:8px 16px; cursor:pointer; background:var(--accent); color:#fff; font-weight:600; }
+  ol { padding-left:20px; } li { margin:4px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Выгрузка непереведённых строк из Weblate</h1>
+  <p class="sub">Настраивается один раз. Потом — одна кнопка в закладках браузера. Без программ и без токена.</p>
+
+  <div class="step"><div class="num">1</div><div>
+    <h2>Включи панель закладок</h2>
+    <p>Нажми <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd> (на Mac — <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd>), чтобы под адресной строкой появилась панель закладок.</p>
+  </div></div>
+
+  <div class="step"><div class="num">2</div><div>
+    <h2>Перетащи эту кнопку мышкой на панель закладок</h2>
+    <a class="bm" id="bm" href="{{BOOKMARKLET}}">⬇ Выгрузка Weblate</a>
+    <p class="muted">Именно перетащи, зажав мышку, а не нажимай.</p>
+    <div class="note" id="note">Эту кнопку нужно не нажать, а <b>перетащить</b> на панель закладок. Потом нажимай её уже на странице Weblate.</div>
+  </div></div>
+
+  <div class="step"><div class="num">3</div><div>
+    <h2>Открой Weblate и нажми закладку</h2>
+    <p>Зайди на <b>weblate.wb.ru</b> (под своим логином, как обычно) и нажми «⬇ Выгрузка Weblate» на панели закладок.</p>
+    <p>Поверх Weblate откроется окно: вставь ссылки на компоненты (можно всё сообщение из чата целиком) → «Загрузить языки» → отметь языки → «Выгрузить» → скачай архивы.</p>
+    <p class="muted">В архивах — .po по каждому компоненту: только пустые строки и «требует правки», в том же формате, что «Скачать перевод → gettext PO». Где язык переведён на 100%, файла не будет. Ссылки и языки запоминаются до следующего раза.</p>
+  </div></div>
+
+  <details>
+    <summary>Не получается перетащить?</summary>
+    <ol>
+      <li>Нажми кнопку ниже — код закладки скопируется.</li>
+      <li>Нажми <kbd>Ctrl</kbd> + <kbd>D</kbd> (добавить закладку) → «Ещё» / «Изменить».</li>
+      <li>Название: <b>Выгрузка Weblate</b>. В поле «URL» / «Адрес» удали всё и вставь скопированное (<kbd>Ctrl</kbd> + <kbd>V</kbd>). Сохрани.</li>
+    </ol>
+    <button id="copy">Скопировать код закладки</button> <span class="muted" id="copied"></span>
+  </details>
+</main>
+<script>
+  var bm = document.getElementById('bm');
+  bm.addEventListener('click', function (e) {
+    e.preventDefault();
+    document.getElementById('note').style.display = 'block';
+  });
+  document.getElementById('copy').addEventListener('click', function () {
+    var done = function () { document.getElementById('copied').textContent = 'Скопировано ✓'; };
+    if (navigator.clipboard) navigator.clipboard.writeText(bm.href).then(done, fallback); else fallback();
+    function fallback() {
+      var t = document.createElement('textarea'); t.value = bm.href; document.body.appendChild(t);
+      t.select(); document.execCommand('copy'); t.remove(); done();
+    }
+  });
+</script>
+</body>
+</html>
