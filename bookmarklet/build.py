@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Собирает index.html с кнопкой-закладкой из weblate-export.js.
+"""Собирает из weblate-export.js закладку (index.html) и расширение Chrome (extension/).
 
     python bookmarklet/build.py
 """
 import html
 import re
+import shutil
+import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -25,6 +27,13 @@ def main():
     page = page.replace("{{BOOKMARKLET}}", html.escape(href, quote=True))
     (ROOT / "index.html").write_text(page, encoding="utf-8")
     print(f"index.html: закладка {len(href) // 1024} КБ")
+    shutil.copyfile(HERE / "weblate-export.js", ROOT / "extension" / "weblate-export.js")
+    ext = ROOT / "extension"
+    with zipfile.ZipFile(ROOT / "weblate-extension.zip", "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(ext.rglob("*")):
+            if f.is_file():
+                z.write(f, Path("weblate-extension") / f.relative_to(ext))
+    print("extension/ и weblate-extension.zip обновлены")
 
 
 if __name__ == "__main__":
