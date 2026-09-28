@@ -1,0 +1,15 @@
+# Вставь сюда ссылки из запроса как есть — по одной в строке
+https://weblate.wb.ru/projects/global_site/wb-web-wishlists/#translations
+https://weblate.wb.ru/projects/global_site/wbtrack/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-rqx/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-resale/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-refund/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-recommendations/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-pdl/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-orders/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-loyalty/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-kids/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-club/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-chats/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-b2b/#translations
+https://weblate.wb.ru/projects/global_site/wb-web-ai-assistant/#translations
