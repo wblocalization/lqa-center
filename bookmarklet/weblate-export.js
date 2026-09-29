@@ -199,6 +199,7 @@
     android: 'https://smartcat.com/projects/732af7d0-0e14-4705-99dd-97b31f8f4933',
     ios: 'https://smartcat.com/projects/85c99769-dcf4-429c-8432-7ed09a4d2f10'
   };
+  var SC_PROJECT_DEFAULT = 'AI translation 4 MP';
   var SC_LANG_DEFAULTS = 'ru=ru-RU\nen=en\nen_US=en\nkk=kk\nky=ky\ntg=tg\nka=ka\nhy=hy\nuz=uz-Latn\nuz_Latn=uz-Latn';
   function scPlatform(p, c) {
     var t = (p + '/' + c).toLowerCase();
@@ -737,7 +738,7 @@
   var scCustom = el('input', { type: 'text', placeholder: 'https://…' });
   var scAccount = el('input', { type: 'text', placeholder: 'Account ID' });
   var scKey = el('input', { type: 'password', placeholder: 'API-ключ' });
-  var scProject = el('input', { type: 'text', placeholder: 'ссылка на проект или название, например: AI translation 4 MP' });
+  var scProject = el('input', { type: 'text', placeholder: 'ссылка на проект или название; пусто = ' + SC_PROJECT_DEFAULT });
   var scEnAndroid = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.android });
   var scEnIos = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.ios });
   var scLangs = el('textarea', { class: 'small', placeholder: 'если Smartcat не принимает код языка, например:\nuz_Latn=uz-Latn' });
@@ -746,14 +747,17 @@
   var scCfg = null;
   function loadScConfig() {
     if (!HAS_EXT) return Promise.resolve(null);
-    return scCall('sc-get-config').then(function (c) { scCfg = c; return c; }, function () { return null; });
+    return scCall('sc-get-config').then(function (c) {
+      if (!c.project) c.project = SC_PROJECT_DEFAULT;
+      scCfg = c; return c;
+    }, function () { return null; });
   }
   function fillScSettings() {
     loadScConfig().then(function (c) {
       if (!c) return;
       scServer.value = c.server; scCustom.value = c.customUrl; scAccount.value = c.accountId;
       scKey.value = ''; scKey.placeholder = c.hasKey ? 'ключ сохранён — впиши новый, чтобы заменить' : 'API-ключ';
-      scLangs.value = c.langMap; scExtra.value = c.extra; scProject.value = c.project;
+      scLangs.value = c.langMap; scExtra.value = c.extra; scProject.value = c.project === SC_PROJECT_DEFAULT ? '' : c.project;
       scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos;
     });
   }
@@ -763,6 +767,33 @@
       apiKey: scKey.value.trim(), langMap: scLangs.value, extra: scExtra.value.trim(), project: scProject.value.trim(),
       enAndroid: scEnAndroid.value.trim(), enIos: scEnIos.value.trim() } }).then(loadScConfig);
   }
+  /* копия настроек в файл (без API-ключа) — для нового компьютера или коллеги */
+  var BACKUP_KEYS = ['wlx_links', 'wlx_langs', 'wlx_layout', 'wlx_en', 'wlx_pj', 'wlx_mt_links', 'wlx_sc_split', 'wlx_m', 'wlx_f', 'wlx_c'];
+  var restoreInput = el('input', { type: 'file', accept: '.json', class: 'hide' });
+  function backupSettings() {
+    loadScConfig().then(function (c) {
+      var local = {};
+      BACKUP_KEYS.forEach(function (k) { var v = sget(k); if (v !== null) local[k] = v; });
+      var data = { weblateExtensionSettings: 1, saved: new Date().toISOString(), smartcat: c ? {
+        server: c.server, customUrl: c.customUrl, accountId: c.accountId, langMap: c.langMap, extra: c.extra,
+        project: c.project === SC_PROJECT_DEFAULT ? '' : c.project, enAndroid: c.enAndroid, enIos: c.enIos } : null, local: local };
+      saveBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), 'weblate-extension-settings.json');
+      scMsg.textContent = 'Сохранено в файл (без API-ключа)';
+    });
+  }
+  restoreInput.addEventListener('change', function () {
+    var f = restoreInput.files[0]; restoreInput.value = '';
+    if (!f) return;
+    f.text().then(function (t) {
+      var d = JSON.parse(t);
+      if (!d.weblateExtensionSettings) throw new Error('это не файл настроек расширения');
+      Object.keys(d.local || {}).forEach(function (k) { if (BACKUP_KEYS.indexOf(k) >= 0) sset(k, d.local[k]); });
+      return d.smartcat ? scCall('sc-set-config', { config: Object.assign({}, d.smartcat, { apiKey: '' }) }) : null;
+    }).then(function () {
+      fillScSettings(); scLinks.value = sget('wlx_mt_links') || SC_DEFAULT_LINKS;
+      scMsg.textContent = '✓ Настройки загружены из файла. API-ключ — впиши, если его здесь ещё нет.';
+    }, function (e) { scMsg.textContent = '✗ ' + (e.message || e); });
+  });
   var settingsPane = el('div', { class: 'settings hide' }, [
     el('h2', { text: 'Smartcat' }),
     el('p', { class: 'muted', text: 'Ключ API: Smartcat → Настройки → API (создаёт администратор аккаунта). Ключ хранится только в расширении на этом компьютере.' }),
@@ -770,7 +801,7 @@
     el('label', {}, ['Адрес (если «свой адрес»)', scCustom]),
     el('label', {}, ['Account ID', scAccount]),
     el('label', {}, ['API-ключ', scKey]),
-    el('label', {}, ['Проект в Smartcat (файлы будут складываться в папки ДДММГГ_android / ДДММГГ_ios внутри него; пусто — новый проект на каждую отправку)', scProject]),
+    el('label', {}, ['Проект в Smartcat (файлы складываются в папки ДДММГГ_android / ДДММГГ_ios внутри него; пусто — «' + SC_PROJECT_DEFAULT + '»)', scProject]),
     el('label', {}, ['Английский дополнительно в проект (android) — пусто = стандартный', scEnAndroid]),
     el('label', {}, ['Английский дополнительно в проект (ios) — пусто = стандартный', scEnIos]),
     el('details', {}, [el('summary', { text: 'Дополнительно' }),
@@ -786,14 +817,20 @@
         saveScSettings().then(function () { return scCall('sc-check'); }).then(function (a) {
           scMsg.textContent = '✓ Подключено к Smartcat' + (a.name ? ': ' + a.name : '');
           fillScSettings();
-          if (scProject.value.trim()) return scCall('sc-resolve-project', { ref: scProject.value.trim() }).then(function (pr) {
+          return scCall('sc-resolve-project', { ref: scProject.value.trim() || SC_PROJECT_DEFAULT }).then(function (pr) {
             scMsg.textContent += ' · проект «' + pr.name + '» найден' +
               (pr.targetLanguages.length ? ', коды языков в нём: ' + pr.targetLanguages.join(', ') : '');
           });
         }, function (e) { scMsg.textContent = '✗ ' + e.message; });
       } }),
       scMsg
-    ])
+    ]),
+    el('div', { class: 'row' }, [
+      el('button', { class: 'b g s', text: 'Сохранить настройки в файл', onclick: backupSettings }),
+      el('button', { class: 'b g s', text: 'Загрузить настройки из файла', onclick: function () { restoreInput.click(); } }),
+      restoreInput
+    ]),
+    el('p', { class: 'muted', text: 'Настройки хранятся в расширении и не сбрасываются при обновлении. Файл нужен только для другого компьютера.' })
   ]);
 
   var back = el('div', { class: 'back', onclick: function (e) { if (e.target === back) hide(); } }, [
