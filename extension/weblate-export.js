@@ -1553,7 +1553,12 @@
   function setRow(u, cls, text) { u.status = text; u.row.className = cls; u.row.textContent = text; }
   function runUpload(only) {
     var todo = uploads.filter(function (u) { return !u.error && !u.skip && !u.sent && (typeof only !== 'function' || only(u)); });
-    if (!todo.length) { upResults.textContent = 'Нечего загружать'; return; }
+    if (!todo.length) {
+      var sentAll = uploads.length && uploads.every(function (u) { return u.sent || u.error || u.skip; }) && uploads.some(function (u) { return u.sent; });
+      upResults.textContent = sentAll ? '✓ Всё из списка уже загружено — повторно загружать не нужно. Можно нажать «Очистить список».'
+        : 'Нечего загружать: добавь файлы или посмотри причины в колонке «Статус»';
+      return;
+    }
     var opts = { method: optMethod.value, fuzzy: optFuzzy.value, conflicts: optConf.value };
     /* машинный перевод из Smartcat — всегда «добавить как перевод» + «только непереведённые строки»;
        выбор в «3. Как загружать» — для файлов подрядчиков, его и запоминаем */
