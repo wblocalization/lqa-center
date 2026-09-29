@@ -177,7 +177,21 @@
       });
     });
   }
-  var MT_LANGS = ['az', 'hy', 'kk', 'ka', 'uz', 'ky', 'en'];
+  /* языки машперевода — как в проекте Smartcat «AI translation 4 MP» */
+  var MT_LANGS = ['kk', 'ky', 'tg', 'ka', 'hy', 'uz', 'en'];
+  /* если в Weblate у языка несколько вариантов (en / en_US, uz / uz_Latn) — берём один:
+     для узбекского латиницу, для остальных основной код */
+  function mtPick(codes) {
+    var out = [];
+    MT_LANGS.forEach(function (b) {
+      var c = codes.filter(function (x) { return baseLang(x) === b && !/generated/i.test(WL_NAMES[x] || ''); });
+      if (!c.length) return;
+      var pick = b === 'uz' ? (c.filter(function (x) { return /latn/i.test(x); })[0] || c.filter(function (x) { return x === b; })[0])
+        : c.filter(function (x) { return x === b; })[0];
+      out.push(pick || c.sort(function (x, y) { return x.length - y.length; })[0]);
+    });
+    return out;
+  }
   /* код Weblate → код Smartcat: из настроек (uz_Latn=uz-Latn) или просто «_» → «-» */
   function scLangMap(text) {
     var m = {};
@@ -568,8 +582,10 @@
     el('div', { class: 'row' }, [
       el('button', { class: 'b g s', text: 'Все', onclick: function () { setAll(true); } }),
       el('button', { class: 'b g s', text: 'Снять все', onclick: function () { setAll(false); } }),
-      el('button', { class: 'b g s', text: 'Набор для машперевода: AZ HY KK KA UZ KY EN', title: 'Отметить языки, которые идут на машинный перевод в Smartcat', onclick: function () {
-        langsBox.querySelectorAll('input').forEach(function (i) { i.checked = MT_LANGS.indexOf(baseLang(i.value)) >= 0 && !/generated/i.test(WL_NAMES[i.value] || ''); });
+      el('button', { class: 'b g s', text: 'Набор для машперевода: KK KY TG KA HY UZ EN', title: 'Отметить языки, которые идут на машинный перевод в Smartcat', onclick: function () {
+        var inputs = Array.prototype.slice.call(langsBox.querySelectorAll('input'));
+        var pick = mtPick(inputs.map(function (i) { return i.value; }));
+        inputs.forEach(function (i) { i.checked = pick.indexOf(i.value) >= 0; });
       } })
     ]),
     langsBox,
@@ -686,7 +702,8 @@
           scMsg.textContent = '✓ Подключено к Smartcat' + (a.name ? ': ' + a.name : '');
           fillScSettings();
           if (scProject.value.trim()) return scCall('sc-resolve-project', { ref: scProject.value.trim() }).then(function (pr) {
-            scMsg.textContent += ' · проект «' + pr.name + '» найден';
+            scMsg.textContent += ' · проект «' + pr.name + '» найден' +
+              (pr.targetLanguages.length ? ', коды языков в нём: ' + pr.targetLanguages.join(', ') : '');
           });
         }, function (e) { scMsg.textContent = '✗ ' + e.message; });
       } }),
@@ -967,6 +984,9 @@
       }
       if (c.project) scCall('sc-resolve-project', { ref: c.project }).then(function (pr) {
         targetName = pr.name;
+        var pl = projectLangs(pr);
+        if (pl.missing.length) box.insertBefore(el('p', { class: 'red', text: 'В проекте «' + pr.name + '» нет: ' + pl.missing.map(langName).join(', ') +
+          ' — эти языки не отправлю (в проекте: ' + pl.all.join(', ') + ').' }), groupsBox);
         groupsBox.querySelectorAll('label').forEach(function (l) { if (l.firstChild && l.firstChild.nodeType === 3) l.firstChild.textContent = 'Папка в проекте «' + pr.name + '»'; });
       }, function (e) { msg.className = 'red'; msg.textContent = '✗ Проект для машперевода: ' + e.message; });
       box.appendChild(el('label', { class: 'muted blk' }, [split, c.project ? ' отдельная папка для android и ios' : ' отдельный проект для android и ios']));
@@ -996,22 +1016,35 @@
         });
       }
       /* добавить в существующий проект: папка = название группы */
+      /* языки выгрузки → языки проекта: точное совпадение, иначе по основному языку (en ↔ en-US); остальных в проекте нет */
+      function projectLangs(pr) {
+        var pl = (pr.targetLanguages || []).map(String), out = {}, missing = [];
+        langs.forEach(function (l) {
+          var want = map(l), hit = pl.filter(function (x) { return x.toLowerCase() === want.toLowerCase(); })[0] ||
+            pl.filter(function (x) { return baseLang(x) === baseLang(want); })[0];
+          if (hit || !pl.length) out[l] = hit || want; else missing.push(l);
+        });
+        return { codes: out, missing: missing, all: pl };
+      }
       function addToProject(g, pr) {
         var folder = g.input.value.trim() || ddmmyy() + '_weblate';
-        var want = langs.map(map), same = pr.targetLanguages.length && want.length === pr.targetLanguages.length &&
-          want.every(function (l) { return pr.targetLanguages.map(function (x) { return String(x).toLowerCase(); }).indexOf(l.toLowerCase()) >= 0; });
+        var pl = projectLangs(pr), send = langs.filter(function (l) { return pl.codes[l]; });
+        if (!send.length) return Promise.reject(new Error('ни одного выбранного языка нет в проекте «' + pr.name + '» (в нём: ' + pl.all.join(', ') + ')'));
+        var want = send.map(function (l) { return pl.codes[l]; });
+        var same = pl.all.length && want.length === pl.all.length;
         return scCall('sc-add-docs', { projectId: pr.id, targetLanguages: same ? null : want,
           files: g.files.map(function (f) { return { name: folder + '/' + f.name, text: f.text }; }) }).then(function (r) {
           if (!r.documents.length) throw new Error('Smartcat не показал новых документов в проекте — проверь проект вручную');
           var lmap = {}, byKey = {}, docs = {}, lost = [];
-          langs.forEach(function (l) { lmap[map(l).toLowerCase()] = l; });
+          send.forEach(function (l) { lmap[pl.codes[l].toLowerCase()] = l; });
           g.files.forEach(function (f) { byKey[f.key] = f; });
           r.documents.forEach(function (d) {
             var f = byKey[scDocKey(d.name)] || byKey[scDocKey(d.fullPath)];
             var lang = lmap[String(d.targetLanguage || '').toLowerCase()] ||
-              langs.filter(function (l) { return baseLang(l) === baseLang(d.targetLanguage || ''); })[0];
+              send.filter(function (l) { return baseLang(l) === baseLang(d.targetLanguage || ''); })[0];
             if (f && lang) docs[d.id] = { p: f.p, c: f.c, lang: lang }; else lost.push(d.name + ' (' + d.targetLanguage + ')');
           });
+          if (pl.missing.length) lost.unshift('языков нет в проекте, не отправлены: ' + pl.missing.map(langName).join(', '));
           var key = pr.id + '#' + folder;
           var list = scProjects().filter(function (x) { return (x.key || x.id) !== key; });
           list.unshift({ key: key, id: pr.id, name: pr.name + ' / ' + folder, created: new Date().toISOString(), docs: docs, files: {}, langs: lmap });
@@ -1044,7 +1077,9 @@
               p.docs != null ? ' (' + p.docs + ' док.)' : '']);
           })).concat([document.createTextNode('. Когда Smartcat переведёт — вкладка «Загрузить обратно» → «Из Smartcat».')])), msg.firstChild);
           made.forEach(function (p) {
-            if (p.lost && p.lost.length) msg.appendChild(el('div', { class: 'red', text: 'Не поняла, к какому компоненту/языку относятся: ' + p.lost.join(', ') }));
+            (p.lost || []).forEach(function (t) {
+              msg.appendChild(el('div', { class: 'red', text: /^языков нет/.test(t) ? p.name + ': ' + t : 'Не поняла, к какому компоненту/языку относится: ' + t }));
+            });
           });
         });
       } });
