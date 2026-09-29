@@ -1560,25 +1560,40 @@
     /* машинный перевод Smartcat приходит как «требует правки» — импортируем как переведённое, как при ручной загрузке */
     var SC_OPTS = { method: 'translate', fuzzy: 'approve', conflicts: '' };
     if (todo.some(function (u) { return !u.fromSc; })) { sset('wlx_m', opts.method); sset('wlx_f', opts.fuzzy); sset('wlx_c', opts.conflicts); }
-    upBtn.disabled = true; upResults.textContent = 'Загружаю…';
-    var ok = 0, bad = 0;
+    upBtn.disabled = true;
+    var ok = 0, bad = 0, t0 = Date.now();
+    function secs(from) { var s = Math.round((Date.now() - from) / 1000); return s < 60 ? s + ' с' : Math.floor(s / 60) + ' мин ' + (s % 60) + ' с'; }
+    /* Weblate обрабатывает файлы одного компонента по очереди, поэтому показываем, что процесс идёт */
+    function progress() {
+      upResults.textContent = 'Загружаю: готово ' + (ok + bad) + ' из ' + todo.length + ' · ' + secs(t0) +
+        '. Weblate обрабатывает файлы одного компонента по очереди — не закрывай окно, пока всё не станет «✓ принято».';
+    }
+    todo.forEach(function (u) { setRow(u, 'muted', 'в очереди'); });
+    progress();
+    var tick = setInterval(progress, 1000);
     csrfToken().then(function (token) {
       return pool(todo, 3, function (u) {
+        var started = Date.now();
         setRow(u, 'muted', 'загружаю…');
+        var rowTimer = setInterval(function () { if (!u.sent) setRow(u, 'muted', 'загружаю… ' + secs(started)); }, 1000);
         return uploadPo(u, u.fromSc ? SC_OPTS : opts, token).then(function (r) {
+          clearInterval(rowTimer);
           u.sent = true; ok++;
           setRow(u, 'ok', r.viaForm ? '✓ отправлено (проверь в Weblate)'
             : '✓ принято ' + (r.accepted != null ? r.accepted : '?') + ' из ' + (r.total != null ? r.total : '?') +
               (r.skipped ? ', пропущено ' + r.skipped : '') + (r.not_found ? ', не найдено ' + r.not_found : ''));
         }).catch(function (e) {
+          clearInterval(rowTimer);
           bad++;
           setRow(u, 'red', friendly(e).split('\n')[0]);
           u.row.title = String(e.message || e);
         });
       });
     }).then(function () {
-      upResults.textContent = 'Готово: загружено ' + ok + (bad ? ', с ошибкой ' + bad + ' (наведи на ошибку, чтобы увидеть подробности)' : '');
+      clearInterval(tick);
+      upResults.textContent = 'Готово: загружено ' + ok + (bad ? ', с ошибкой ' + bad + ' (наведи на ошибку, чтобы увидеть подробности)' : '') + ' · ' + secs(t0);
     }).catch(function (e) {
+      clearInterval(tick);
       upResults.textContent = friendly(e);
     }).then(function () { upBtn.disabled = false; });
   }
