@@ -27,12 +27,16 @@
     } catch (e) {}
     return wl;
   }
+  var flagSeq = 0;
   function flag(code) {
     var svg = FLAGS[code] || FLAGS[code.toLowerCase().split(/[_\-@]/)[0]];
     var box = document.createElement('span');
     box.className = 'flag';
     if (svg) {
       try {
+        /* у каждого флага свои id: иначе флаг на видимой вкладке ссылается на градиент во флаге на скрытой и не рисуется */
+        var uid = '-f' + (++flagSeq);
+        svg = svg.replace(/(\bid="|url\(#|href="#)([^")]+)/g, function (m0, a, b) { return a + b + uid; });
         var doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
         box.appendChild(document.importNode(doc.documentElement, true));
       } catch (e) {}
@@ -159,6 +163,52 @@
     if (codes.indexOf(wanted) >= 0) return wanted;
     var same = codes.filter(function (c) { return baseLang(c) === baseLang(wanted); });
     return same.length === 1 ? same[0] : null;
+  }
+
+  /* ---------- Smartcat: запросы идут через фон расширения (там же хранится ключ) ---------- */
+  var HAS_EXT = typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage);
+  function scCall(type, data) {
+    return new Promise(function (resolve, reject) {
+      if (!HAS_EXT) return reject(new Error('Smartcat работает только в расширении'));
+      chrome.runtime.sendMessage(Object.assign({ type: type }, data || {}), function (r) {
+        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+        if (!r || !r.ok) return reject(new Error((r && r.error) || 'нет ответа от расширения'));
+        resolve(r.data);
+      });
+    });
+  }
+  var MT_LANGS = ['az', 'hy', 'kk', 'ka', 'uz', 'ky', 'en'];
+  /* код Weblate → код Smartcat: из настроек (uz_Latn=uz-Latn) или просто «_» → «-» */
+  function scLangMap(text) {
+    var m = {};
+    String(text || '').split(/[\n,;]+/).forEach(function (l) {
+      var kv = l.split('=');
+      if (kv.length === 2 && kv[0].trim() && kv[1].trim()) m[kv[0].trim()] = kv[1].trim();
+    });
+    return function (code) { return m[code] || code.replace(/_/g, '-'); };
+  }
+  /* из нескольких .po одного компонента (по языкам) — один исходный файл для Smartcat: все строки, непереведённые хоть где-то */
+  function sourcePo(texts, srcCode) {
+    var seen = {}, out = [];
+    texts.forEach(function (t) {
+      poEntries(t).forEach(function (e) {
+        if (e.header || e.obsolete || e.plural) return;
+        var key = (e.ctx || '') + '\u0004' + e.msgid;
+        if (seen[key]) return;
+        seen[key] = 1;
+        var lines = [], cur = null;
+        e.lines.forEach(function (l) {
+          if (l[0] === '#') { if (!/^#,/.test(l)) lines.push(l); else { var f = l.replace(/\bfuzzy\b,?\s*/, '').trim(); if (f !== '#,') lines.push(f); } return; }
+          var m = /^(msgctxt|msgid_plural|msgid|msgstr(?:\[\d+\])?)\s/.exec(l);
+          if (m) cur = m[1];
+          if (cur && cur.indexOf('msgstr') !== 0) lines.push(l);
+        });
+        lines.push('msgstr ""');
+        out.push(lines.join('\n'));
+      });
+    });
+    var head = 'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n"Language: ' + (srcCode || 'ru') + '\\n"\n';
+    return { text: head + '\n' + out.join('\n\n') + '\n', strings: out.length };
   }
 
   /* ---------- PO filter: keep header + empty / fuzzy entries ---------- */
@@ -440,6 +490,13 @@
     '.layouts label{display:flex;gap:8px;align-items:baseline;padding:5px 7px;border-radius:6px;cursor:pointer}',
     '.layouts label:hover{background:#f3f5f8}',
     '.complist{max-height:220px;overflow:auto;font:12.5px/1.6 Consolas,ui-monospace,monospace;color:#1d2330;padding:6px 0}',
+    '.settings{margin:6px 0 10px;padding:12px 14px;border-radius:10px;background:#f3f5f8}',
+    '.settings label{display:block;font-size:13px;color:#6b7385;margin-top:8px}',
+    '.settings input,.settings select,.track input{display:block;width:100%;box-sizing:border-box;margin-top:3px;padding:7px 9px;border:1px solid #d9dde5;border-radius:7px;font:inherit;color:#1d2330;background:#fff}',
+    'textarea.small{min-height:56px;margin-top:3px}',
+    '.track{margin-top:18px;border-top:1px solid #eceef2;padding-top:4px}',
+    '.scimp{margin-bottom:12px;padding:10px 12px;border-radius:10px;background:#f3f5f8}',
+    '.scimp h2{margin-top:0}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -509,7 +566,10 @@
     el('h2', { text: '2. Языки' }),
     el('div', { class: 'row' }, [
       el('button', { class: 'b g s', text: 'Все', onclick: function () { setAll(true); } }),
-      el('button', { class: 'b g s', text: 'Снять все', onclick: function () { setAll(false); } })
+      el('button', { class: 'b g s', text: 'Снять все', onclick: function () { setAll(false); } }),
+      el('button', { class: 'b g s', text: 'Набор для машперевода: AZ HY KK KA UZ KY EN', title: 'Отметить языки, которые идут на машинный перевод в Smartcat', onclick: function () {
+        langsBox.querySelectorAll('input').forEach(function (i) { i.checked = MT_LANGS.indexOf(baseLang(i.value)) >= 0 && !/generated/i.test(WL_NAMES[i.value] || ''); });
+      } })
     ]),
     langsBox,
     el('label', { class: 'muted blk' }, [fuzzy, ' включать строки «требует правки»']),
@@ -561,9 +621,11 @@
     el('div', { class: 'row' }, [upBtn]),
     upResults
   ]);
+  var scImport = el('div', { class: 'scimp hide' });
   var importPane = el('div', { class: 'hide' }, [
     el('p', { class: 'sub', text: 'Файлы → проверка → «Загрузить в Weblate». Компонент и язык определяются сами по заголовку файла.' }),
     el('h2', { text: '1. Файлы от подрядчика' }),
+    scImport,
     drop, errU, preview, upSec
   ]);
 
@@ -574,12 +636,67 @@
     exportPane.classList.toggle('hide', !exp); importPane.classList.toggle('hide', exp);
   }
 
+  /* ----- настройки Smartcat (только в расширении) ----- */
+  var scServer = select([['eu', 'smartcat.com'], ['us', 'us.smartcat.com'], ['ea', 'ea.smartcat.com'], ['custom', 'свой адрес']], 'eu');
+  var scCustom = el('input', { type: 'text', placeholder: 'https://…' });
+  var scAccount = el('input', { type: 'text', placeholder: 'Account ID' });
+  var scKey = el('input', { type: 'password', placeholder: 'API-ключ' });
+  var scLangs = el('textarea', { class: 'small', placeholder: 'если Smartcat не принимает код языка, например:\nuz_Latn=uz-Latn' });
+  var scExtra = el('textarea', { class: 'small', placeholder: '{"workflowStages": ["translation"]}' });
+  var scMsg = el('div', { class: 'muted' });
+  var scCfg = null;
+  function loadScConfig() {
+    if (!HAS_EXT) return Promise.resolve(null);
+    return scCall('sc-get-config').then(function (c) { scCfg = c; return c; }, function () { return null; });
+  }
+  function fillScSettings() {
+    loadScConfig().then(function (c) {
+      if (!c) return;
+      scServer.value = c.server; scCustom.value = c.customUrl; scAccount.value = c.accountId;
+      scKey.value = ''; scKey.placeholder = c.hasKey ? 'ключ сохранён — впиши новый, чтобы заменить' : 'API-ключ';
+      scLangs.value = c.langMap; scExtra.value = c.extra;
+    });
+  }
+  function saveScSettings() {
+    if (scExtra.value.trim()) { try { JSON.parse(scExtra.value); } catch (e) { return Promise.reject(new Error('«Доп. параметры» — не JSON')); } }
+    return scCall('sc-set-config', { config: { server: scServer.value, customUrl: scCustom.value.trim(), accountId: scAccount.value.trim(),
+      apiKey: scKey.value.trim(), langMap: scLangs.value, extra: scExtra.value.trim() } }).then(loadScConfig);
+  }
+  var settingsPane = el('div', { class: 'settings hide' }, [
+    el('h2', { text: 'Smartcat' }),
+    el('p', { class: 'muted', text: 'Ключ API: Smartcat → Настройки → API (создаёт администратор аккаунта). Ключ хранится только в расширении на этом компьютере.' }),
+    el('label', {}, ['Сервер', scServer]),
+    el('label', {}, ['Адрес (если «свой адрес»)', scCustom]),
+    el('label', {}, ['Account ID', scAccount]),
+    el('label', {}, ['API-ключ', scKey]),
+    el('details', {}, [el('summary', { text: 'Дополнительно' }),
+      el('label', {}, ['Коды языков для Smartcat (код_weblate=код_smartcat, по строке)', scLangs]),
+      el('label', {}, ['Доп. параметры создания проекта (JSON, добавляются к стандартным)', scExtra])]),
+    el('div', { class: 'row' }, [
+      el('button', { class: 'b s', text: 'Сохранить', onclick: function () {
+        scMsg.textContent = 'Сохраняю…';
+        saveScSettings().then(function () { scMsg.textContent = 'Сохранено'; fillScSettings(); }, function (e) { scMsg.textContent = '✗ ' + e.message; });
+      } }),
+      el('button', { class: 'b g s', text: 'Проверить подключение', onclick: function () {
+        scMsg.textContent = 'Проверяю…';
+        saveScSettings().then(function () { return scCall('sc-check'); }).then(function (a) {
+          scMsg.textContent = '✓ Подключено к Smartcat' + (a.name ? ': ' + a.name : ''); fillScSettings();
+        }, function (e) { scMsg.textContent = '✗ ' + e.message; });
+      } }),
+      scMsg
+    ])
+  ]);
+
   var back = el('div', { class: 'back', onclick: function (e) { if (e.target === back) hide(); } }, [
     el('div', { class: 'box' }, [
       el('div', { class: 'top' }, [
         el('h1', { text: 'Weblate: выгрузка и загрузка переводов' }),
-        el('button', { class: 'x', title: 'Закрыть', text: '×', onclick: hide })
+        el('div', {}, [
+          HAS_EXT ? el('button', { class: 'x', title: 'Настройки Smartcat', text: '⚙', onclick: function () { settingsPane.classList.toggle('hide'); if (!settingsPane.classList.contains('hide')) fillScSettings(); } }) : null,
+          el('button', { class: 'x', title: 'Закрыть', text: '×', onclick: hide })
+        ])
       ]),
+      settingsPane,
       el('div', { class: 'tabs' }, [tabExp, tabImp]),
       exportPane,
       importPane
@@ -678,14 +795,14 @@
               return Promise.all([units(x.p, x.c, code, q + ' AND has:plural'), componentFormat(x.p, x.c)]).then(function (a) {
                 var j = pluralJson(a[0], a[1], srcCode, code);
                 if (!j.strings) return r;
-                res.push({ component: x.c, language: code, strings: j.strings, words: j.words, text: j.text, ext: 'json' });
+                res.push({ component: x.c, p: x.p, language: code, src: srcCode, strings: j.strings, words: j.words, text: j.text, ext: 'json' });
                 return filterPo(raw, true);
               }, function (e) {
                 errs.push([x.c, code, 'плюралки не удалось выгрузить в .json, оставила их в .po: ' + friendly(e).split('\n')[0]]);
                 return r;
               });
             }).then(function (r) {
-              if (r.strings) res.push({ component: x.c, language: code, strings: r.strings, words: r.words, text: r.text, ext: 'po' });
+              if (r.strings) res.push({ component: x.c, p: x.p, language: code, src: srcCode, strings: r.strings, words: r.words, text: r.text, ext: 'po' });
             }).catch(function (e) { errs.push([x.c, code, friendly(e)]); }).then(tick);
           });
         }, Promise.resolve());
@@ -775,6 +892,69 @@
       errs.forEach(function (e) { et.appendChild(el('tr', {}, e.map(function (v) { return el('td', { text: v }); }))); });
       results.appendChild(el('details', { open: '' }, [el('summary', { text: 'Проблемы: ' + errs.length, class: 'red' }), et]));
     }
+    if (HAS_EXT) renderSmartcat(res);
+  }
+
+  /* ----- шаг «Машинный перевод в Smartcat» после выгрузки ----- */
+  function scProjects() { try { return JSON.parse(sget('wlx_sc_projects') || '[]'); } catch (e) { return []; } }
+  function renderSmartcat(res) {
+    var po = res.filter(function (r) { return r.ext !== 'json'; });
+    if (!po.length) return;
+    var box = el('div', { class: 'track' }, [el('h2', { text: '4. Машинный перевод в Smartcat' })]);
+    results.appendChild(box);
+    loadScConfig().then(function (c) {
+      if (!c || !c.accountId || !c.hasKey) {
+        box.appendChild(el('p', { class: 'muted', text: 'Можно отправить эти строки на машинный перевод в Smartcat одной кнопкой — подключи Smartcat в ⚙ вверху окна.' }));
+        return;
+      }
+      var map = scLangMap(c.langMap);
+      var byComp = {}, langs = [];
+      po.forEach(function (r) {
+        var k = r.p + '/' + r.component;
+        (byComp[k] = byComp[k] || { p: r.p, c: r.component, src: r.src, texts: [] }).texts.push(r.text);
+        if (langs.indexOf(r.language) < 0) langs.push(r.language);
+      });
+      var files = Object.keys(byComp).map(function (k) {
+        var b = byComp[k], sp = sourcePo(b.texts, b.src);
+        return { name: fileKey(b.c) + '.po', key: fileKey(b.c), p: b.p, c: b.c, text: sp.text, strings: sp.strings, src: b.src };
+      }).filter(function (f) { return f.strings; });
+      var total = files.reduce(function (a, f) { return a + f.strings; }, 0);
+      var jsonCount = res.length - po.length;
+      var name = el('input', { type: 'text', value: 'Weblate МП ' + today() + ' — ' + (files.length === 1 ? files[0].c : files.length + ' компонентов') });
+      box.appendChild(el('label', { class: 'muted blk' }, ['Название проекта в Smartcat', name]));
+      box.appendChild(el('p', { class: 'muted', text: 'Уйдёт: ' + files.length + ' файл(ов), ' + total + ' уникальных строк, языки: ' +
+        langs.map(function (l) { return langName(l) + ' → ' + map(l); }).join(', ') + '.' +
+        (jsonCount ? ' Плюралки (.json) в Smartcat не отправляются.' : '') }));
+      var msg = el('div', { class: 'muted' });
+      var btn = el('button', { class: 'b', text: 'Отправить в Smartcat', onclick: function () {
+        var extra = {};
+        try { extra = c.extra ? JSON.parse(c.extra) : {}; } catch (e) {}
+        var model = Object.assign({
+          name: name.value.trim() || 'Weblate МП ' + today(),
+          description: 'Создано расширением Weblate. Компоненты: ' + files.map(function (f) { return f.p + '/' + f.c; }).join(', '),
+          sourceLanguage: map(files[0].src || 'ru'),
+          targetLanguages: langs.map(map),
+          assignToVendor: false, useMT: true, pretranslate: true, useTranslationMemory: true,
+          autoPropagateRepetitions: false, isForTesting: false, workflowStages: ['translation']
+        }, extra);
+        btn.disabled = true; msg.className = 'muted'; msg.textContent = 'Создаю проект в Smartcat…';
+        scCall('sc-create', { model: model, files: files.map(function (f) { return { name: f.name, text: f.text }; }) }).then(function (proj) {
+          var fmap = {}, lmap = {};
+          files.forEach(function (f) { fmap[f.key] = { p: f.p, c: f.c }; });
+          langs.forEach(function (l) { lmap[map(l).toLowerCase()] = l; });
+          var list = scProjects().filter(function (x) { return x.id !== proj.id; });
+          list.unshift({ id: proj.id, name: proj.name || model.name, created: new Date().toISOString(), files: fmap, langs: lmap });
+          sset('wlx_sc_projects', JSON.stringify(list.slice(0, 20)));
+          renderScImport();
+          msg.className = 'ok'; msg.textContent = '';
+          msg.appendChild(document.createTextNode('✓ Проект создан: '));
+          msg.appendChild(el('a', { href: c.base + '/projects/' + proj.id, target: '_blank', text: proj.name || model.name }));
+          msg.appendChild(document.createTextNode('. Когда Smartcat переведёт — вкладка «Загрузить обратно» → «Из Smartcat».'));
+        }, function (e) { btn.disabled = false; msg.className = 'red'; msg.textContent = '✗ ' + e.message; });
+      } });
+      box.appendChild(el('div', { class: 'row' }, [btn]));
+      box.appendChild(msg);
+    });
   }
 
   /* ----- import logic ----- */
@@ -903,6 +1083,61 @@
     ]));
     upSec.classList.remove('hide');
   }
+  /* ----- «Из Smartcat»: забрать машинный перевод и подготовить к загрузке ----- */
+  function renderScImport() {
+    scImport.textContent = '';
+    var list = scProjects();
+    if (!HAS_EXT || !list.length) { scImport.classList.add('hide'); return; }
+    scImport.classList.remove('hide');
+    scImport.appendChild(el('h2', { text: 'Из Smartcat' }));
+    list.forEach(function (pr) {
+      var st = el('span', { class: 'muted' });
+      var get = el('button', { class: 'b g s', text: 'Забрать переводы', onclick: function () { fetchSc(pr, st, get); } });
+      var del = el('button', { class: 'b g s', text: '×', title: 'Убрать из списка', onclick: function () {
+        sset('wlx_sc_projects', JSON.stringify(scProjects().filter(function (x) { return x.id !== pr.id; }))); renderScImport();
+      } });
+      scImport.appendChild(el('div', { class: 'row' }, [el('b', { text: pr.name }), el('span', { class: 'muted', text: (pr.created || '').slice(0, 10) }), get, del, st]));
+    });
+  }
+  function scDocKey(name) { return String(name || '').split('/').pop().replace(/\.po$/i, ''); }
+  function fetchSc(pr, st, btn) {
+    btn.disabled = true; st.className = 'muted'; st.textContent = 'Проверяю проект…';
+    scCall('sc-project', { id: pr.id }).then(function (proj) {
+      var docs = proj.documents || [];
+      var ready = docs.filter(function (d) {
+        return (!d.documentDisassemblingStatus || d.documentDisassemblingStatus === 'success') && d.pretranslateCompleted !== false;
+      });
+      if (!ready.length) { st.textContent = 'Smartcat ещё переводит (готово 0 из ' + docs.length + ') — попробуй позже'; return; }
+      var n = 0;
+      st.textContent = 'Скачиваю ' + ready.length + ' из ' + docs.length + '…';
+      return pool(ready, 3, function (d) {
+        var key = scDocKey(d.name), comp = pr.files[key];
+        var lang = pr.langs[String(d.targetLanguage || '').toLowerCase()] ||
+          Object.keys(pr.langs).map(function (k) { return pr.langs[k]; }).filter(function (l) { return baseLang(l) === baseLang(d.targetLanguage || ''); })[0];
+        var u = { name: 'Smartcat/' + key + '_' + (lang || d.targetLanguage) + '.po', text: '', filled: 0, total: 0, fromSc: true };
+        if (!comp || !lang) { u.error = 'не понимаю, куда это: документ «' + d.name + '», язык ' + d.targetLanguage; uploads.push(u); return Promise.resolve(); }
+        u.p = comp.p; u.c = comp.c; u.lang = lang;
+        return scCall('sc-export', { documentId: d.id }).then(function (r) {
+          var inf = poInfo(r.text);
+          u.text = r.text; u.filled = inf.filled; u.total = inf.total;
+          if (!inf.filled) u.skip = 'Smartcat вернул пустой перевод — проверь, что в проекте сработал машинный перевод';
+          return withTranslations(u.p, u.c).then(function (ok) { if (!ok) u.error = 'компонент «' + u.c + '» не найден в Weblate'; });
+        }, function (e) { u.error = e.message; }).then(function () {
+          uploads = uploads.filter(function (x) { return !(x.fromSc && x.p === u.p && x.c === u.c && x.lang === u.lang); });
+          uploads.push(u);
+          st.textContent = 'Скачано ' + (++n) + ' из ' + ready.length + '…';
+        });
+      }).then(function () {
+        optConf.value = '';
+        renderPreview();
+        st.className = 'ok';
+        st.textContent = '✓ Готово к загрузке: ' + n + (ready.length < docs.length ? ' (ещё не готово в Smartcat: ' + (docs.length - ready.length) + ')' : '') +
+          '. Выставила «Изменять только непереведённые строки» — проверь список ниже и нажми «Загрузить в Weblate».';
+      });
+    }).catch(function (e) { st.className = 'red'; st.textContent = '✗ ' + e.message; }).then(function () { btn.disabled = false; });
+  }
+  renderScImport();
+
   function setRow(u, cls, text) { u.status = text; u.row.className = cls; u.row.textContent = text; }
   function runUpload() {
     var todo = uploads.filter(function (u) { return !u.error && !u.skip && !u.sent; });
