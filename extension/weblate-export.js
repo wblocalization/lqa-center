@@ -181,9 +181,11 @@
   var MT_LANGS = ['kk', 'ky', 'tg', 'ka', 'hy', 'uz', 'en'];
   /* если в Weblate у языка несколько вариантов (en / en_US, uz / uz_Latn) — берём один:
      для узбекского латиницу, для остальных основной код */
-  function mtPick(codes) {
+  /* выгружаем, но в Smartcat не отправляем */
+  var EXPORT_ONLY_LANGS = ['az'];
+  function mtPick(codes, bases) {
     var out = [];
-    MT_LANGS.forEach(function (b) {
+    (bases || MT_LANGS).forEach(function (b) {
       var c = codes.filter(function (x) { return baseLang(x) === b && !/generated/i.test(WL_NAMES[x] || ''); });
       if (!c.length) return;
       var pick = b === 'uz' ? (c.filter(function (x) { return /latn/i.test(x); })[0] || c.filter(function (x) { return x === b; })[0])
@@ -647,7 +649,7 @@
   var scOut = el('div');
   var scBack = el('div', { class: 'scimp hide' });
   var scPane = el('div', { class: 'hide' }, [
-    el('p', { class: 'sub', text: 'Стандартный набор для Smartcat: непереведённые строки по компонентам ниже на языки KK KY TG KA HY UZ EN. На выходе ZIP с папками android и ios и отправка в Smartcat.' }),
+    el('p', { class: 'sub', text: 'Стандартный набор для Smartcat: непереведённые строки по компонентам ниже на языки KK KY TG KA HY UZ EN (+ AZ — только в ZIP, в Smartcat не уходит). На выходе ZIP с папками android и ios и отправка в Smartcat.' }),
     el('details', {}, [el('summary', { text: 'Компоненты (можно поменять — запомнится)' }),
       scLinks,
       el('div', { class: 'row' }, [el('button', { class: 'b g s', text: 'Вернуть стандартные', onclick: function () { scLinks.value = SC_DEFAULT_LINKS; sset('wlx_mt_links', ''); } })])]),
@@ -673,7 +675,7 @@
         return translations(x.p, x.c).then(function (trs) {
           trs.forEach(function (t) { if (!t.is_source && codes.indexOf(t.language.code) < 0) codes.push(t.language.code); });
         });
-      }).then(function () { return mtPick(codes); });
+      }).then(function () { return mtPick(codes).concat(mtPick(codes, EXPORT_ONLY_LANGS)); });
     }).then(function (langs) {
       if (!langs.length) throw new Error('В компонентах нет языков из набора');
       var total = cs.length * langs.length, done = 0;
@@ -715,7 +717,11 @@
         } })
       ]));
       scOut.appendChild(t);
-      renderSmartcat(res, scOut);
+      var toSc = res.filter(function (r) { return EXPORT_ONLY_LANGS.indexOf(baseLang(r.language)) < 0; });
+      var only = res.filter(function (r) { return toSc.indexOf(r) < 0; }).map(function (r) { return r.language; })
+        .filter(function (x, i, a) { return a.indexOf(x) === i; });
+      if (only.length) scOut.appendChild(el('p', { class: 'muted', text: only.map(langName).join(', ') + ' — только в ZIP, в Smartcat не отправляется.' }));
+      if (toSc.length) renderSmartcat(toSc, scOut);
     }
     if (errs.length) {
       var et = el('table');
