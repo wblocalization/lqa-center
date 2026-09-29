@@ -621,7 +621,7 @@
   var upBtn = el('button', { class: 'b big', text: 'Загрузить в Weblate', onclick: runUpload });
   var upResults = el('div', { class: 'blk' });
   var upSec = el('div', { class: 'hide' }, [
-    el('h2', { text: '2. Как загружать' }),
+    el('h2', { text: '3. Как загружать' }),
     el('div', { class: 'opts' }, [
       el('label', {}, ['Режим загрузки файла', optMethod]),
       el('label', {}, ['Обработка строк, отмеченных «На правку»', optFuzzy]),
@@ -633,10 +633,11 @@
   ]);
   var scImport = el('div', { class: 'scimp hide' });
   var importPane = el('div', { class: 'hide' }, [
-    el('p', { class: 'sub', text: 'Файлы → проверка → «Загрузить в Weblate». Компонент и язык определяются сами по заголовку файла.' }),
-    el('h2', { text: '1. Файлы от подрядчика' }),
+    el('p', { class: 'sub', text: 'Файлы от подрядчиков или машинный перевод из Smartcat → проверка → «Загрузить в Weblate». Компонент и язык определяются сами.' }),
+    el('h2', { text: '1. Файлы от подрядчиков' }),
+    drop, errU,
     scImport,
-    drop, errU, preview, upSec
+    preview, upSec
   ]);
 
   /* ----- вкладка «Smartcat»: стандартный набор одной кнопкой ----- */
@@ -1231,7 +1232,7 @@
           msg.insertBefore(el('div', {}, [document.createTextNode(c.project ? '✓ Файлы добавлены: ' : '✓ Созданы проекты: ')].concat(made.map(function (p, i) {
             return el('span', {}, [i ? ', ' : '', el('a', { href: c.base + '/projects/' + p.id, target: '_blank', text: p.name }),
               p.docs != null ? ' (' + p.docs + ' док.)' : '']);
-          })).concat([document.createTextNode('. Когда Smartcat переведёт — вкладка «Загрузить обратно» → «Из Smartcat».')])), msg.firstChild);
+          })).concat([document.createTextNode('. Когда Smartcat переведёт — «Забрать и загрузить в Weblate» ниже (или вкладка «Загрузить обратно» → «2. Машинный перевод из Smartcat»).')])), msg.firstChild);
           enRes.forEach(function (x) {
             msg.appendChild(el('div', { class: x.ok ? 'ok' : 'red', text: (x.ok ? '✓ Английский: ' : '✗ Английский: ') + x.text }));
           });
@@ -1355,6 +1356,7 @@
   function renderPreview() {
     preview.textContent = ''; upResults.textContent = '';
     if (!uploads.length) { upSec.classList.add('hide'); return; }
+    preview.appendChild(el('h2', { text: 'Готово к загрузке' }));
     var t = el('table', {}, [el('tr', {}, [el('th', { text: 'Файл' }), el('th', { text: 'Куда' }),
       el('th', { class: 'n', text: 'С переводом' }), el('th', { text: 'Статус' })])]);
     uploads.forEach(function (u) {
@@ -1381,7 +1383,7 @@
     var list = scProjects();
     if (!HAS_EXT || !list.length) { box.classList.add('hide'); return; }
     box.classList.remove('hide');
-    box.appendChild(el('h2', { text: auto ? 'Из Smartcat в Weblate' : 'Из Smartcat' }));
+    box.appendChild(el('h2', { text: auto ? 'Машинный перевод из Smartcat → в Weblate' : '2. Машинный перевод из Smartcat' }));
     list.forEach(function (pr) {
       var st = el('span', { class: 'muted' });
       var get = el('button', { class: auto ? 'b s' : 'b g s', text: auto ? '⬆ Забрать и загрузить в Weblate' : 'Забрать переводы',
