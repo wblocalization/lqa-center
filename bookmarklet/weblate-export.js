@@ -621,23 +621,21 @@
   var upBtn = el('button', { class: 'b big', text: 'Загрузить в Weblate', onclick: runUpload });
   var upResults = el('div', { class: 'blk' });
   var upSec = el('div', { class: 'hide' }, [
-    el('h2', { text: '3. Как загружать' }),
+    el('h2', { text: '2. Как загружать' }),
     el('div', { class: 'opts' }, [
       el('label', {}, ['Режим загрузки файла', optMethod]),
       el('label', {}, ['Обработка строк, отмеченных «На правку»', optFuzzy]),
       el('label', {}, ['Разрешение конфликтов', optConf])
     ]),
-    el('p', { class: 'muted', text: 'Эти настройки — для файлов от подрядчиков. Машинный перевод из Smartcat всегда загружается с «Добавить как перевод» и «Изменять только непереведённые строки».' }),
+    el('p', { class: 'muted', text: 'Машинный перевод из Smartcat (вкладка «🤖 Smartcat») эти настройки не использует — он всегда загружается с «Добавить как перевод» и «Изменять только непереведённые строки».' }),
     el('p', { class: 'muted', text: '«Заменить существующий файл перевода» здесь нет специально: в файлах только часть строк, и замена стёрла бы остальные переводы.' }),
     el('div', { class: 'row' }, [upBtn]),
     upResults
   ]);
-  var scImport = el('div', { class: 'scimp hide' });
   var importPane = el('div', { class: 'hide' }, [
-    el('p', { class: 'sub', text: 'Файлы от подрядчиков или машинный перевод из Smartcat → проверка → «Загрузить в Weblate». Компонент и язык определяются сами.' }),
+    el('p', { class: 'sub', text: 'Файлы от подрядчиков → проверка → «Загрузить в Weblate». Компонент и язык определяются сами. Машинный перевод из Smartcat загружается на вкладке «🤖 Smartcat».' }),
     el('h2', { text: '1. Файлы от подрядчиков' }),
     drop, errU,
-    scImport,
     preview, upSec
   ]);
 
@@ -1249,7 +1247,7 @@
           msg.insertBefore(el('div', {}, [document.createTextNode(c.project ? '✓ Файлы добавлены: ' : '✓ Созданы проекты: ')].concat(made.map(function (p, i) {
             return el('span', {}, [i ? ', ' : '', el('a', { href: c.base + '/projects/' + p.id, target: '_blank', text: p.name }),
               p.docs != null ? ' (' + p.docs + ' док.)' : '']);
-          })).concat([document.createTextNode('. Когда Smartcat переведёт — «Забрать и загрузить в Weblate» ниже (или вкладка «Загрузить обратно» → «2. Машинный перевод из Smartcat»).')])), msg.firstChild);
+          })).concat([document.createTextNode('. Когда Smartcat переведёт — на вкладке «🤖 Smartcat» внизу «⬆ Загрузить в Weblate».')])), msg.firstChild);
           enRes.forEach(function (x) {
             msg.appendChild(el('div', { class: x.ok ? 'ok' : 'red', text: (x.ok ? '✓ Английский: ' : '✗ Английский: ') + x.text }));
           });
@@ -1403,11 +1401,11 @@
     var findMsg = el('span', { class: 'muted' });
     var findBtn = el('button', { class: 'b g s', text: '🔎 Найти отправки в Smartcat', title: 'Восстановить список по файлам в проекте Smartcat за последние 2 недели',
       onclick: function () { recoverScProjects(findBtn, findMsg); } });
-    box.appendChild(el('div', { class: 'row' }, [el('h2', { text: auto ? 'Машинный перевод из Smartcat → в Weblate' : '2. Машинный перевод из Smartcat' }), findBtn, findMsg]));
+    box.appendChild(el('div', { class: 'row' }, [el('h2', { text: 'Отправленное в Smartcat → в Weblate' }), findBtn, findMsg]));
     if (!list.length) box.appendChild(el('p', { class: 'muted', text: 'Отправок пока нет. Если они были, но пропали — нажми «Найти отправки в Smartcat».' }));
     list.forEach(function (pr) {
       var st = el('span', { class: 'muted' });
-      var get = el('button', { class: auto ? 'b s' : 'b g s', text: auto ? '⬆ Забрать и загрузить в Weblate' : 'Забрать переводы',
+      var get = el('button', { class: 'b s', text: '⬆ Загрузить в Weblate', title: 'Забрать готовые переводы из Smartcat и загрузить в Weblate («только непереведённые строки»)',
         onclick: function () { fetchSc(pr, st, get, auto); } });
       var zip = el('button', { class: 'b g s', text: '⬇ ZIP', title: 'Скачать готовые переводы из Smartcat архивом (в Weblate ничего не загружается)',
         onclick: function () { zipSc(pr, st, zip); } });
@@ -1486,7 +1484,7 @@
       renderScImport();
     }).catch(function (e) { msg.className = 'red'; msg.textContent = '✗ ' + e.message; btn.disabled = false; });
   }
-  function renderScImport() { renderScList(scImport, false); renderScList(scBack, true); }
+  function renderScImport() { renderScList(scBack, true); }
   function scDocKey(name) { return String(name || '').split('/').pop().replace(/\.po$/i, ''); }
   function fetchSc(pr, st, btn, auto) {
     var prKey = pr.key || pr.id;
