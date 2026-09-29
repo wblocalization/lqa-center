@@ -45,7 +45,7 @@ const SC_HANDLERS = {
   async 'sc-get-config'() {
     const c = await scConfig();
     return { server: c.server || 'eu', customUrl: c.customUrl || '', accountId: c.accountId || '', hasKey: !!c.apiKey,
-      langMap: c.langMap || '', extra: c.extra || '', base: scBase(c) };
+      langMap: c.langMap || '', extra: c.extra || '', project: c.project || '', base: scBase(c) };
   },
   async 'sc-set-config'(m) {
     const c = await scConfig();
@@ -78,6 +78,42 @@ const SC_HANDLERS = {
     const r = await scFetch('/project/list?projectName=' + encodeURIComponent(m.name) + '&limit=20');
     const list = await r.json();
     return (Array.isArray(list) ? list : []).filter((p) => p.name === m.name).map((p) => ({ id: p.id, name: p.name }));
+  },
+  /* проект для машперевода: ссылка (…/projects/<id>…) или точное название → { id, name, targetLanguages } */
+  async 'sc-resolve-project'(m) {
+    const ref = String(m.ref || '').trim();
+    const idm = /\/projects?\/([0-9a-f-]{16,})/i.exec(ref) || (/^[0-9a-f-]{16,}$/i.test(ref) ? [0, ref] : null);
+    if (idm) {
+      const j = await (await scFetch('/project/' + encodeURIComponent(idm[1]))).json();
+      return { id: j.id, name: j.name, targetLanguages: j.targetLanguages || [] };
+    }
+    const list = await (await scFetch('/project/list?projectName=' + encodeURIComponent(ref) + '&limit=50')).json();
+    const hit = (Array.isArray(list) ? list : []).filter((p) => p.name === ref);
+    if (!hit.length) throw new Error('в Smartcat не нашёлся проект «' + ref + '» — вставь ссылку на него');
+    if (hit.length > 1) throw new Error('в Smartcat несколько проектов «' + ref + '» — вставь ссылку на нужный');
+    return { id: hit[0].id, name: hit[0].name, targetLanguages: hit[0].targetLanguages || [] };
+  },
+  /* добавить файлы в существующий проект (путь в имени файла = папка) и вернуть только новые документы */
+  async 'sc-add-docs'(m) {
+    const before = await (await scFetch('/project/' + encodeURIComponent(m.projectId))).json();
+    const known = new Set((before.documents || []).map((d) => d.id));
+    const boundary = '----weblate' + Math.random().toString(16).slice(2);
+    const q = (v) => String(v).replace(/"/g, '%22');
+    const parts = [];
+    if (m.targetLanguages) {
+      const models = m.files.map(() => ({ targetLanguages: m.targetLanguages }));
+      parts.push('--' + boundary + '\r\nContent-Disposition: form-data; name="documentModel"\r\nContent-Type: application/json\r\n\r\n' +
+        JSON.stringify(models) + '\r\n');
+    }
+    m.files.forEach((f) => parts.push('--' + boundary + '\r\nContent-Disposition: form-data; name="file"; filename="' + q(f.name) +
+      '"\r\nContent-Type: application/octet-stream\r\n\r\n', f.text, '\r\n'));
+    parts.push('--' + boundary + '--\r\n');
+    await scFetch('/project/document?projectId=' + encodeURIComponent(m.projectId), {
+      method: 'POST', body: new Blob(parts), headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary }
+    });
+    const after = await (await scFetch('/project/' + encodeURIComponent(m.projectId))).json();
+    return { name: after.name, documents: (after.documents || []).filter((d) => !known.has(d.id))
+      .map((d) => ({ id: d.id, name: d.name, fullPath: d.fullPath || d.path || '', targetLanguage: d.targetLanguage })) };
   },
   async 'sc-project'(m) {
     const r = await scFetch('/project/' + encodeURIComponent(m.id));
