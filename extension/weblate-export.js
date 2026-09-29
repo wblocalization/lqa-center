@@ -1409,11 +1409,40 @@
       var st = el('span', { class: 'muted' });
       var get = el('button', { class: auto ? 'b s' : 'b g s', text: auto ? '⬆ Забрать и загрузить в Weblate' : 'Забрать переводы',
         onclick: function () { fetchSc(pr, st, get, auto); } });
+      var zip = el('button', { class: 'b g s', text: '⬇ ZIP', title: 'Скачать готовые переводы из Smartcat архивом (в Weblate ничего не загружается)',
+        onclick: function () { zipSc(pr, st, zip); } });
       var del = el('button', { class: 'b g s', text: '×', title: 'Убрать из списка', onclick: function () {
         saveScProjects(scProjects().filter(function (x) { return (x.key || x.id) !== (pr.key || pr.id); })); renderScImport();
       } });
-      box.appendChild(el('div', { class: 'row' }, [el('b', { text: pr.name }), el('span', { class: 'muted', text: (pr.created || '').slice(0, 10) }), get, del, st]));
+      box.appendChild(el('div', { class: 'row' }, [el('b', { text: pr.name }), el('span', { class: 'muted', text: (pr.created || '').slice(0, 10) }), get, zip, del, st]));
     });
+  }
+  /* скачать готовые переводы отправки архивом: <папка>/<проект>-<компонент>-<язык>.po */
+  function zipSc(pr, st, btn) {
+    btn.disabled = true; st.className = 'muted'; st.textContent = 'Проверяю проект…';
+    var folder = String(pr.name || '').split(' / ').pop() || ddmmyy();
+    scCall('sc-project', { id: pr.id }).then(function (proj) {
+      var docs = (proj.documents || []).filter(function (d) { return !pr.docs || pr.docs[d.id]; });
+      var ready = docs.filter(function (d) {
+        return (!d.documentDisassemblingStatus || d.documentDisassemblingStatus === 'success') && d.pretranslateCompleted !== false;
+      });
+      if (!ready.length) { st.textContent = docs.length ? 'Smartcat ещё переводит (готово 0 из ' + docs.length + ') — попробуй позже' : 'В проекте больше нет этих документов'; return; }
+      var files = [], n = 0;
+      st.textContent = 'Скачиваю ' + ready.length + ' из ' + docs.length + '…';
+      return pool(ready, 3, function (d) {
+        var info = pr.docs && pr.docs[d.id];
+        var name = info ? info.p + '-' + fileKey(info.c) + '-' + info.lang : scDocKey(d.name) + '-' + d.targetLanguage;
+        return scCall('sc-export', { documentId: d.id }).then(function (r) {
+          files.push({ name: folder + '/' + name + '.po', text: r.text });
+          st.textContent = 'Скачано ' + (++n) + ' из ' + ready.length + '…';
+        }, function (e) { files.push({ name: folder + '/ОШИБКА_' + name + '.txt', text: String(e.message || e) }); });
+      }).then(function () {
+        files.sort(function (a, b) { return a.name.localeCompare(b.name); });
+        saveBlob(makeZip(files), 'smartcat_' + folder + '.zip');
+        st.className = 'ok';
+        st.textContent = '✓ Скачан архив: ' + n + ' файл(ов)' + (ready.length < docs.length ? ' (ещё не готово в Smartcat: ' + (docs.length - ready.length) + ')' : '');
+      });
+    }).catch(function (e) { st.className = 'red'; st.textContent = '✗ ' + e.message; }).then(function () { btn.disabled = false; });
   }
   /* восстановить отправки по документам проекта: «global_site-wb-android-hy» → компонент + язык, дата загрузки → папка */
   function recoverScProjects(btn, msg) {
