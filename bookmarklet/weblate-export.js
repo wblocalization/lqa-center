@@ -627,6 +627,7 @@
       el('label', {}, ['Обработка строк, отмеченных «На правку»', optFuzzy]),
       el('label', {}, ['Разрешение конфликтов', optConf])
     ]),
+    el('p', { class: 'muted', text: 'Эти настройки — для файлов от подрядчиков. Машинный перевод из Smartcat всегда загружается с «Добавить как перевод» и «Изменять только непереведённые строки».' }),
     el('p', { class: 'muted', text: '«Заменить существующий файл перевода» здесь нет специально: в файлах только часть строк, и замена стёрла бы остальные переводы.' }),
     el('div', { class: 'row' }, [upBtn]),
     upResults
@@ -1427,11 +1428,9 @@
           st.textContent = 'Скачано ' + (++n) + ' из ' + ready.length + '…';
         });
       }).then(function () {
-        optConf.value = '';
         renderPreview();
         st.className = 'ok';
         if (auto) {
-          optMethod.value = 'translate';
           var mine = uploads.filter(function (u) { return u.scKey === prKey && !u.error && !u.skip && !u.sent; }).length;
           st.textContent = '✓ Забрала ' + n + (ready.length < docs.length ? ' (ещё не готово в Smartcat: ' + (docs.length - ready.length) + ')' : '') +
             (mine ? ', загружаю ' + mine + ' в Weblate («только непереведённые») — результат на вкладке «Загрузить обратно»' : ', загружать нечего');
@@ -1439,7 +1438,7 @@
           return;
         }
         st.textContent = '✓ Готово к загрузке: ' + n + (ready.length < docs.length ? ' (ещё не готово в Smartcat: ' + (docs.length - ready.length) + ')' : '') +
-          '. Выставила «Изменять только непереведённые строки» — проверь список ниже и нажми «Загрузить в Weblate».';
+          '. Машинный перевод загрузится с «Изменять только непереведённые строки» — проверь список ниже и нажми «Загрузить в Weblate».';
       });
     }).catch(function (e) { st.className = 'red'; st.textContent = '✗ ' + e.message; }).then(function () { btn.disabled = false; });
   }
@@ -1450,13 +1449,16 @@
     var todo = uploads.filter(function (u) { return !u.error && !u.skip && !u.sent && (typeof only !== 'function' || only(u)); });
     if (!todo.length) { upResults.textContent = 'Нечего загружать'; return; }
     var opts = { method: optMethod.value, fuzzy: optFuzzy.value, conflicts: optConf.value };
-    sset('wlx_m', opts.method); sset('wlx_f', opts.fuzzy); sset('wlx_c', opts.conflicts);
+    /* машинный перевод из Smartcat — всегда «добавить как перевод» + «только непереведённые строки»;
+       выбор в «3. Как загружать» — для файлов подрядчиков, его и запоминаем */
+    var SC_OPTS = { method: 'translate', fuzzy: opts.fuzzy, conflicts: '' };
+    if (todo.some(function (u) { return !u.fromSc; })) { sset('wlx_m', opts.method); sset('wlx_f', opts.fuzzy); sset('wlx_c', opts.conflicts); }
     upBtn.disabled = true; upResults.textContent = 'Загружаю…';
     var ok = 0, bad = 0;
     csrfToken().then(function (token) {
       return pool(todo, 3, function (u) {
         setRow(u, 'muted', 'загружаю…');
-        return uploadPo(u, opts, token).then(function (r) {
+        return uploadPo(u, u.fromSc ? SC_OPTS : opts, token).then(function (r) {
           u.sent = true; ok++;
           setRow(u, 'ok', r.viaForm ? '✓ отправлено (проверь в Weblate)'
             : '✓ принято ' + (r.accepted != null ? r.accepted : '?') + ' из ' + (r.total != null ? r.total : '?') +
