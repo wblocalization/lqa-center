@@ -45,7 +45,8 @@ const SC_HANDLERS = {
   async 'sc-get-config'() {
     const c = await scConfig();
     return { server: c.server || 'eu', customUrl: c.customUrl || '', accountId: c.accountId || '', hasKey: !!c.apiKey,
-      langMap: c.langMap || '', extra: c.extra || '', project: c.project || '', base: scBase(c) };
+      langMap: c.langMap || '', extra: c.extra || '', project: c.project || '',
+      enAndroid: c.enAndroid || '', enIos: c.enIos || '', base: scBase(c) };
   },
   async 'sc-set-config'(m) {
     const c = await scConfig();

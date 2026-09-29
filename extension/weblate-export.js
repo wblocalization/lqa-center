@@ -194,6 +194,11 @@
   }
   /* код Weblate → код Smartcat: из настроек (uz_Latn=uz-Latn) или просто «_» → «-» */
   /* коды Smartcat по умолчанию (как в проекте «AI translation 4 MP»); настройки в ⚙ их дополняют/перебивают */
+  /* куда дополнительно класть английский (без папки, «ДДММГГ_имяфайла.po»), обратно оттуда не забираем */
+  var SC_EN_DEFAULTS = {
+    android: 'https://smartcat.com/projects/732af7d0-0e14-4705-99dd-97b31f8f4933',
+    ios: 'https://smartcat.com/projects/85c99769-dcf4-429c-8432-7ed09a4d2f10'
+  };
   var SC_LANG_DEFAULTS = 'ru=ru-RU\nen=en\nen_US=en\nkk=kk\nky=ky\ntg=tg\nka=ka\nhy=hy\nuz=uz-Latn\nuz_Latn=uz-Latn';
   function scPlatform(p, c) {
     var t = (p + '/' + c).toLowerCase();
@@ -733,6 +738,8 @@
   var scAccount = el('input', { type: 'text', placeholder: 'Account ID' });
   var scKey = el('input', { type: 'password', placeholder: 'API-ключ' });
   var scProject = el('input', { type: 'text', placeholder: 'ссылка на проект или название, например: AI translation 4 MP' });
+  var scEnAndroid = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.android });
+  var scEnIos = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.ios });
   var scLangs = el('textarea', { class: 'small', placeholder: 'если Smartcat не принимает код языка, например:\nuz_Latn=uz-Latn' });
   var scExtra = el('textarea', { class: 'small', placeholder: '{"workflowStages": ["translation"]}' });
   var scMsg = el('div', { class: 'muted' });
@@ -747,12 +754,14 @@
       scServer.value = c.server; scCustom.value = c.customUrl; scAccount.value = c.accountId;
       scKey.value = ''; scKey.placeholder = c.hasKey ? 'ключ сохранён — впиши новый, чтобы заменить' : 'API-ключ';
       scLangs.value = c.langMap; scExtra.value = c.extra; scProject.value = c.project;
+      scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos;
     });
   }
   function saveScSettings() {
     if (scExtra.value.trim()) { try { JSON.parse(scExtra.value); } catch (e) { return Promise.reject(new Error('«Доп. параметры» — не JSON')); } }
     return scCall('sc-set-config', { config: { server: scServer.value, customUrl: scCustom.value.trim(), accountId: scAccount.value.trim(),
-      apiKey: scKey.value.trim(), langMap: scLangs.value, extra: scExtra.value.trim(), project: scProject.value.trim() } }).then(loadScConfig);
+      apiKey: scKey.value.trim(), langMap: scLangs.value, extra: scExtra.value.trim(), project: scProject.value.trim(),
+      enAndroid: scEnAndroid.value.trim(), enIos: scEnIos.value.trim() } }).then(loadScConfig);
   }
   var settingsPane = el('div', { class: 'settings hide' }, [
     el('h2', { text: 'Smartcat' }),
@@ -762,6 +771,8 @@
     el('label', {}, ['Account ID', scAccount]),
     el('label', {}, ['API-ключ', scKey]),
     el('label', {}, ['Проект в Smartcat (файлы будут складываться в папки ДДММГГ_android / ДДММГГ_ios внутри него; пусто — новый проект на каждую отправку)', scProject]),
+    el('label', {}, ['Английский дополнительно в проект (android) — пусто = стандартный', scEnAndroid]),
+    el('label', {}, ['Английский дополнительно в проект (ios) — пусто = стандартный', scEnIos]),
     el('details', {}, [el('summary', { text: 'Дополнительно' }),
       el('label', {}, ['Коды языков для Smartcat (код_weblate=код_smartcat, по строке)', scLangs]),
       el('label', {}, ['Доп. параметры создания проекта (JSON, добавляются к стандартным)', scExtra])]),
@@ -1069,6 +1080,29 @@
       box.appendChild(el('p', { class: 'muted', text: 'Языки: ' + langs.map(function (l) { return langName(l) + ' → ' + map(l); }).join(', ') + '.' +
         (jsonCount ? ' Плюралки (.json) в Smartcat не отправляются.' : '') }));
       var msg = el('div', { class: 'muted' });
+      /* английский — ещё и в отдельные проекты по платформе, без папки */
+      var enTargets = { android: c.enAndroid || SC_EN_DEFAULTS.android, ios: c.enIos || SC_EN_DEFAULTS.ios };
+      var enFiles = files.filter(function (f) { return isEnglish(f.lang) && enTargets[scPlatform(f.p, f.c)]; });
+      if (enFiles.length) box.appendChild(el('p', { class: 'muted', text: 'Английский (' + enFiles.length + ' файл.) также уйдёт без папки в проекты для английского (' +
+        enFiles.map(function (f) { return scPlatform(f.p, f.c); }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', ') +
+        ') с именем ' + ddmmyy() + '_' + enFiles[0].name + ' — обратно оттуда не забираю.' }));
+      function sendEnglish() {
+        var by = {};
+        enFiles.forEach(function (f) { var pl = scPlatform(f.p, f.c); (by[pl] = by[pl] || []).push(f); });
+        return Object.keys(by).reduce(function (chain, pl) {
+          return chain.then(function (acc) {
+            return scCall('sc-resolve-project', { ref: enTargets[pl] }).then(function (pr) {
+              var pls = (pr.targetLanguages || []).map(String);
+              var code = pls.filter(function (x) { return x.toLowerCase() === map('en').toLowerCase(); })[0] ||
+                pls.filter(function (x) { return baseLang(x) === 'en'; })[0] || (pls.length ? null : map('en'));
+              if (!code) throw new Error('в проекте «' + pr.name + '» нет английского (в нём: ' + pls.join(', ') + ')');
+              return scCall('sc-add-docs', { projectId: pr.id, files: by[pl].map(function (f) {
+                return { name: ddmmyy() + '_' + f.name, text: f.text, targetLanguages: [code] };
+              }) }).then(function (r) { acc.push({ ok: true, text: pl + ' → ' + pr.name + ' (' + r.documents.length + ' док.)' }); return acc; });
+            }).catch(function (e) { acc.push({ ok: false, text: pl + ': ' + e.message }); return acc; });
+          });
+        }, Promise.resolve([]));
+      }
       function createOne(g, extra) {
         var model = Object.assign({
           name: g.input.value.trim() || ddmmyy() + '_weblate',
@@ -1127,6 +1161,8 @@
             return (pr ? addToProject(g, pr) : createOne(g, extra)).then(function (res) { made.push(res); g.input.disabled = true; return pr; });
           });
         });
+        var enRes = [];
+        if (enFiles.length) chain = chain.then(function () { return sendEnglish().then(function (r) { enRes = r; }); });
         chain.then(function () {
           msg.className = 'ok';
         }, function (e) {
@@ -1140,6 +1176,9 @@
             return el('span', {}, [i ? ', ' : '', el('a', { href: c.base + '/projects/' + p.id, target: '_blank', text: p.name }),
               p.docs != null ? ' (' + p.docs + ' док.)' : '']);
           })).concat([document.createTextNode('. Когда Smartcat переведёт — вкладка «Загрузить обратно» → «Из Smartcat».')])), msg.firstChild);
+          enRes.forEach(function (x) {
+            msg.appendChild(el('div', { class: x.ok ? 'ok' : 'red', text: (x.ok ? '✓ Английский: ' : '✗ Английский: ') + x.text }));
+          });
           made.forEach(function (p) {
             (p.lost || []).forEach(function (t) {
               msg.appendChild(el('div', { class: 'red', text: /^языков нет/.test(t) ? p.name + ': ' + t : 'Не поняла, к какому компоненту/языку относится: ' + t }));
