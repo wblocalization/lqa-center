@@ -201,30 +201,6 @@
     });
     return function (code) { return m[code] || code.replace(/_/g, '-'); };
   }
-  /* из нескольких .po одного компонента (по языкам) — один исходный файл для Smartcat: все строки, непереведённые хоть где-то */
-  function sourcePo(texts, srcCode) {
-    var seen = {}, out = [];
-    texts.forEach(function (t) {
-      poEntries(t).forEach(function (e) {
-        if (e.header || e.obsolete || e.plural) return;
-        var key = (e.ctx || '') + '\u0004' + e.msgid;
-        if (seen[key]) return;
-        seen[key] = 1;
-        var lines = [], cur = null;
-        e.lines.forEach(function (l) {
-          if (l[0] === '#') { if (!/^#,/.test(l)) lines.push(l); else { var f = l.replace(/\bfuzzy\b,?\s*/, '').trim(); if (f !== '#,') lines.push(f); } return; }
-          var m = /^(msgctxt|msgid_plural|msgid|msgstr(?:\[\d+\])?)\s/.exec(l);
-          if (m) cur = m[1];
-          if (cur && cur.indexOf('msgstr') !== 0) lines.push(l);
-        });
-        lines.push('msgstr ""');
-        out.push(lines.join('\n'));
-      });
-    });
-    var head = 'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n"Language: ' + (srcCode || 'ru') + '\\n"\n';
-    return { text: head + '\n' + out.join('\n\n') + '\n', strings: out.length };
-  }
-
   /* ---------- PO filter: keep header + empty / fuzzy entries ---------- */
   function unquote(s) {
     s = s.trim();
@@ -932,15 +908,13 @@
         return;
       }
       var map = scLangMap(c.langMap);
-      var byComp = {}, langs = [];
-      po.forEach(function (r) {
-        var k = r.p + '/' + r.component;
-        (byComp[k] = byComp[k] || { p: r.p, c: r.component, src: r.src, texts: [] }).texts.push(r.text);
+      /* отдельный файл на каждый компонент × язык — со своими непереведёнными строками,
+         имя как при скачивании из Weblate: global_site-wb-android-hy.po */
+      var langs = [];
+      var files = po.map(function (r) {
         if (langs.indexOf(r.language) < 0) langs.push(r.language);
-      });
-      var files = Object.keys(byComp).map(function (k) {
-        var b = byComp[k], sp = sourcePo(b.texts, b.src);
-        return { name: fileKey(b.c) + '.po', key: fileKey(b.c), p: b.p, c: b.c, text: sp.text, strings: sp.strings, src: b.src };
+        var key = r.p + '-' + fileKey(r.component) + '-' + r.language;
+        return { name: key + '.po', key: key, p: r.p, c: r.component, lang: r.language, text: r.text, strings: r.strings, src: r.src };
       }).filter(function (f) { return f.strings; });
       var jsonCount = res.length - po.length;
       /* проекты по платформе: 290926_android, 290926_ios (дата отправки в начале) */
@@ -960,15 +934,17 @@
         var by = {};
         files.forEach(function (f) { var g = split.checked ? platform(f) : 'all'; (by[g] = by[g] || []).push(f); });
         groups = Object.keys(by).sort().map(function (g) {
-          var name = ddmmyy() + (g === 'all' ? '_' + (by[g].length === 1 ? fileKey(by[g][0].c) : 'weblate') : '_' + g);
+          var one = by[g].every(function (f) { return f.c === by[g][0].c; });
+          var name = ddmmyy() + (g === 'all' ? '_' + (one ? fileKey(by[g][0].c) : 'weblate') : '_' + g);
           return { files: by[g], input: el('input', { type: 'text', value: name }), note: el('span', { class: 'muted' }) };
         });
         groupsBox.textContent = '';
         groups.forEach(function (g) {
           var strings = g.files.reduce(function (a, f) { return a + f.strings; }, 0);
+          var comps = g.files.map(function (f) { return f.c; }).filter(function (x, i, a) { return a.indexOf(x) === i; });
           groupsBox.appendChild(el('div', { class: 'scgroup' }, [
             el('label', { class: 'muted blk' }, [c.project ? 'Папка в проекте «' + (targetName || c.project) + '»' : 'Проект в Smartcat', g.input]),
-            el('div', { class: 'muted', text: g.files.length + ' компонент(ов), ' + strings + ' уникальных строк: ' + g.files.map(function (f) { return f.c; }).join(', ') }),
+            el('div', { class: 'muted', text: g.files.length + ' файл(ов) — ' + comps.length + ' компонент(ов) × языки, ' + strings + ' строк: ' + comps.join(', ') }),
             g.note
           ]));
           checkName(g);
@@ -999,20 +975,15 @@
       function createOne(g, extra) {
         var model = Object.assign({
           name: g.input.value.trim() || ddmmyy() + '_weblate',
-          description: 'Создано расширением Weblate. Компоненты: ' + g.files.map(function (f) { return f.p + '/' + f.c; }).join(', '),
+          description: 'Создано расширением Weblate. Компоненты: ' + g.files.map(function (f) { return f.p + '/' + f.c; })
+            .filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', '),
           sourceLanguage: map(g.files[0].src || 'ru'),
           targetLanguages: langs.map(map),
           assignToVendor: false, useMT: true, pretranslate: true, useTranslationMemory: true,
           autoPropagateRepetitions: false, isForTesting: false, workflowStages: ['translation']
         }, extra);
-        return scCall('sc-create', { model: model, files: g.files.map(function (f) { return { name: f.name, text: f.text }; }) }).then(function (proj) {
-          var fmap = {}, lmap = {};
-          g.files.forEach(function (f) { fmap[f.key] = { p: f.p, c: f.c }; });
-          langs.forEach(function (l) { lmap[map(l).toLowerCase()] = l; });
-          var list = scProjects().filter(function (x) { return x.id !== proj.id; });
-          list.unshift({ id: proj.id, name: proj.name || model.name, created: new Date().toISOString(), files: fmap, langs: lmap });
-          sset('wlx_sc_projects', JSON.stringify(list.slice(0, 20)));
-          return { id: proj.id, name: proj.name || model.name };
+        return scCall('sc-create', { model: model, files: [] }).then(function (proj) {
+          return addToProject(g, { id: proj.id, name: proj.name || model.name, targetLanguages: proj.targetLanguages || model.targetLanguages }, '');
         });
       }
       /* добавить в существующий проект: папка = название группы */
@@ -1026,30 +997,26 @@
         });
         return { codes: out, missing: missing, all: pl };
       }
-      function addToProject(g, pr) {
-        var folder = g.input.value.trim() || ddmmyy() + '_weblate';
-        var pl = projectLangs(pr), send = langs.filter(function (l) { return pl.codes[l]; });
+      function addToProject(g, pr, folderOverride) {
+        var folder = folderOverride != null ? folderOverride : (g.input.value.trim() || ddmmyy() + '_weblate');
+        var pl = projectLangs(pr);
+        var send = g.files.filter(function (f) { return pl.codes[f.lang]; });
         if (!send.length) return Promise.reject(new Error('ни одного выбранного языка нет в проекте «' + pr.name + '» (в нём: ' + pl.all.join(', ') + ')'));
-        var want = send.map(function (l) { return pl.codes[l]; });
-        var same = pl.all.length && want.length === pl.all.length;
-        return scCall('sc-add-docs', { projectId: pr.id, targetLanguages: same ? null : want,
-          files: g.files.map(function (f) { return { name: folder + '/' + f.name, text: f.text }; }) }).then(function (r) {
+        return scCall('sc-add-docs', { projectId: pr.id,
+          files: send.map(function (f) { return { name: (folder ? folder + '/' : '') + f.name, text: f.text, targetLanguages: [pl.codes[f.lang]] }; }) }).then(function (r) {
           if (!r.documents.length) throw new Error('Smartcat не показал новых документов в проекте — проверь проект вручную');
           var lmap = {}, byKey = {}, docs = {}, lost = [];
-          send.forEach(function (l) { lmap[pl.codes[l].toLowerCase()] = l; });
-          g.files.forEach(function (f) { byKey[f.key] = f; });
+          send.forEach(function (f) { byKey[f.key] = f; lmap[pl.codes[f.lang].toLowerCase()] = f.lang; });
           r.documents.forEach(function (d) {
             var f = byKey[scDocKey(d.name)] || byKey[scDocKey(d.fullPath)];
-            var lang = lmap[String(d.targetLanguage || '').toLowerCase()] ||
-              send.filter(function (l) { return baseLang(l) === baseLang(d.targetLanguage || ''); })[0];
-            if (f && lang) docs[d.id] = { p: f.p, c: f.c, lang: lang }; else lost.push(d.name + ' (' + d.targetLanguage + ')');
+            if (f) docs[d.id] = { p: f.p, c: f.c, lang: f.lang }; else lost.push(d.name + ' (' + d.targetLanguage + ')');
           });
           if (pl.missing.length) lost.unshift('языков нет в проекте, не отправлены: ' + pl.missing.map(langName).join(', '));
-          var key = pr.id + '#' + folder;
+          var key = pr.id + '#' + (folder || 'root');
           var list = scProjects().filter(function (x) { return (x.key || x.id) !== key; });
-          list.unshift({ key: key, id: pr.id, name: pr.name + ' / ' + folder, created: new Date().toISOString(), docs: docs, files: {}, langs: lmap });
+          list.unshift({ key: key, id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), created: new Date().toISOString(), docs: docs, files: {}, langs: lmap });
           sset('wlx_sc_projects', JSON.stringify(list.slice(0, 30)));
-          return { id: pr.id, name: pr.name + ' / ' + folder, docs: Object.keys(docs).length, lost: lost };
+          return { id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), docs: Object.keys(docs).length, lost: lost };
         });
       }
       var btn = el('button', { class: 'b', text: 'Отправить в Smartcat', onclick: function () {

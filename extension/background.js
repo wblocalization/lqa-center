@@ -100,8 +100,9 @@ const SC_HANDLERS = {
     const boundary = '----weblate' + Math.random().toString(16).slice(2);
     const q = (v) => String(v).replace(/"/g, '%22');
     const parts = [];
-    if (m.targetLanguages) {
-      const models = m.files.map(() => ({ targetLanguages: m.targetLanguages }));
+    // языки перевода — у каждого файла свои (файл на язык)
+    if (m.files.some((f) => f.targetLanguages)) {
+      const models = m.files.map((f) => (f.targetLanguages ? { targetLanguages: f.targetLanguages } : {}));
       parts.push('--' + boundary + '\r\nContent-Disposition: form-data; name="documentModel"\r\nContent-Type: application/json\r\n\r\n' +
         JSON.stringify(models) + '\r\n');
     }
