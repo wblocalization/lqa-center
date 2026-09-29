@@ -73,6 +73,12 @@ const SC_HANDLERS = {
     });
     return await r.json();
   },
+  async 'sc-find'(m) {
+    // есть ли уже проект с таким именем (для предупреждения); список ищет по вхождению — сверяем точно
+    const r = await scFetch('/project/list?projectName=' + encodeURIComponent(m.name) + '&limit=20');
+    const list = await r.json();
+    return (Array.isArray(list) ? list : []).filter((p) => p.name === m.name).map((p) => ({ id: p.id, name: p.name }));
+  },
   async 'sc-project'(m) {
     const r = await scFetch('/project/' + encodeURIComponent(m.id));
     return await r.json();
