@@ -13,7 +13,7 @@
 
   /* ---------- языки: русские названия и флаги ---------- */
   var FLAGS = {} /*FLAGS*/;
-  var RU_NAMES = { ky: 'Киргизский', zh_Hans: 'Китайский (упрощённый)', zh_Hant: 'Китайский (традиционный)', en_US: 'Английский (США)', en_GB: 'Английский (Великобритания)' };
+  var RU_NAMES = { ky: 'Киргизский', az_N11: 'Азербайджанский (N11)', zh_Hans: 'Китайский (упрощённый)', zh_Hant: 'Китайский (традиционный)', en_US: 'Английский (США)', en_GB: 'Английский (Великобритания)' };
   var WL_NAMES = {};
   var displayNames = null;
   try { displayNames = new Intl.DisplayNames(['ru'], { type: 'language' }); } catch (e) {}
@@ -649,7 +649,7 @@
   var scOut = el('div');
   var scBack = el('div', { class: 'scimp hide' });
   var scPane = el('div', { class: 'hide' }, [
-    el('p', { class: 'sub', text: 'Стандартный набор для Smartcat: непереведённые строки по компонентам ниже на языки KK KY TG KA HY UZ EN (+ AZ — только в ZIP, в Smartcat не уходит). На выходе ZIP с папками android и ios и отправка в Smartcat.' }),
+    el('p', { class: 'sub', text: 'Стандартный набор для Smartcat: непереведённые строки по компонентам ниже на языки KK KY TG KA HY UZ EN (+ AZ — только в ZIP, в Smartcat не уходит; для android — AZ N11). На выходе ZIP с папками android и ios и отправка в Smartcat.' }),
     el('details', {}, [el('summary', { text: 'Компоненты (можно поменять — запомнится)' }),
       scLinks,
       el('div', { class: 'row' }, [el('button', { class: 'b g s', text: 'Вернуть стандартные', onclick: function () { scLinks.value = SC_DEFAULT_LINKS; sset('wlx_mt_links', ''); } })])]),
@@ -658,31 +658,43 @@
     scOut,
     scBack
   ]);
+  /* AZ по платформе: у андроида свой язык az_N11, у остальных — обычный az */
+  var AZ_BY_PLATFORM = { android: 'az_N11' };
+  function presetLangs(x, codes) {
+    var own = AZ_BY_PLATFORM[scPlatform(x.p, x.c)];
+    var az = own && codes.filter(function (c) { return c.toLowerCase() === own.toLowerCase(); })[0];
+    var rest = codes.filter(function (c) { return !/_n\d+$/i.test(c); });   /* az_N11 и подобные — только когда явно нужны */
+    return mtPick(rest).concat(az ? [az] : mtPick(rest, EXPORT_ONLY_LANGS));
+  }
   function runScPreset() {
     var text = scLinks.value.trim() || SC_DEFAULT_LINKS;
     if (text !== SC_DEFAULT_LINKS) sset('wlx_mt_links', text);
     scRun.disabled = true; scOut.textContent = '';
     var prog = scPane.querySelector('#wlx-sc-prog'); prog.classList.remove('hide');
     scBar.style.width = '0%'; scProg.textContent = 'Ищу компоненты…';
-    var cs = [];
+    var plan = [];
     resolveLinks(text).then(function (r) {
-      cs = r.comps;
       if (r.missing.length) scOut.appendChild(el('div', { class: 'err', text: 'Не нашла компоненты по ссылкам:\n' + r.missing.join('\n') }));
-      if (!cs.length) throw new Error('Не нашла ни одного компонента');
+      if (!r.comps.length) throw new Error('Не нашла ни одного компонента');
       scProg.textContent = 'Смотрю языки…';
-      var codes = [];
-      return pool(cs, 4, function (x) {
+      /* языки выбираются для каждого компонента отдельно */
+      return pool(r.comps, 4, function (x) {
         return translations(x.p, x.c).then(function (trs) {
-          trs.forEach(function (t) { if (!t.is_source && codes.indexOf(t.language.code) < 0) codes.push(t.language.code); });
+          var codes = trs.filter(function (t) { return !t.is_source; }).map(function (t) { return t.language.code; });
+          plan.push({ comp: x, langs: presetLangs(x, codes) });
         });
-      }).then(function () { return mtPick(codes).concat(mtPick(codes, EXPORT_ONLY_LANGS)); });
-    }).then(function (langs) {
-      if (!langs.length) throw new Error('В компонентах нет языков из набора');
-      var total = cs.length * langs.length, done = 0;
-      scProg.textContent = 'Скачиваю… 0 из ' + total + ' (' + langs.map(langName).join(', ') + ')';
-      return exportCore(cs, langs, { q: QUERY_EMPTY, wantJson: false }, function () {
-        done++; scBar.style.width = Math.round(100 * done / total) + '%'; scProg.textContent = 'Скачиваю… ' + done + ' из ' + total;
       });
+    }).then(function () {
+      plan = plan.filter(function (x) { return x.langs.length; });
+      if (!plan.length) throw new Error('В компонентах нет языков из набора');
+      var total = plan.reduce(function (a, x) { return a + x.langs.length; }, 0), done = 0;
+      scProg.textContent = 'Скачиваю… 0 из ' + total;
+      var all = { res: [], errs: [] };
+      return pool(plan, 2, function (x) {
+        return exportCore([x.comp], x.langs, { q: QUERY_EMPTY, wantJson: false }, function () {
+          done++; scBar.style.width = Math.round(100 * done / total) + '%'; scProg.textContent = 'Скачиваю… ' + done + ' из ' + total;
+        }).then(function (r) { all.res = all.res.concat(r.res); all.errs = all.errs.concat(r.errs); });
+      }).then(function () { return all; });
     }).then(function (r) {
       scBar.style.width = '100%'; scProg.textContent = 'Готово!';
       showScPreset(r.res, r.errs);
@@ -691,6 +703,7 @@
       prog.classList.add('hide');
     }).then(function () { scRun.disabled = false; });
   }
+
   function scFileName(r) { return r.p + '-' + fileKey(r.component) + '-' + r.language + '.po'; }
   function showScPreset(res, errs) {
     if (!res.length) { scOut.appendChild(el('p', { text: 'Непереведённых строк нет — всё переведено 🎉' })); }
