@@ -117,6 +117,15 @@ const SC_HANDLERS = {
     return { name: after.name, documents: (after.documents || []).filter((d) => !known.has(d.id))
       .map((d) => ({ id: d.id, name: d.name, fullPath: d.fullPath || d.path || '', targetLanguage: d.targetLanguage })) };
   },
+  /* список отправок в Smartcat — копия в расширении, чтобы не терялся вместе с данными страницы */
+  async 'sc-list-get'() {
+    const { scProjects = [] } = await chrome.storage.local.get('scProjects');
+    return scProjects;
+  },
+  async 'sc-list-set'(m) {
+    await chrome.storage.local.set({ scProjects: m.list || [] });
+    return { saved: true };
+  },
   async 'sc-project'(m) {
     const r = await scFetch('/project/' + encodeURIComponent(m.id));
     return await r.json();

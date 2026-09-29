@@ -1069,6 +1069,22 @@
 
   /* ----- шаг «Отправить в Smartcat» после выгрузки ----- */
   function scProjects() { try { return JSON.parse(sget('wlx_sc_projects') || '[]'); } catch (e) { return []; } }
+  function saveScProjects(list) {
+    list = list.slice(0, 40);
+    sset('wlx_sc_projects', JSON.stringify(list));
+    if (HAS_EXT) scCall('sc-list-set', { list: list }).catch(function () {});
+  }
+  /* при открытии: объединить список со страницы и копию из расширения */
+  function syncScProjects() {
+    if (!HAS_EXT) return Promise.resolve();
+    return scCall('sc-list-get').then(function (ext) {
+      var local = scProjects(), keys = {};
+      local.forEach(function (x) { keys[x.key || x.id] = 1; });
+      var merged = local.concat((ext || []).filter(function (x) { return !keys[x.key || x.id]; }));
+      merged.sort(function (a, b) { return String(b.created).localeCompare(String(a.created)); });
+      saveScProjects(merged);
+    }, function () {});
+  }
   function renderSmartcat(res, container) {
     var po = res.filter(function (r) { return r.ext !== 'json'; });
     if (!po.length) return;
@@ -1204,7 +1220,7 @@
           var key = pr.id + '#' + (folder || 'root');
           var list = scProjects().filter(function (x) { return (x.key || x.id) !== key; });
           list.unshift({ key: key, id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), created: new Date().toISOString(), docs: docs, files: {}, langs: lmap });
-          sset('wlx_sc_projects', JSON.stringify(list.slice(0, 30)));
+          saveScProjects(list);
           return { id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), docs: Object.keys(docs).length, lost: lost };
         });
       }
@@ -1381,19 +1397,65 @@
      на вкладке Smartcat — «Забрать и загрузить в Weblate» одной кнопкой */
   function renderScList(box, auto) {
     box.textContent = '';
+    if (!HAS_EXT) { box.classList.add('hide'); return; }
     var list = scProjects();
-    if (!HAS_EXT || !list.length) { box.classList.add('hide'); return; }
     box.classList.remove('hide');
-    box.appendChild(el('h2', { text: auto ? 'Машинный перевод из Smartcat → в Weblate' : '2. Машинный перевод из Smartcat' }));
+    var findMsg = el('span', { class: 'muted' });
+    var findBtn = el('button', { class: 'b g s', text: '🔎 Найти отправки в Smartcat', title: 'Восстановить список по файлам в проекте Smartcat за последние 2 недели',
+      onclick: function () { recoverScProjects(findBtn, findMsg); } });
+    box.appendChild(el('div', { class: 'row' }, [el('h2', { text: auto ? 'Машинный перевод из Smartcat → в Weblate' : '2. Машинный перевод из Smartcat' }), findBtn, findMsg]));
+    if (!list.length) box.appendChild(el('p', { class: 'muted', text: 'Отправок пока нет. Если они были, но пропали — нажми «Найти отправки в Smartcat».' }));
     list.forEach(function (pr) {
       var st = el('span', { class: 'muted' });
       var get = el('button', { class: auto ? 'b s' : 'b g s', text: auto ? '⬆ Забрать и загрузить в Weblate' : 'Забрать переводы',
         onclick: function () { fetchSc(pr, st, get, auto); } });
       var del = el('button', { class: 'b g s', text: '×', title: 'Убрать из списка', onclick: function () {
-        sset('wlx_sc_projects', JSON.stringify(scProjects().filter(function (x) { return (x.key || x.id) !== (pr.key || pr.id); }))); renderScImport();
+        saveScProjects(scProjects().filter(function (x) { return (x.key || x.id) !== (pr.key || pr.id); })); renderScImport();
       } });
       box.appendChild(el('div', { class: 'row' }, [el('b', { text: pr.name }), el('span', { class: 'muted', text: (pr.created || '').slice(0, 10) }), get, del, st]));
     });
+  }
+  /* восстановить отправки по документам проекта: «global_site-wb-android-hy» → компонент + язык, дата загрузки → папка */
+  function recoverScProjects(btn, msg) {
+    btn.disabled = true; msg.className = 'muted'; msg.textContent = 'Смотрю проект в Smartcat…';
+    loadScConfig().then(function (c) {
+      if (!c || !c.accountId || !c.hasKey) throw new Error('Smartcat не подключён (⚙)');
+      return scCall('sc-resolve-project', { ref: c.project || SC_PROJECT_DEFAULT }).then(function (pr) {
+        return scCall('sc-project', { id: pr.id }).then(function (full) { return { pr: pr, docs: full.documents || [] }; });
+      });
+    }).then(function (x) {
+      var known = {}, projects = ['global_site'];
+      savedComps().concat(parseLinks(sget('wlx_mt_links') || SC_DEFAULT_LINKS)).forEach(function (l) { if (projects.indexOf(l.p) < 0) projects.push(l.p); });
+      scProjects().forEach(function (e) { Object.keys(e.docs || {}).forEach(function (id) { known[id] = 1; }); });
+      var since = Date.now() - 14 * 864e5, groups = {};
+      x.docs.forEach(function (d) {
+        if (known[d.id]) return;
+        var t = Date.parse(d.creationDate || d.created || '');
+        if (t && t < since) return;
+        var name = scDocKey(d.name).replace(/\s*\(\d+\)$/, '');
+        var m = /^(.+)-([a-z]{2,3}(?:_[A-Za-z0-9]+)?)$/.exec(name);
+        if (!m) return;
+        var proj = projects.filter(function (p) { return m[1].indexOf(p + '-') === 0; })[0];
+        if (!proj) return;
+        var comp = m[1].slice(proj.length + 1).split('__').join('/');
+        var day = t ? new Date(t) : new Date();
+        var dd = ('0' + day.getDate()).slice(-2) + ('0' + (day.getMonth() + 1)).slice(-2) + String(day.getFullYear()).slice(-2);
+        var folder = dd + '_' + scPlatform(proj, comp);
+        var g = groups[folder] = groups[folder] || { docs: {}, t: t || Date.now() };
+        g.docs[d.id] = { p: proj, c: comp, lang: m[2] };
+      });
+      var names = Object.keys(groups);
+      if (!names.length) { msg.textContent = 'Новых отправок за 2 недели не нашла'; return; }
+      var list = scProjects();
+      names.forEach(function (folder) {
+        var key = x.pr.id + '#' + folder, ex = list.filter(function (e) { return e.key === key; })[0];
+        if (ex) { Object.keys(groups[folder].docs).forEach(function (id) { ex.docs[id] = groups[folder].docs[id]; }); return; }
+        list.push({ key: key, id: x.pr.id, name: x.pr.name + ' / ' + folder, created: new Date(groups[folder].t).toISOString(), docs: groups[folder].docs, files: {}, langs: {} });
+      });
+      list.sort(function (a, b) { return String(b.created).localeCompare(String(a.created)); });
+      saveScProjects(list);
+      renderScImport();
+    }).catch(function (e) { msg.className = 'red'; msg.textContent = '✗ ' + e.message; btn.disabled = false; });
   }
   function renderScImport() { renderScList(scImport, false); renderScList(scBack, true); }
   function scDocKey(name) { return String(name || '').split('/').pop().replace(/\.po$/i, ''); }
@@ -1420,7 +1482,11 @@
           var inf = poInfo(r.text);
           u.text = r.text; u.filled = inf.filled; u.total = inf.total;
           if (!inf.filled) u.skip = 'Smartcat вернул пустой перевод — проверь, что в проекте сработал машинный перевод';
-          return withTranslations(u.p, u.c).then(function (ok) { if (!ok) u.error = 'компонент «' + u.c + '» не найден в Weblate'; });
+          return withTranslations(u.p, u.c).then(function (w) {
+            if (!w) { u.error = 'компонент «' + u.c + '» не найден в Weblate'; return; }
+            var code = matchLanguage(u.lang, w.trs);           /* в старых именах бывает «uz» вместо «uz_Latn» */
+            if (code) u.lang = code; else u.error = 'языка ' + u.lang + ' нет в компоненте';
+          });
         }, function (e) { u.error = e.message; }).then(function () {
           uploads = uploads.filter(function (x) { return !(x.fromSc && x.p === u.p && x.c === u.c && x.lang === u.lang); });
           if (u.p && u.c) u.name = 'Smartcat/' + fileKey(u.c) + '_' + u.lang + '.po';
@@ -1443,6 +1509,7 @@
     }).catch(function (e) { st.className = 'red'; st.textContent = '✗ ' + e.message; }).then(function () { btn.disabled = false; });
   }
   renderScImport();
+  syncScProjects().then(renderScImport);
 
   function setRow(u, cls, text) { u.status = text; u.row.className = cls; u.row.textContent = text; }
   function runUpload(only) {
