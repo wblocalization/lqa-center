@@ -323,7 +323,7 @@
     return { text: JSON.stringify(out, null, 2) + '\n', strings: strings, words: words };
   }
   function poInfo(text) {
-    var headers = {}, filled = 0, total = 0;
+    var headers = {}, filled = 0, total = 0, withText = 0;
     poEntries(text).forEach(function (e) {
       if (e.header) {
         e.strs.join('').split('\\n').forEach(function (l) {
@@ -335,8 +335,10 @@
       if (e.obsolete) return;
       total++;
       if (e.done) filled++;
+      /* с текстом перевода, даже если помечено «требует правки» — так Smartcat отдаёт неподтверждённый машинный перевод */
+      if (e.strs.length && e.strs.every(function (x) { return x !== ''; })) withText++;
     });
-    return { headers: headers, filled: filled, total: total };
+    return { headers: headers, filled: filled, total: total, withText: withText };
   }
 
   /* ---------- ZIP (store, UTF-8 names) ---------- */
@@ -1507,8 +1509,8 @@
         u.p = comp.p; u.c = comp.c; u.lang = lang;
         return scCall('sc-export', { documentId: d.id }).then(function (r) {
           var inf = poInfo(r.text);
-          u.text = r.text; u.filled = inf.filled; u.total = inf.total;
-          if (!inf.filled) u.skip = 'Smartcat вернул пустой перевод — проверь, что в проекте сработал машинный перевод';
+          u.text = r.text; u.filled = inf.withText; u.total = inf.total;
+          if (!inf.withText) u.skip = 'Smartcat вернул пустой перевод — машинный перевод в документе ещё не появился';
           return withTranslations(u.p, u.c).then(function (w) {
             if (!w) { u.error = 'компонент «' + u.c + '» не найден в Weblate'; return; }
             var code = matchLanguage(u.lang, w.trs);           /* в старых именах бывает «uz» вместо «uz_Latn» */
@@ -1524,10 +1526,20 @@
         renderPreview();
         st.className = 'ok';
         if (auto) {
-          var mine = uploads.filter(function (u) { return u.scKey === prKey && !u.error && !u.skip && !u.sent; }).length;
-          st.textContent = '✓ Забрала ' + n + (ready.length < docs.length ? ' (ещё не готово в Smartcat: ' + (docs.length - ready.length) + ')' : '') +
-            (mine ? ', загружаю ' + mine + ' в Weblate («только непереведённые») — результат на вкладке «Загрузить обратно»' : ', загружать нечего');
-          if (mine) { tab('imp'); runUpload(function (u) { return u.scKey === prKey; }); }
+          var ours = uploads.filter(function (u) { return u.scKey === prKey; });
+          var mine = ours.filter(function (u) { return !u.error && !u.skip && !u.sent; }).length;
+          if (mine) {
+            st.textContent = '✓ Забрала ' + n + (ready.length < docs.length ? ' (ещё не готово в Smartcat: ' + (docs.length - ready.length) + ')' : '') +
+              ', загружаю ' + mine + ' в Weblate («только непереведённые») — результат на вкладке «Загрузить обратно»';
+            tab('imp'); runUpload(function (u) { return u.scKey === prKey; });
+            return;
+          }
+          /* загружать нечего — показать почему */
+          var why = {};
+          ours.forEach(function (u) { var r = u.sent ? 'уже загружено' : (u.error || u.skip || '?'); why[r] = (why[r] || 0) + 1; });
+          st.className = 'red';
+          st.textContent = 'Забрала ' + n + ', но загружать нечего: ' + Object.keys(why).map(function (r) { return why[r] + ' × ' + r; }).join('; ') +
+            '. Подробности — на вкладке «Загрузить обратно».';
           return;
         }
         st.textContent = '✓ Готово к загрузке: ' + n + (ready.length < docs.length ? ' (ещё не готово в Smartcat: ' + (docs.length - ready.length) + ')' : '') +
@@ -1545,7 +1557,8 @@
     var opts = { method: optMethod.value, fuzzy: optFuzzy.value, conflicts: optConf.value };
     /* машинный перевод из Smartcat — всегда «добавить как перевод» + «только непереведённые строки»;
        выбор в «3. Как загружать» — для файлов подрядчиков, его и запоминаем */
-    var SC_OPTS = { method: 'translate', fuzzy: opts.fuzzy, conflicts: '' };
+    /* машинный перевод Smartcat приходит как «требует правки» — импортируем как переведённое, как при ручной загрузке */
+    var SC_OPTS = { method: 'translate', fuzzy: 'approve', conflicts: '' };
     if (todo.some(function (u) { return !u.fromSc; })) { sset('wlx_m', opts.method); sset('wlx_f', opts.fuzzy); sset('wlx_c', opts.conflicts); }
     upBtn.disabled = true; upResults.textContent = 'Загружаю…';
     var ok = 0, bad = 0;
