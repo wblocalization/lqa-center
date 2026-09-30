@@ -506,6 +506,8 @@
     '.track{margin-top:18px;border-top:1px solid #eceef2;padding-top:4px}',
     '.scimp{margin-bottom:12px;padding:10px 12px;border-radius:10px;background:#f3f5f8}',
     '.scimp h2{margin-top:0}',
+    '.scimp label.chk{display:flex;gap:5px;align-items:center;font-size:13px;color:#6b7385;cursor:pointer}',
+    '.scimp input[type=checkbox]{width:16px;height:16px;margin:0;cursor:pointer}',
     '.scgroup{margin-top:10px;padding:8px 10px;border:1px solid #eceef2;border-radius:8px}',
     'select.presel{display:inline-block;width:auto;min-width:220px;margin:0;padding:6px 8px;border:1px solid #d9dde5;border-radius:7px;font:inherit;background:#fff;color:#1d2330}',
     'pre.report{white-space:pre-wrap;font:12.5px/1.55 Consolas,ui-monospace,monospace;background:#f3f5f8;border-radius:8px;padding:10px 12px;margin:6px 0;color:#1d2330}',
@@ -1175,7 +1177,7 @@
       var jsonCount = res.length - po.length;
       /* проекты по платформе: 290926_android, 290926_ios (дата отправки в начале) */
       function platform(f) { return scPlatform(f.p, f.c); }
-      var split = el('input', { type: 'checkbox' }); split.checked = sget('wlx_sc_split') !== '0';
+      var split = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 4px 0 0;vertical-align:middle' }); split.checked = sget('wlx_sc_split') !== '0';
       var targetName = '';
       var groupsBox = el('div');
       var groups = [];
@@ -1480,8 +1482,32 @@
     var allBtn = el('button', { class: 'b s', text: '⬆ Загрузить всё готовое (' + pending.length + ')',
       title: 'Забрать из Smartcat все ещё не загруженные отправки и загрузить их в Weblate одним разом',
       onclick: function () { uploadAllReady(allBtn, allMsg); } });
+    /* галочки: загрузить или убрать только отмеченные отправки */
+    var keyOf = function (pr) { return pr.key || pr.id; };
+    Object.keys(scSel).forEach(function (k) { if (!list.some(function (pr) { return keyOf(pr) === k; })) delete scSel[k]; });
+    var picked = function () { return list.filter(function (pr) { return scSel[keyOf(pr)]; }); };
+    var selBtn = el('button', { class: 'b s', title: 'Забрать из Smartcat отмеченные отправки и загрузить в Weblate одним разом',
+      onclick: function () { uploadAllReady(selBtn, allMsg, picked()); } });
+    var selDel = el('button', { class: 'b g s', text: '× Убрать отмеченные', onclick: function () {
+      var ks = picked().map(keyOf);
+      saveScProjects(scProjects().filter(function (x) { return ks.indexOf(keyOf(x)) < 0; }));
+      ks.forEach(function (k) { delete scSel[k]; }); renderScImport();
+    } });
+    var selAll = el('input', { type: 'checkbox', title: 'Отметить все / снять' });
+    function updSel() {
+      var n = picked().length;
+      selBtn.textContent = '⬆ Загрузить отмеченные (' + n + ')';
+      selBtn.disabled = !n; selDel.disabled = !n;
+      selAll.checked = n > 0 && n === list.length; selAll.indeterminate = n > 0 && n < list.length;
+    }
+    var boxes = [];
+    selAll.addEventListener('change', function () {
+      list.forEach(function (pr) { if (selAll.checked) scSel[keyOf(pr)] = 1; else delete scSel[keyOf(pr)]; });
+      boxes.forEach(function (b) { b.checked = selAll.checked; }); updSel();
+    });
     box.appendChild(el('div', { class: 'row' }, [el('h2', { text: 'Отправленное в Smartcat → в Weblate' }), findBtn, findMsg]));
-    if (pending.length > 1) box.appendChild(el('div', { class: 'row' }, [allBtn, allMsg]));
+    if (list.length) box.appendChild(el('div', { class: 'row' }, [el('label', { class: 'chk' }, [selAll, 'все']), selBtn, selDel,
+      pending.length > 1 ? allBtn : null, allMsg].filter(Boolean)));
     if (!list.length) box.appendChild(el('p', { class: 'muted', text: 'Отправок пока нет. Если они были, но пропали — нажми «Найти отправки в Smartcat».' }));
     scRows = {};
     list.forEach(function (pr) {
@@ -1495,14 +1521,18 @@
         saveScProjects(scProjects().filter(function (x) { return (x.key || x.id) !== (pr.key || pr.id); })); renderScImport();
       } });
       scRows[pr.key || pr.id] = { st: st, get: get };
-      box.appendChild(el('div', { class: 'row' }, [el('b', { text: pr.name }), el('span', { class: 'muted', text: (pr.created || '').slice(0, 10) }), get, zip, del, st]));
+      var cb = el('input', { type: 'checkbox', title: 'Отметить' });
+      cb.checked = !!scSel[keyOf(pr)]; boxes.push(cb);
+      cb.addEventListener('change', function () { if (cb.checked) scSel[keyOf(pr)] = 1; else delete scSel[keyOf(pr)]; updSel(); });
+      box.appendChild(el('div', { class: 'row' }, [cb, el('b', { text: pr.name }), el('span', { class: 'muted', text: (pr.created || '').slice(0, 10) }), get, zip, del, st]));
     });
+    updSel();
   }
-  var scRows = {}, scReady = {};
+  var scRows = {}, scReady = {}, scSel = {};
   function fmtDate(iso) { var d = new Date(iso); return isNaN(d) ? '' : ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2) + ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
   /* забрать все незагруженные отправки и загрузить одним разом */
-  function uploadAllReady(btn, msg) {
-    var list = scProjects().filter(function (pr) { return !pr.uploaded; });
+  function uploadAllReady(btn, msg, only) {
+    var list = only || scProjects().filter(function (pr) { return !pr.uploaded; });
     if (!list.length) { msg.textContent = 'Всё уже загружено'; return; }
     btn.disabled = true; msg.className = 'muted'; msg.textContent = 'Забираю из Smartcat…';
     var keys = [];
@@ -1516,6 +1546,7 @@
       var mine = uploads.filter(function (u) { return keys.indexOf(u.scKey) >= 0 && !u.error && !u.skip && !u.sent; });
       if (!mine.length) { msg.className = 'red'; msg.textContent = 'Загружать нечего — у каждой отправки причина написана в строке'; return; }
       msg.className = 'ok'; msg.textContent = '✓ Загружаю ' + mine.length + ' файл(ов) — результат на вкладке «Загрузить обратно»';
+      keys.forEach(function (k) { delete scSel[k]; });
       tab('imp');
       runUpload(function (u) { return keys.indexOf(u.scKey) >= 0; });
     }).catch(function (e) { msg.className = 'red'; msg.textContent = '✗ ' + e.message; }).then(function () { btn.disabled = false; });
