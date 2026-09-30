@@ -1058,7 +1058,8 @@
   var ENGLISH_DIR = 'Английский ШТАТ';
   function isEnglish(code) { return baseLang(code) === 'en'; }
   var PLURAL_MARK = '_plural form';
-  function poName(r) { return fileKey(r.component) + '_' + r.language + (r.ext === 'json' ? PLURAL_MARK + '.json' : '.po'); }
+  /* .po — как при ручном скачивании из Weblate: global_site-wb-ios_new-az_Latn.po */
+  function poName(r) { return r.ext === 'json' ? fileKey(r.component) + '_' + r.language + PLURAL_MARK + '.json' : scFileName(r); }
   function archivePath(r, layout, englishApart) {
     var folder = englishApart && isEnglish(r.language) ? ENGLISH_DIR
       : layout === 'language' ? langName(r.language)
@@ -1359,11 +1360,13 @@
   /* имя файла без языка → компонент: сначала среди компонентов прошлой выгрузки */
   function resolveComponent(key) {
     var sc = savedComps(), last = function (c) { return c.split('/').pop(); };
-    var cands = sc.filter(function (x) { return fileKey(x.c) === key || x.c === key; });
+    var cands = sc.filter(function (x) { return fileKey(x.c) === key || x.c === key || x.p + '-' + fileKey(x.c) === key; });
     if (!cands.length) cands = sc.filter(function (x) { return last(x.c) === key; });
     if (!cands.length) cands = sc.filter(function (x) { return last(x.c).slice(-(key.length + 1)) === '-' + key; });
     if (cands.length > 1) return Promise.resolve(null);
-    var pick = cands[0] || { p: defaultProject(), c: key.split('__').join('/') };
+    var dp = defaultProject();
+    if (!cands[0] && key.indexOf(dp + '-') === 0) key = key.slice(dp.length + 1);   // global_site-wb-ios_new → wb-ios_new
+    var pick = cands[0] || { p: dp, c: key.split('__').join('/') };
     return withTranslations(pick.p, pick.c);
   }
   /* из .json с плюралками убираем то, что осталось на русском (не переведено) */
@@ -1405,7 +1408,7 @@
       }
     }
     var parts = f.name.split('/'), base = parts.pop().replace(/\.(po|json)$/i, '').replace(/[ _.-]*plurals?([ _-]*forms?)?$/i, '');
-    var suffix = /^(.+)[._]([a-z]{2,3}(?:[_@-][A-Za-z0-9]+)?)$/.exec(base);
+    var suffix = /^(.+)[._-]([a-z]{2,3}(?:[_@-][A-Za-z0-9]+)?)$/.exec(base);
     u.c = suffix ? suffix[1] : base;
     var folder = parts.pop() || '';
     if (folder === ENGLISH_DIR) folder = 'en';
