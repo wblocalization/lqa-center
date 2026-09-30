@@ -142,6 +142,72 @@ const SC_HANDLERS = {
   },
 };
 
+/* ---------- Уведомление «перевод готов» ----------
+   Раз в пару минут смотрим отправки из списка: когда Smartcat перевёл все их документы — показываем уведомление.
+   Загружать в Weblate всё равно нажимает человек. */
+const WATCH_DAYS = 3;
+
+async function checkSmartcatReady() {
+  const { scProjects = [], scReady = {}, sc = {} } = await chrome.storage.local.get(['scProjects', 'scReady', 'sc']);
+  if (!sc.accountId || !sc.apiKey) return scReady;
+  let changed = false;
+  for (const pr of scProjects) {
+    const key = pr.key || pr.id;
+    if (pr.uploaded || scReady[key] || !pr.docs || !Object.keys(pr.docs).length) continue;
+    if (pr.created && Date.now() - Date.parse(pr.created) > WATCH_DAYS * 864e5) continue;
+    let proj;
+    try { proj = await (await scFetch('/project/' + encodeURIComponent(pr.id))).json(); } catch (e) { continue; }
+    const docs = (proj.documents || []).filter((d) => pr.docs[d.id]);
+    if (!docs.length) continue;
+    const ready = docs.every((d) => (!d.documentDisassemblingStatus || d.documentDisassemblingStatus === 'success') &&
+      d.pretranslateCompleted !== false);
+    if (!ready) continue;
+    scReady[key] = new Date().toISOString();
+    changed = true;
+    try {
+      await chrome.notifications.create('sc-ready|' + key, {
+        type: 'basic', iconUrl: 'icons/icon128.png', title: 'Smartcat: перевод готов',
+        message: (pr.name || 'Отправка') + ' — ' + docs.length + ' файл(ов). Нажми, чтобы открыть и загрузить в Weblate.',
+        priority: 2
+      });
+    } catch (e) { console.error('Weblate LQA:', e); }
+  }
+  if (changed) await chrome.storage.local.set({ scReady });
+  return scReady;
+}
+
+function ensureAlarm() {
+  chrome.alarms.get('sc-watch', (a) => { if (!a) chrome.alarms.create('sc-watch', { periodInMinutes: 2 }); });
+}
+chrome.runtime.onInstalled.addListener(ensureAlarm);
+chrome.runtime.onStartup.addListener(ensureAlarm);
+ensureAlarm();
+chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'sc-watch') checkSmartcatReady().catch((e) => console.error('Weblate LQA:', e)); });
+
+chrome.notifications.onClicked.addListener(async (id) => {
+  if (!id.startsWith('sc-ready|')) return;
+  chrome.notifications.clear(id);
+  const tabs = await chrome.tabs.query({ url: WEBLATE_URL + '*' });
+  let tab = tabs[0];
+  if (tab) {
+    await chrome.tabs.update(tab.id, { active: true });
+  } else {
+    tab = await chrome.tabs.create({ url: WEBLATE_URL });
+    await new Promise((res) => {
+      const f = (tid, info) => { if (tid === tab.id && info.status === 'complete') { chrome.tabs.onUpdated.removeListener(f); res(); } };
+      chrome.tabs.onUpdated.addListener(f);
+    });
+  }
+  await chrome.windows.update(tab.windowId, { focused: true });
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['weblate-export.js'] });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => window.__wlExport && window.__wlExport.openTab('sc') });
+  } catch (e) { console.error('Weblate LQA:', e); }
+});
+
+SC_HANDLERS['sc-ready-get'] = async () => (await chrome.storage.local.get('scReady')).scReady || {};
+SC_HANDLERS['sc-watch-now'] = () => checkSmartcatReady();
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const h = msg && SC_HANDLERS[msg.type];
   if (!h) return;

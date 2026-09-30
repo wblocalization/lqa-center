@@ -55,7 +55,16 @@ def main():
         for f in sorted(ext.rglob("*")):
             if f.is_file():
                 z.write(f, Path("weblate-extension") / f.relative_to(ext))
-    print("extension/ и weblate-extension.zip обновлены")
+    # Для Chrome Web Store: без "key" (магазин не принимает его, ID назначит сам)
+    manifest = json.loads((ext / "manifest.json").read_text(encoding="utf-8"))
+    manifest.pop("key", None)
+    (ROOT / "store").mkdir(exist_ok=True)
+    with zipfile.ZipFile(ROOT / "store" / "weblate-extension-store.zip", "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(ext.rglob("*")):
+            if f.is_file() and f.name != "manifest.json":
+                z.write(f, f.relative_to(ext))
+        z.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    print("extension/, weblate-extension.zip и store/weblate-extension-store.zip обновлены")
 
 
 if __name__ == "__main__":
