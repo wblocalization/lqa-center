@@ -1607,7 +1607,7 @@
         var key = scDocKey(d.name), comp = pr.docs ? pr.docs[d.id] : pr.files[key];
         var lang = (pr.docs && pr.docs[d.id].lang) || pr.langs[String(d.targetLanguage || '').toLowerCase()] ||
           Object.keys(pr.langs).map(function (k) { return pr.langs[k]; }).filter(function (l) { return baseLang(l) === baseLang(d.targetLanguage || ''); })[0];
-        var u = { name: 'Smartcat/' + key + '_' + (lang || d.targetLanguage) + '.po', text: '', filled: 0, total: 0, fromSc: true, scKey: prKey };
+        var u = { name: 'Smartcat/' + key + '.po', text: '', filled: 0, total: 0, fromSc: true, scKey: prKey };
         if (!comp || !lang) { u.error = 'не понимаю, куда это: документ «' + d.name + '», язык ' + d.targetLanguage; uploads.push(u); return Promise.resolve(); }
         u.p = comp.p; u.c = comp.c; u.lang = lang;
         return scCall('sc-export', { documentId: d.id }).then(function (r) {
@@ -1621,7 +1621,7 @@
           });
         }, function (e) { u.error = e.message; }).then(function () {
           uploads = uploads.filter(function (x) { return !(x.fromSc && x.p === u.p && x.c === u.c && x.lang === u.lang); });
-          if (u.p && u.c) u.name = 'Smartcat/' + fileKey(u.c) + '_' + u.lang + '.po';
+          if (u.p && u.c) u.name = 'Smartcat/' + scFileName({ p: u.p, component: u.c, language: u.lang });
           uploads.push(u);
           st.textContent = 'Скачано ' + (++n) + ' из ' + ready.length + '…';
         });
