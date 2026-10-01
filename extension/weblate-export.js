@@ -514,6 +514,23 @@
     '.scgroup{margin-top:10px;padding:8px 10px;border:1px solid #eceef2;border-radius:8px}',
     'select.presel{display:inline-block;width:auto;min-width:220px;margin:0;padding:6px 8px;border:1px solid #d9dde5;border-radius:7px;font:inherit;background:#fff;color:#1d2330}',
     'pre.report{white-space:pre-wrap;font:12.5px/1.55 Consolas,ui-monospace,monospace;background:#f3f5f8;border-radius:8px;padding:10px 12px;margin:6px 0;color:#1d2330}',
+    '.card{border:1px solid #e3e6ec;border-radius:12px;padding:14px 16px;margin-top:14px;background:#fff}',
+    '.card.scimp{background:#fff}',
+    '.card .head{display:flex;justify-content:space-between;align-items:center;gap:10px}',
+    'h3{font-size:15px;margin:0;color:#1d2330}',
+    '.card .hint{color:#6b7385;font-size:12.5px;margin:4px 0 0}',
+    '.scrow{display:flex;gap:8px;align-items:center;padding:8px 0;border-top:1px solid #f0f1f4}',
+    '.scrow .grow{flex:1;min-width:0}',
+    '.scrow .grow div{margin-top:2px}',
+    '.ftable{max-height:380px;overflow:auto;margin-top:8px;border:1px solid #eceef2;border-radius:8px}',
+    '.ftable table{font-size:13px}',
+    '.ftable th{position:sticky;top:0;background:#f7f8fa;z-index:1}',
+    '.ftable td,.ftable th{padding:6px 8px}',
+    '.ftable tr.off{display:none}',
+    '.ftable input[type=checkbox]{width:16px;height:16px;margin:0;cursor:pointer}',
+    '.setrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 0 4px;color:#6b7385;font-size:13px}',
+    '.settings h3{margin-top:16px}',
+    '.settings .back2{margin-bottom:6px}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -714,7 +731,7 @@
   var scProg = el('div', { class: 'muted' });
   var scBar = el('div');
   var scOut = el('div');
-  var scBack = el('div', { class: 'scimp hide' });
+  var scBack = el('div', { class: 'scimp card hide' });
   /* сетап Smartcat — быстрый выбор прямо на вкладке */
   var scSetupQuick = el('select', { class: 'presel' });
   var scSetupNote = el('span', { class: 'muted' });
@@ -723,32 +740,42 @@
   var scImpFilter = el('input', { type: 'text', placeholder: 'фильтр по имени файла, например wb-web (необязательно)' });
   var scImpMsg = el('span', { class: 'muted' });
   var scImpList = el('div');
-  var scImpBtn = el('button', { class: 'b g s', text: '🔄 Показать файлы', onclick: function () { listScFiles(); } });
+  var scImpBtn = el('button', { class: 'b g s', text: '🔄 Обновить', onclick: function () { listScFiles(); } });
   var scImpMode = select([['', 'только в непереведённые строки'], ['replace-translated', 'заменять и переведённые строки']], sget('wlx_scimp_mode') || '');
   scImpMode.className = 'presel';
   scImpMode.addEventListener('change', function () { sset('wlx_scimp_mode', scImpMode.value); });
-  var scImpBox = el('div', { class: 'scimp hide' }, [
-    el('h2', { text: '⬇ Из Smartcat в Weblate' }),
-    el('p', { class: 'muted', text: 'Готовые переводы из любого проекта Smartcat (например, веб). Отметь файлы — компонент и язык определятся сами.' }),
-    scImpProject, scImpFilter,
-    el('div', { class: 'row' }, [scImpBtn, scImpMsg]),
+  var scImpBody = el('div', { class: 'hide' }, [
+    el('div', { class: 'row' }, [scImpProject, scImpBtn]),
+    scImpMsg,
     scImpList
   ]);
-  var scImpOpen = el('button', { class: 'b big g', text: '⬇ Из Smartcat в Weblate', title: 'Забрать готовые переводы из проекта Smartcat и загрузить в Weblate',
-    onclick: function () {
-      var open = scImpBox.classList.toggle('hide') === false;
-      if (open) { scImpBox.scrollIntoView({ behavior: 'smooth', block: 'start' }); if (!scImpList.childNodes.length) listScFiles(); }
-    } });
+  var scImpOpen = el('button', { class: 'b s', text: 'Открыть', onclick: function () {
+    var open = scImpBody.classList.toggle('hide') === false;
+    scImpOpen.textContent = open ? 'Свернуть' : 'Открыть';
+    scImpOpen.className = open ? 'b g s' : 'b s';
+    if (open && !scImpList.childNodes.length) listScFiles();
+  } });
+  var scImpBox = el('div', { class: 'scimp card' }, [
+    el('div', { class: 'head' }, [el('h3', { text: '3. Готовые файлы из Smartcat → в Weblate' }), scImpOpen]),
+    el('p', { class: 'hint', text: 'Любой проект Smartcat, даже если файлы грузили руками (например, веб). Можно и файлы, которые ещё в работе.' }),
+    scImpBody
+  ]);
+  scImpProject.style.flex = '1'; scImpProject.style.minWidth = '240px'; scImpProject.style.margin = '0';
+  scRun.textContent = HAS_EXT ? 'Только скачать ZIP' : 'Выгрузить непереведённое';
+  scRun.className = HAS_EXT ? 'b g' : 'b big';
   var scPane = el('div', { class: 'hide' }, [
-    HAS_EXT ? el('div', { class: 'row' }, [el('span', { class: 'muted', text: 'Сетап Smartcat:' }), scSetupQuick, scSetupNote]) : null,
-    el('p', { class: 'sub', text: 'Стандартный набор для Smartcat: непереведённые строки по компонентам ниже на языки KK KY TG KA HY UZ EN (+ AZ — только в ZIP, в Smartcat не уходит; для android — AZ N11). На выходе ZIP с папками android и ios и отправка в Smartcat.' }),
-    scPresets,
-    el('details', {}, [el('summary', { text: 'Компоненты (можно поменять и сохранить как набор)' }),
-      scLinks,
-      el('div', { class: 'row' }, [el('button', { class: 'b g s', text: 'Вернуть стандартные', onclick: function () { scLinks.value = SC_DEFAULT_LINKS; sset('wlx_mt_links', ''); } })])]),
-    el('div', { class: 'row' }, HAS_EXT ? [scRunSend, scRun, scImpOpen] : [scRun]),
-    el('div', { class: 'hide', id: 'wlx-sc-prog' }, [scProg, el('div', { class: 'bar' }, [scBar])]),
-    scOut,
+    HAS_EXT ? el('div', { class: 'setrow' }, ['Сетап:', scSetupQuick, scSetupNote]) : null,
+    el('div', { class: 'card' }, [
+      el('h3', { text: '1. На машинный перевод' }),
+      el('p', { class: 'hint', text: 'Непереведённое из компонентов (по умолчанию android и ios) на KK KY TG KA HY UZ EN → ZIP и Smartcat. AZ — только в ZIP.' }),
+      el('div', { class: 'row' }, HAS_EXT ? [scRunSend, scRun] : [scRun]),
+      el('details', {}, [el('summary', { text: 'Компоненты и наборы' }),
+        scPresets,
+        scLinks,
+        el('div', { class: 'row' }, [el('button', { class: 'b g s', text: 'Вернуть стандартные', onclick: function () { scLinks.value = SC_DEFAULT_LINKS; sset('wlx_mt_links', ''); } })])]),
+      el('div', { class: 'hide', id: 'wlx-sc-prog' }, [scProg, el('div', { class: 'bar' }, [scBar])]),
+      scOut
+    ]),
     scBack,
     HAS_EXT ? scImpBox : null
   ]);
@@ -773,52 +800,57 @@
       .then(function () { scImpBtn.disabled = false; });
   }
   function renderScFiles(pr, docs) {
-    var f = scImpFilter.value.trim().toLowerCase();
-    docs = docs.filter(function (d) { return !f || String(d.name + ' ' + (d.fullPath || '')).toLowerCase().indexOf(f) >= 0; });
+    scImpList.textContent = '';
+    var readyN = docs.filter(docReady).length;
     scImpMsg.className = 'muted';
-    scImpMsg.textContent = '«' + pr.name + '»: файлов ' + docs.length + ', готово ' + docs.filter(docReady).length;
+    scImpMsg.textContent = 'Проект «' + pr.name + '»: файлов ' + docs.length + ', готово ' + readyN;
     if (!docs.length) return;
-    /* группы: папка в Smartcat, а если её нет — день загрузки */
-    var groups = {};
-    docs.forEach(function (d) {
-      var path = String(d.fullPath || d.path || ''), i = path.lastIndexOf('/');
-      var t = Date.parse(d.creationDate || d.created || '');
-      var key = i > 0 ? '📁 ' + path.slice(0, i).replace(/^\//, '') : t ? 'загружено ' + new Date(t).toLocaleDateString('ru-RU') : 'без даты';
-      var g = groups[key] = groups[key] || { docs: [], t: 0 };
-      g.docs.push(d); g.t = Math.max(g.t, t || 0);
-    });
-    var picked = {}, all = [];
-    var sel = function () { return all.filter(function (d) { return picked[d.id]; }); };
-    var goBtn = el('button', { class: 'b s', onclick: function () { takeScFiles(sel(), goBtn, true); } });
-    var takeBtn = el('button', { class: 'b g s', onclick: function () { takeScFiles(sel(), takeBtn, false); } });
+    docs = docs.map(function (d) {
+      var path = String(d.fullPath || d.path || ''), i = path.lastIndexOf('/'), t = Date.parse(d.creationDate || d.created || '');
+      return { d: d, t: t || 0, folder: i > 0 ? path.slice(0, i).replace(/^\//, '') : '', day: t ? new Date(t).toLocaleDateString('ru-RU') : '' };
+    }).sort(function (a, b) { return b.t - a.t || a.d.name.localeCompare(b.d.name) || String(a.d.targetLanguage).localeCompare(String(b.d.targetLanguage)); });
+    var picked = {}, rows = [];
+    var cbAll = el('input', { type: 'checkbox', title: 'Отметить все видимые' });
+    var count = el('span', { class: 'muted' });
+    var goBtn = el('button', { class: 'b', onclick: function () { takeScFiles(sel(), goBtn, true); } });
+    var takeBtn = el('button', { class: 'b g', text: 'Сначала посмотреть', onclick: function () { takeScFiles(sel(), takeBtn, false); } });
+    function sel() { return rows.filter(function (r) { return picked[r.x.d.id]; }).map(function (r) { return r.x.d; }); }
     function upd() {
-      var n = Object.keys(picked).length;
-      goBtn.textContent = '⬆ Загрузить в Weblate (' + n + ')'; takeBtn.textContent = 'Сначала посмотреть'; goBtn.disabled = takeBtn.disabled = !n;
+      var n = sel().length, vis = rows.filter(function (r) { return !r.tr.classList.contains('off'); });
+      var vn = vis.filter(function (r) { return picked[r.x.d.id]; }).length;
+      cbAll.checked = vis.length > 0 && vn === vis.length; cbAll.indeterminate = vn > 0 && vn < vis.length;
+      count.textContent = 'отмечено ' + n;
+      goBtn.textContent = '⬆ Загрузить в Weblate (' + n + ')';
+      goBtn.disabled = takeBtn.disabled = !n;
     }
-    Object.keys(groups).sort(function (a, b) { return groups[b].t - groups[a].t || a.localeCompare(b); }).forEach(function (key, gi) {
-      var g = groups[key], boxes = [];
-      g.docs.sort(function (a, b) { return a.name.localeCompare(b.name) || String(a.targetLanguage).localeCompare(String(b.targetLanguage)); });
-      var gcb = el('input', { type: 'checkbox', title: 'Отметить все готовые в группе' });
-      gcb.addEventListener('click', function (e) { e.stopPropagation(); });
-      gcb.addEventListener('change', function () {
-        boxes.forEach(function (b) { if (!b.d || (gcb.checked && !docReady(b.d))) return; b.cb.checked = gcb.checked; if (gcb.checked) picked[b.d.id] = 1; else delete picked[b.d.id]; });
-        upd();
-      });
-      var ready = g.docs.filter(docReady).length;
-      var det = el('details', gi < 2 ? { open: '' } : {}, [el('summary', {}, [gcb, ' ' + key + ' — файлов ' + g.docs.length + ', готово ' + ready])]);
-      g.docs.forEach(function (d) {
-        all.push(d);
-        var cb = el('input', { type: 'checkbox' }), ok = docReady(d), pg = docProgress(d);
-        cb.addEventListener('change', function () { if (cb.checked) picked[d.id] = 1; else delete picked[d.id]; upd(); });
-        boxes.push({ cb: cb, d: d });
-        det.appendChild(el('label', { class: 'chk' }, [cb, el('span', { text: scDocKey(d.name) }), el('span', { class: 'muted', text: d.targetLanguage || '' }),
-          el('span', { class: ok ? 'ok' : 'muted', text: ok ? '✓ готово' : 'в работе' + (pg != null ? ' ' + pg + '%' : '') })]));
-      });
-      scImpList.appendChild(det);
+    var t = el('table', {}, [el('tr', {}, [el('th', {}, [cbAll]), el('th', { text: 'Файл' }), el('th', { text: 'Язык' }), el('th', { text: 'Папка / дата' }), el('th', { text: 'Статус' })])]);
+    docs.forEach(function (x) {
+      var cb = el('input', { type: 'checkbox' }), ok = docReady(x.d), pg = docProgress(x.d);
+      var tr = el('tr', {}, [el('td', {}, [cb]), el('td', { text: scDocKey(x.d.name) }), el('td', { text: x.d.targetLanguage || '' }),
+        el('td', { class: 'muted', text: [x.folder, x.day].filter(Boolean).join(' · ') }),
+        el('td', { class: ok ? 'ok' : 'muted', text: ok ? '✓ готово' : 'в работе' + (pg != null ? ' ' + pg + '%' : '') })]);
+      cb.addEventListener('change', function () { if (cb.checked) picked[x.d.id] = 1; else delete picked[x.d.id]; upd(); });
+      tr.addEventListener('click', function (e) { if (e.target !== cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } });
+      tr.style.cursor = 'pointer';
+      rows.push({ x: x, tr: tr, cb: cb, hay: (x.d.name + ' ' + x.d.targetLanguage + ' ' + x.folder + ' ' + x.day).toLowerCase() });
+      t.appendChild(tr);
     });
-    upd();
-    scImpList.appendChild(el('div', { class: 'row' }, [el('span', { class: 'muted', text: 'Как загружать:' }), scImpMode]));
+    cbAll.addEventListener('change', function () {
+      rows.forEach(function (r) { if (r.tr.classList.contains('off')) return; r.cb.checked = cbAll.checked; if (cbAll.checked) picked[r.x.d.id] = 1; else delete picked[r.x.d.id]; });
+      upd();
+    });
+    function applyFilter() {
+      var words = scImpFilter.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      rows.forEach(function (r) { r.tr.classList.toggle('off', !words.every(function (w) { return r.hay.indexOf(w) >= 0; })); });
+      upd();
+    }
+    scImpFilter.oninput = applyFilter;
+    scImpFilter.placeholder = '🔍 поиск: имя файла, язык, папка или дата — например «wb-web kk»';
+    scImpList.appendChild(scImpFilter);
+    scImpList.appendChild(el('div', { class: 'ftable' }, [t]));
+    scImpList.appendChild(el('div', { class: 'row' }, [el('span', { class: 'muted', text: 'Как загружать:' }), scImpMode, count]));
     scImpList.appendChild(el('div', { class: 'row' }, [goBtn, takeBtn]));
+    applyFilter();
   }
   /* скачать отмеченные документы и положить в «Загрузить обратно» как обычные файлы */
   function takeScFiles(docs, btn, upload) {
@@ -1053,6 +1085,7 @@
       fillSetupSelects(c);
       scSetupNote.textContent = 'проект: ' + (c.project || SC_PROJECT_DEFAULT);
       scServer.value = c.server; scCustom.value = c.customUrl; scAccount.value = c.accountId;
+      scCustomLbl.classList.toggle('hide', c.server !== 'custom');
       scKey.value = ''; scKey.placeholder = c.hasKey ? 'ключ сохранён — впиши новый, чтобы заменить' : 'API-ключ';
       scLangs.value = c.langMap; scExtra.value = c.extra; scProject.value = c.project === SC_PROJECT_DEFAULT ? '' : c.project;
       scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos;
@@ -1096,19 +1129,22 @@
       scMsg.textContent = '✓ Настройки загружены из файла. API-ключ — впиши, если его здесь ещё нет.';
     }, function (e) { scMsg.textContent = '✗ ' + (e.message || e); });
   });
+  var scCustomLbl = el('label', {}, ['Адрес сервера', scCustom]);
+  scServer.addEventListener('change', function () { scCustomLbl.classList.toggle('hide', scServer.value !== 'custom'); });
   var settingsPane = el('div', { class: 'settings hide' }, [
-    el('h2', { text: 'Smartcat' }),
-    el('p', { class: 'muted', text: 'Ключ API: Smartcat → Настройки → API (создаёт администратор аккаунта). Ключ хранится только в расширении на этом компьютере.' }),
+    el('button', { class: 'b g s back2', text: '← Назад', onclick: function () { showSettings(false); } }),
+    el('h3', { text: 'Подключение к Smartcat' }),
+    el('p', { class: 'muted', text: 'Ключ API: Smartcat → Настройки → API. Хранится только в расширении на этом компьютере.' }),
     el('label', {}, ['Сервер', scServer]),
-    el('label', {}, ['Адрес (если «свой адрес»)', scCustom]),
+    scCustomLbl,
     el('label', {}, ['Account ID', scAccount]),
     el('label', {}, ['API-ключ', scKey]),
-    el('h2', { text: 'Сетап' }),
-    el('p', { class: 'muted', text: 'У каждого сетапа свой проект, английские проекты и коды языков (например «Магазинка» и «Веб»); аккаунт и ключ — общие.' }),
+    el('h3', { text: 'Сетап' }),
+    el('p', { class: 'muted', text: 'Свой проект и английские проекты под задачу (например «Магазинка» и «Веб»). Аккаунт и ключ общие.' }),
     el('div', { class: 'row' }, [scSetup,
       el('button', { class: 'b g s', text: '＋ Новый сетап', onclick: newSetup }),
       el('button', { class: 'b g s', text: 'Удалить сетап', onclick: deleteSetup })]),
-    el('label', {}, ['Проект в Smartcat (файлы складываются в папки ДДММГГ_android / ДДММГГ_ios внутри него; пусто — «' + SC_PROJECT_DEFAULT + '»)', scProject]),
+    el('label', {}, ['Проект в Smartcat (ссылка или название; пусто — «' + SC_PROJECT_DEFAULT + '»)', scProject]),
     el('label', {}, ['Английский дополнительно в проект (android) — пусто = стандартный', scEnAndroid]),
     el('label', {}, ['Английский дополнительно в проект (ios) — пусто = стандартный', scEnIos]),
     el('details', {}, [el('summary', { text: 'Дополнительно' }),
@@ -1132,28 +1168,37 @@
       } }),
       scMsg
     ]),
-    el('div', { class: 'row' }, [
-      el('button', { class: 'b g s', text: 'Сохранить настройки в файл', onclick: backupSettings }),
-      el('button', { class: 'b g s', text: 'Загрузить настройки из файла', onclick: function () { restoreInput.click(); } }),
-      restoreInput
-    ]),
-    el('p', { class: 'muted', text: 'Настройки хранятся в расширении и не сбрасываются при обновлении. Файл нужен только для другого компьютера.' })
+    el('details', {}, [el('summary', { text: 'Перенос на другой компьютер' }),
+      el('div', { class: 'row' }, [
+        el('button', { class: 'b g s', text: 'Сохранить настройки в файл', onclick: backupSettings }),
+        el('button', { class: 'b g s', text: 'Загрузить настройки из файла', onclick: function () { restoreInput.click(); } }),
+        restoreInput
+      ]),
+      el('p', { class: 'muted', text: 'Файл без API-ключа. Настройки хранятся в расширении и не сбрасываются при обновлении.' })])
   ]);
+  var mainArea;
+  function showSettings(on) {
+    settingsPane.classList.toggle('hide', !on);
+    if (mainArea) mainArea.classList.toggle('hide', on);
+    if (on) fillScSettings();
+  }
 
   var back = el('div', { class: 'back', onclick: function (e) { if (e.target === back) hide(); } }, [
     el('div', { class: 'box' }, [
       el('div', { class: 'top' }, [
         el('h1', { text: 'Weblate: выгрузка и загрузка переводов' }),
         el('div', {}, [
-          HAS_EXT ? el('button', { class: 'x', title: 'Настройки Smartcat', text: '⚙', onclick: function () { settingsPane.classList.toggle('hide'); if (!settingsPane.classList.contains('hide')) fillScSettings(); } }) : null,
+          HAS_EXT ? el('button', { class: 'x', title: 'Настройки Smartcat', text: '⚙', onclick: function () { showSettings(settingsPane.classList.contains('hide')); } }) : null,
           el('button', { class: 'x', title: 'Закрыть', text: '×', onclick: hide })
         ])
       ]),
       settingsPane,
-      el('div', { class: 'tabs' }, HAS_EXT ? [tabExp, tabSc, tabImp] : [tabExp, tabImp]),
-      exportPane,
-      scPane,
-      importPane
+      mainArea = el('div', {}, [
+        el('div', { class: 'tabs' }, HAS_EXT ? [tabExp, tabSc, tabImp] : [tabExp, tabImp]),
+        exportPane,
+        scPane,
+        importPane
+      ])
     ])
   ]);
   root.appendChild(back);
@@ -1539,7 +1584,7 @@
           msg.insertBefore(el('div', {}, [document.createTextNode(c.project ? '✓ Файлы добавлены: ' : '✓ Созданы проекты: ')].concat(made.map(function (p, i) {
             return el('span', {}, [i ? ', ' : '', el('a', { href: c.base + '/projects/' + p.id, target: '_blank', text: p.name }),
               p.docs != null ? ' (' + p.docs + ' док.)' : '']);
-          })).concat([document.createTextNode('. Когда Smartcat переведёт, придёт уведомление Chrome 🔔 — тогда внизу вкладки «🤖 Smartcat» нажми «⬆ Загрузить в Weblate».')])), msg.firstChild);
+          })).concat([document.createTextNode('. Когда Smartcat переведёт, придёт уведомление Chrome 🔔 — тогда в блоке «2. Перевод готов» нажми «⬆ В Weblate».')])), msg.firstChild);
           scCall('sc-watch-now').catch(function () {});
           enRes.forEach(function (x) {
             msg.appendChild(el('div', { class: x.ok ? 'ok' : 'red', text: (x.ok ? '✓ Английский: ' : '✗ Английский: ') + x.text }));
@@ -1695,7 +1740,7 @@
     var list = scProjects();
     box.classList.remove('hide');
     var findMsg = el('span', { class: 'muted' });
-    var findBtn = el('button', { class: 'b g s', text: '🔎 Найти отправки в Smartcat', title: 'Восстановить список по файлам в проекте Smartcat за последние 2 недели',
+    var findBtn = el('button', { class: 'b g s', text: '🔎 Найти отправки', title: 'Восстановить список по файлам в проекте Smartcat за последние 2 недели',
       onclick: function () { recoverScProjects(findBtn, findMsg); } });
     var pending = list.filter(function (pr) { return !pr.uploaded; });
     var allMsg = el('span', { class: 'muted' });
@@ -1717,7 +1762,8 @@
     function updSel() {
       var n = picked().length;
       selBtn.textContent = '⬆ Загрузить отмеченные (' + n + ')';
-      selBtn.disabled = !n; selDel.disabled = !n;
+      selBtn.classList.toggle('hide', !n); selDel.classList.toggle('hide', !n);
+      allBtn.classList.toggle('hide', !!n || !pending.length);
       selAll.checked = n > 0 && n === list.length; selAll.indeterminate = n > 0 && n < list.length;
     }
     var boxes = [];
@@ -1725,15 +1771,16 @@
       list.forEach(function (pr) { if (selAll.checked) scSel[keyOf(pr)] = 1; else delete scSel[keyOf(pr)]; });
       boxes.forEach(function (b) { b.checked = selAll.checked; }); updSel();
     });
-    box.appendChild(el('div', { class: 'row' }, [el('h2', { text: 'Отправленное в Smartcat → в Weblate' }), findBtn, findMsg]));
-    if (list.length) box.appendChild(el('div', { class: 'row' }, [el('label', { class: 'chk' }, [selAll, 'все']), selBtn, selDel,
-      pending.length > 1 ? allBtn : null, allMsg].filter(Boolean)));
-    if (!list.length) box.appendChild(el('p', { class: 'muted', text: 'Отправок пока нет. Если они были, но пропали — нажми «Найти отправки в Smartcat».' }));
+    box.appendChild(el('div', { class: 'head' }, [el('h3', { text: '2. Перевод готов → в Weblate' }), findBtn]));
+    box.appendChild(el('p', { class: 'hint', text: 'Отправки из блока 1. Когда Smartcat переведёт, придёт уведомление 🔔 — загрузка идёт только в непереведённые строки.' }));
+    box.appendChild(findMsg);
+    if (list.length) box.appendChild(el('div', { class: 'row' }, [el('label', { class: 'chk' }, [selAll, 'все']), allBtn, selBtn, selDel, allMsg]));
+    else box.appendChild(el('p', { class: 'muted', text: 'Отправок пока нет. Если они были, но пропали — «🔎 Найти отправки».' }));
     scRows = {};
     list.forEach(function (pr) {
       var st = el('span', { class: pr.uploaded ? 'ok' : 'muted',
         text: pr.uploaded ? '✓ загружено в Weblate ' + fmtDate(pr.uploaded) : (scReady[pr.key || pr.id] ? '🔔 перевод в Smartcat готов' : '') });
-      var get = el('button', { class: 'b s', text: '⬆ Загрузить в Weblate', title: 'Забрать готовые переводы из Smartcat и загрузить в Weblate («только непереведённые строки»)',
+      var get = el('button', { class: 'b s', text: '⬆ В Weblate', title: 'Забрать готовые переводы из Smartcat и загрузить в Weblate («только непереведённые строки»)',
         onclick: function () { fetchSc(pr, st, get, auto); } });
       var zip = el('button', { class: 'b g s', text: '⬇ ZIP', title: 'Скачать готовые переводы из Smartcat архивом (в Weblate ничего не загружается)',
         onclick: function () { zipSc(pr, st, zip); } });
@@ -1744,7 +1791,10 @@
       var cb = el('input', { type: 'checkbox', title: 'Отметить' });
       cb.checked = !!scSel[keyOf(pr)]; boxes.push(cb);
       cb.addEventListener('change', function () { if (cb.checked) scSel[keyOf(pr)] = 1; else delete scSel[keyOf(pr)]; updSel(); });
-      box.appendChild(el('div', { class: 'row' }, [cb, el('b', { text: pr.name }), el('span', { class: 'muted', text: (pr.created || '').slice(0, 10) }), get, zip, del, st]));
+      box.appendChild(el('div', { class: 'scrow' }, [cb,
+        el('div', { class: 'grow' }, [el('b', { text: String(pr.name || '').split(' / ').pop() }),
+          el('div', { class: 'muted' }, [String(pr.name || '').split(' / ').slice(0, -1).join(' / ') + (pr.created ? ' · ' + fmtDate(pr.created) + ' ' : ' '), st])]),
+        get, zip, del]));
     });
     updSel();
   }
