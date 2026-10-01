@@ -526,7 +526,11 @@
     '.ftable table{font-size:13px}',
     '.ftable th{position:sticky;top:0;background:#f7f8fa;z-index:1}',
     '.ftable td,.ftable th{padding:6px 8px}',
-    '.ftable tr.off{display:none}',
+    '.ftable tr{cursor:pointer}',
+    '.ftable tr.folder td{background:#fafbfc}',
+    '.ftable tr:hover td{background:#f3f7f5}',
+    '.crumbs{margin-top:8px;font-size:13px;color:#1d2330}',
+    '.crumbs a{color:#1b8a6b;text-decoration:none;font-weight:600}',
     '.ftable input[type=checkbox]{width:16px;height:16px;margin:0;cursor:pointer}',
     '.setrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 0 4px;color:#6b7385;font-size:13px}',
     '.settings h3{margin-top:16px}',
@@ -799,58 +803,104 @@
     }).catch(function (e) { scImpMsg.className = 'red'; scImpMsg.textContent = '✗ ' + e.message; })
       .then(function () { scImpBtn.disabled = false; });
   }
+  /* файлы проекта как в Smartcat: папки и файлы вне папок, клик по папке — внутрь; поиск — по всем файлам */
   function renderScFiles(pr, docs) {
     scImpList.textContent = '';
     var readyN = docs.filter(docReady).length;
     scImpMsg.className = 'muted';
     scImpMsg.textContent = 'Проект «' + pr.name + '»: файлов ' + docs.length + ', готово ' + readyN;
     if (!docs.length) return;
-    docs = docs.map(function (d) {
-      var path = String(d.fullPath || d.path || ''), i = path.lastIndexOf('/'), t = Date.parse(d.creationDate || d.created || '');
-      return { d: d, t: t || 0, folder: i > 0 ? path.slice(0, i).replace(/^\//, '') : '', day: t ? new Date(t).toLocaleDateString('ru-RU') : '' };
-    }).sort(function (a, b) { return b.t - a.t || a.d.name.localeCompare(b.d.name) || String(a.d.targetLanguage).localeCompare(String(b.d.targetLanguage)); });
-    var picked = {}, rows = [];
-    var cbAll = el('input', { type: 'checkbox', title: 'Отметить все видимые' });
+    var files = docs.map(function (d) {
+      var path = String(d.fullPath || d.path || '').replace(/^\/+/, ''), i = path.lastIndexOf('/'), t = Date.parse(d.creationDate || d.created || '');
+      var folder = i > 0 ? path.slice(0, i) : '';
+      return { d: d, t: t || 0, folder: folder, parts: folder ? folder.split('/') : [], day: t ? new Date(t).toLocaleDateString('ru-RU') : '',
+        hay: (d.name + ' ' + d.targetLanguage + ' ' + folder + ' ' + (t ? new Date(t).toLocaleDateString('ru-RU') : '')).toLowerCase() };
+    }).sort(function (a, b) { return a.d.name.localeCompare(b.d.name) || String(a.d.targetLanguage).localeCompare(String(b.d.targetLanguage)); });
+    var picked = {}, cur = [];
+    var under = function (path) { return files.filter(function (f) { return path.every(function (p, k) { return f.parts[k] === p; }); }); };
+    var cbAll = el('input', { type: 'checkbox', title: 'Отметить всё, что видно' });
+    var crumbs = el('div', { class: 'crumbs' });
+    var tbody = el('tbody');
     var count = el('span', { class: 'muted' });
     var goBtn = el('button', { class: 'b', onclick: function () { takeScFiles(sel(), goBtn, true); } });
     var takeBtn = el('button', { class: 'b g', text: 'Сначала посмотреть', onclick: function () { takeScFiles(sel(), takeBtn, false); } });
-    function sel() { return rows.filter(function (r) { return picked[r.x.d.id]; }).map(function (r) { return r.x.d; }); }
-    function upd() {
-      var n = sel().length, vis = rows.filter(function (r) { return !r.tr.classList.contains('off'); });
-      var vn = vis.filter(function (r) { return picked[r.x.d.id]; }).length;
-      cbAll.checked = vis.length > 0 && vn === vis.length; cbAll.indeterminate = vn > 0 && vn < vis.length;
-      count.textContent = 'отмечено ' + n;
+    var clearBtn = el('button', { class: 'b g s', text: 'Снять всё', onclick: function () { picked = {}; draw(); } });
+    function sel() { return files.filter(function (f) { return picked[f.d.id]; }).map(function (f) { return f.d; }); }
+    function setMany(list, on) { list.forEach(function (f) { if (on) picked[f.d.id] = 1; else delete picked[f.d.id]; }); }
+    function state(cb, list) {
+      var n = list.filter(function (f) { return picked[f.d.id]; }).length;
+      cb.checked = list.length > 0 && n === list.length; cb.indeterminate = n > 0 && n < list.length;
+    }
+    function status(list) {
+      var r = list.filter(function (f) { return docReady(f.d); }).length;
+      return r === list.length ? '✓ готово' : 'готово ' + r + ' из ' + list.length;
+    }
+    var visible = [];
+    function draw() {
+      tbody.textContent = ''; crumbs.textContent = ''; visible = [];
+      var q = scImpFilter.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      if (q.length) {
+        /* поиск: все подходящие файлы из всех папок */
+        crumbs.appendChild(el('span', { class: 'muted', text: 'Найдено по всему проекту:' }));
+        files.filter(function (f) { return q.every(function (w) { return f.hay.indexOf(w) >= 0; }); }).forEach(function (f) { fileRow(f, true); });
+      } else {
+        var home = el('a', { href: '#', text: '📂 ' + pr.name, onclick: function (e) { e.preventDefault(); cur = []; draw(); } });
+        crumbs.appendChild(home);
+        cur.forEach(function (p, k) {
+          crumbs.appendChild(document.createTextNode(' › '));
+          crumbs.appendChild(k === cur.length - 1 ? el('b', { text: p })
+            : el('a', { href: '#', text: p, onclick: function (e) { e.preventDefault(); cur = cur.slice(0, k + 1); draw(); } }));
+        });
+        var here = under(cur), subs = {};
+        here.forEach(function (f) { if (f.parts.length > cur.length) (subs[f.parts[cur.length]] = subs[f.parts[cur.length]] || []).push(f); });
+        Object.keys(subs).sort(function (a, b) {
+          var ta = Math.max.apply(null, subs[a].map(function (f) { return f.t; })), tb = Math.max.apply(null, subs[b].map(function (f) { return f.t; }));
+          return tb - ta || b.localeCompare(a);
+        }).forEach(function (name) {
+          var list = subs[name], cb = el('input', { type: 'checkbox', title: 'Отметить всю папку' });
+          state(cb, list); visible = visible.concat(list);
+          cb.addEventListener('click', function (e) { e.stopPropagation(); });
+          cb.addEventListener('change', function () { setMany(list, cb.checked); draw(); });
+          var langs = list.map(function (f) { return f.d.targetLanguage; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
+          var tr = el('tr', { class: 'folder', title: 'Открыть папку' }, [el('td', {}, [cb]), el('td', {}, [el('b', { text: '📁 ' + name })]),
+            el('td', { class: 'muted', text: langs.length === 1 ? langs[0] : langs.length + ' яз.' }),
+            el('td', { class: 'muted', text: 'файлов ' + list.length }),
+            el('td', { class: list.every(function (f) { return docReady(f.d); }) ? 'ok' : 'muted', text: status(list) })]);
+          tr.addEventListener('click', function () { cur = cur.concat([name]); draw(); });
+          tbody.appendChild(tr);
+        });
+        here.filter(function (f) { return f.parts.length === cur.length; }).forEach(function (f) { fileRow(f, false); });
+        if (!tbody.childNodes.length) tbody.appendChild(el('tr', {}, [el('td', { colspan: '5', class: 'muted', text: 'Пусто' })]));
+      }
+      state(cbAll, visible);
+      var n = sel().length;
+      count.textContent = 'отмечено файлов: ' + n;
       goBtn.textContent = '⬆ Загрузить в Weblate (' + n + ')';
       goBtn.disabled = takeBtn.disabled = !n;
+      clearBtn.classList.toggle('hide', !n);
     }
-    var t = el('table', {}, [el('tr', {}, [el('th', {}, [cbAll]), el('th', { text: 'Файл' }), el('th', { text: 'Язык' }), el('th', { text: 'Папка / дата' }), el('th', { text: 'Статус' })])]);
-    docs.forEach(function (x) {
-      var cb = el('input', { type: 'checkbox' }), ok = docReady(x.d), pg = docProgress(x.d);
-      var tr = el('tr', {}, [el('td', {}, [cb]), el('td', { text: scDocKey(x.d.name) }), el('td', { text: x.d.targetLanguage || '' }),
-        el('td', { class: 'muted', text: [x.folder, x.day].filter(Boolean).join(' · ') }),
+    function fileRow(f, withPath) {
+      visible.push(f);
+      var cb = el('input', { type: 'checkbox' }), ok = docReady(f.d), pg = docProgress(f.d);
+      cb.checked = !!picked[f.d.id];
+      cb.addEventListener('click', function (e) { e.stopPropagation(); });
+      cb.addEventListener('change', function () { setMany([f], cb.checked); draw(); });
+      var tr = el('tr', {}, [el('td', {}, [cb]), el('td', { text: scDocKey(f.d.name) }), el('td', { text: f.d.targetLanguage || '' }),
+        el('td', { class: 'muted', text: withPath ? [f.folder ? '📁 ' + f.folder : '', f.day].filter(Boolean).join(' · ') : f.day }),
         el('td', { class: ok ? 'ok' : 'muted', text: ok ? '✓ готово' : 'в работе' + (pg != null ? ' ' + pg + '%' : '') })]);
-      cb.addEventListener('change', function () { if (cb.checked) picked[x.d.id] = 1; else delete picked[x.d.id]; upd(); });
-      tr.addEventListener('click', function (e) { if (e.target !== cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } });
-      tr.style.cursor = 'pointer';
-      rows.push({ x: x, tr: tr, cb: cb, hay: (x.d.name + ' ' + x.d.targetLanguage + ' ' + x.folder + ' ' + x.day).toLowerCase() });
-      t.appendChild(tr);
-    });
-    cbAll.addEventListener('change', function () {
-      rows.forEach(function (r) { if (r.tr.classList.contains('off')) return; r.cb.checked = cbAll.checked; if (cbAll.checked) picked[r.x.d.id] = 1; else delete picked[r.x.d.id]; });
-      upd();
-    });
-    function applyFilter() {
-      var words = scImpFilter.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-      rows.forEach(function (r) { r.tr.classList.toggle('off', !words.every(function (w) { return r.hay.indexOf(w) >= 0; })); });
-      upd();
+      tr.addEventListener('click', function () { setMany([f], !picked[f.d.id]); draw(); });
+      tbody.appendChild(tr);
     }
-    scImpFilter.oninput = applyFilter;
-    scImpFilter.placeholder = '🔍 поиск: имя файла, язык, папка или дата — например «wb-web kk»';
+    cbAll.addEventListener('change', function () { setMany(visible, cbAll.checked); draw(); });
+    scImpFilter.oninput = draw;
+    scImpFilter.placeholder = '🔍 поиск по всему проекту: имя файла, язык, папка или дата — например «wb-web kk»';
+    var t = el('table', {}, [el('thead', {}, [el('tr', {}, [el('th', {}, [cbAll]), el('th', { text: 'Имя' }), el('th', { text: 'Язык' }), el('th', { text: 'Дата / файлов' }), el('th', { text: 'Статус' })])]), tbody]);
     scImpList.appendChild(scImpFilter);
+    scImpList.appendChild(crumbs);
     scImpList.appendChild(el('div', { class: 'ftable' }, [t]));
-    scImpList.appendChild(el('div', { class: 'row' }, [el('span', { class: 'muted', text: 'Как загружать:' }), scImpMode, count]));
+    scImpList.appendChild(el('div', { class: 'row' }, [el('span', { class: 'muted', text: 'Как загружать:' }), scImpMode, count, clearBtn]));
     scImpList.appendChild(el('div', { class: 'row' }, [goBtn, takeBtn]));
-    applyFilter();
+    draw();
   }
   /* скачать отмеченные документы и положить в «Загрузить обратно» как обычные файлы */
   function takeScFiles(docs, btn, upload) {
