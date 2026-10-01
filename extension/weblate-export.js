@@ -370,6 +370,68 @@
     });
     return { text: out.join('\n\n') + '\n', dropped: dropped };
   }
+  /* ---------- переменные: {{count}}, %s, %1$d, {name}, $t(key), теги ----------
+     Ошибка (строку не грузим): переменная, которой нет в исходнике (опечатка), или сломанная скобка.
+     Предупреждение: переменная пропала, слиплась со словом, теги не совпадают.
+     Учитываем язык: в az / tr / uz к переменной приклеиваются окончания ({{count}}-dən, {{name}}'in) — это не ошибка;
+     в плюралках форма «один» может быть без числа. */
+  var VAR_GLUE_OK = ['az', 'tr', 'uz', 'tk', 'ka', 'am'];   // окончания и приставки пишутся слитно: {{count}}-dən, ለ{{count}}
+  var VAR_COUNT = /^(\{\{(count|displaycount|n|num|number|value|amount)\b[^}]*\}\}|%(\d+\$)?d|\{(count|n)\})$/i;
+  /* kinds — какие виды переменных искать (по исходнику): в переводе ищем только те, что есть в исходнике,
+     иначе «22%-dək» в азербайджанском похоже на %-d */
+  function varParse(s, kinds) {
+    kinds = kinds || { i18n: 1, nest: 1, printf: 1, single: 1 };
+    var toks = [], tags = [], rest = String(s || ''), found = {};
+    function take(re, kind, norm) {
+      rest = rest.replace(re, function (m, x) { found[kind] = 1; if (kinds[kind]) toks.push(norm ? norm(m, x) : m); return ' '; });
+    }
+    take(/\{\{\s*([^{}]+?)\s*\}\}/g, 'i18n', function (m, x) { return '{{' + x.replace(/\s+/g, '') + '}}'; });
+    take(/\$t\([^)]*\)/g, 'nest', function (m) { return m.replace(/\s+/g, ''); });
+    if (kinds.printf) take(/%(\d+\$)?[-+0#]?\d*(?:\.\d+)?[sdif@]/g, 'printf');
+    if (kinds.single) take(/\{[A-Za-z_][\w.]*\}/g, 'single');
+    String(s || '').replace(/<\/?([a-zA-Z][\w-]*)[^>]*>/g, function (m, n) { tags.push(n.toLowerCase()); return m; });
+    return { toks: toks, tags: tags.sort().join(','), stray: /[{}]/.test(rest), kinds: found };
+  }
+  function checkVars(srcs, forms, lang, isPlural) {
+    var S = varParse(srcs.join('\n')), srcSet = {}, probs = [], seen = {};
+    var kinds = { i18n: 1, nest: 1, printf: S.kinds.printf, single: S.kinds.single };
+    var braces = S.kinds.i18n || S.kinds.single;
+    S.toks.forEach(function (t) { srcSet[t] = 1; });
+    var glueOk = VAR_GLUE_OK.indexOf(baseLang(lang || '')) >= 0;
+    var srcGlue = /\}\}[\p{L}]|[\p{L}]\{\{/u.test(srcs.join(' '));
+    function add(hard, text) { if (!seen[text]) { seen[text] = 1; probs.push({ hard: hard, text: text }); } }
+    forms.forEach(function (f) {
+      if (!f) return;
+      var T = varParse(f, kinds);
+      T.toks.forEach(function (t) { if (!srcSet[t]) add(true, 'лишняя переменная ' + t + ' — в исходнике её нет'); });
+      if (braces && T.stray && !S.stray) add(true, 'сломана скобка у переменной');
+      Object.keys(srcSet).forEach(function (t) {
+        if (T.toks.indexOf(t) < 0 && !(isPlural && VAR_COUNT.test(t))) add(false, 'нет переменной ' + t);
+      });
+      if (!glueOk && !srcGlue) {
+        var g = /\{\{[^{}]+\}\}[\p{L}]+|[\p{L}]+\{\{[^{}]+\}\}/u.exec(f);
+        if (g) add(false, 'переменная слиплась со словом: «' + g[0] + '»');
+      }
+      if (S.tags !== T.tags) add(false, 'теги не совпадают с исходником');
+    });
+    return probs;
+  }
+  function varScan(u) {
+    if (u.vars !== undefined) return u.vars;
+    if (u.error || !u.text || /\.json$/i.test(u.name)) return null;
+    var list = [];
+    poEntries(u.text).forEach(function (e, idx) {
+      if (e.header || e.obsolete || !e.strs.some(Boolean)) return;
+      var probs = checkVars([poStr(e.msgid), poStr(e.plural)].filter(Boolean), e.strs.map(poStr), u.lang, !!e.plural);
+      if (probs.length) list.push({ idx: idx, ctx: poStr(e.ctx), src: poStr(e.msgid), tr: e.strs.map(poStr).join(' | '), probs: probs,
+        hard: probs.some(function (x) { return x.hard; }) });
+    });
+    u.vars = list.length ? list : null;
+    return u.vars;
+  }
+  function dropEntries(text, idxs) {
+    return poEntries(text).filter(function (e, i) { return idxs.indexOf(i) < 0; }).map(function (e) { return e.lines.join('\n'); }).join('\n\n') + '\n';
+  }
   function applyPoFix(u) {
     if (/\.json$/i.test(u.name) || !u.text) return;
     var fx = fixPo(u.text);
@@ -573,6 +635,14 @@
     '.setrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 0 4px;color:#6b7385;font-size:13px}',
     '.settings h3{margin-top:16px}',
     '.settings .back2{margin-bottom:6px}',
+    'td.brtr{max-width:320px;word-break:break-word}',
+    '.ftable tr.done td{background:#f4faf7}',
+    '.badge{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:10px;margin-left:6px;vertical-align:1px;white-space:nowrap}',
+    '.b-ok{background:#e3f4ec;color:#147a5c}.b-part{background:#fff4e0;color:#9a6200}.b-new{background:#eef1f5;color:#6b7385}',
+    '.res{margin-top:12px;border-top:1px solid #eceef2;padding-top:10px}',
+    '.res .line{font-size:13.5px;margin:4px 0}',
+    '.res .bar{margin:6px 0 10px}',
+    '.scimp label.chk input{margin-right:2px}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -737,6 +807,9 @@
   var optFuzzy = select([['approve', 'Импортировать как переведённое'], ['process', 'Импортировать как «На правку»'], ['', 'Не импортировать']], savedOr('wlx_f', 'approve'));
   var optConf = select([['replace-approved', 'Изменять переведённые и одобренные строки'], ['replace-translated', 'Изменять переведённые строки'], ['', 'Изменять только непереведённые строки']], savedOr('wlx_c', 'replace-approved'));
   var upBtn = el('button', { class: 'b big', text: 'Загрузить в Weblate', onclick: runUpload });
+  var varSkip = el('input', { type: 'checkbox' });
+  varSkip.checked = sget('wlx_varskip') !== '0';
+  varSkip.addEventListener('change', function () { sset('wlx_varskip', varSkip.checked ? '1' : '0'); renderPreview(); });
   var upResults = el('div', { class: 'blk' });
   var upSec = el('div', { class: 'hide' }, [
     el('h2', { text: '2. Как загружать' }),
@@ -747,6 +820,7 @@
     ]),
     el('p', { class: 'muted', text: 'Машинный перевод из Smartcat (вкладка «🤖 Smartcat») эти настройки не использует — он всегда загружается с «Добавить как перевод» и «Изменять только непереведённые строки».' }),
     el('p', { class: 'muted', text: '«Заменить существующий файл перевода» здесь нет специально: в файлах только часть строк, и замена стёрла бы остальные переводы.' }),
+    el('label', { class: 'muted blk' }, [varSkip, ' строки со сломанной или лишней переменной ({{cuont}}, {{count}…) не загружать — остальное загрузится']),
     el('div', { class: 'row' }, [upBtn]),
     upResults
   ]);
@@ -909,6 +983,22 @@
       .then(function () { scImpBtn.disabled = false; });
   }
   /* файлы проекта как в Smartcat: папки и файлы вне папок, клик по папке — внутрь; поиск — по всем файлам */
+  /* что уже загружено в Weblate из блока 3 — по id документа Smartcat (на этом компьютере) */
+  function scDone() { try { return JSON.parse(sget('wlx_scdone') || '{}'); } catch (e) { return {}; } }
+  function markScDone(todo) {
+    var m = scDone(), now = new Date().toISOString(), ch = 0;
+    todo.forEach(function (u) { if (u.sent && u.scDocId) { m[u.scDocId] = now; ch++; } });
+    if (!ch) return;
+    var keys = Object.keys(m);
+    if (keys.length > 20000) keys.sort(function (a, b) { return m[a] < m[b] ? -1 : 1; }).slice(0, keys.length - 20000).forEach(function (k) { delete m[k]; });
+    sset('wlx_scdone', JSON.stringify(m));
+    if (scImpRedraw) scImpRedraw();
+  }
+  function shortDate(iso) { var d = new Date(iso); return isNaN(d) ? '' : ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2); }
+  var scImpRedraw = null, scImpRes = null, scImpUnpick = null;
+  var scImpHide = el('input', { type: 'checkbox' });
+  scImpHide.checked = sget('wlx_scimp_hide') === '1';
+  scImpHide.addEventListener('change', function () { sset('wlx_scimp_hide', scImpHide.checked ? '1' : '0'); if (scImpRedraw) scImpRedraw(); });
   function renderScFiles(pr, docs) {
     scImpList.textContent = '';
     var readyN = docs.filter(docReady).length;
@@ -941,8 +1031,11 @@
       var r = list.filter(function (f) { return docReady(f.d); }).length;
       return r === list.length ? '✓ готово' : 'готово ' + r + ' из ' + list.length;
     }
-    var visible = [];
+    var visible = [], done = scDone();
+    function isDone(f) { return !!done[f.d.id]; }
+    function shown(list) { return scImpHide.checked ? list.filter(function (f) { return !isDone(f); }) : list; }
     function draw() {
+      done = scDone();
       tbody.textContent = ''; crumbs.textContent = ''; visible = [];
       var q = scImpFilter.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
       if (q.length) {
@@ -954,7 +1047,7 @@
         files.forEach(function (f) { f.parts.forEach(function (x, k) { paths[f.parts.slice(0, k + 1).join('/')] = 1; }); });
         Object.keys(paths).filter(function (path) { var low = path.toLowerCase(); return q.every(function (w) { return low.indexOf(w) >= 0; }); })
           .sort().forEach(function (path) { folderRow(path.split('/'), path); });
-        files.filter(function (f) { return q.every(function (w) { return f.hay.indexOf(w) >= 0; }); }).forEach(function (f) { fileRow(f, true); });
+        shown(files.filter(function (f) { return q.every(function (w) { return f.hay.indexOf(w) >= 0; }); })).forEach(function (f) { fileRow(f, true); });
       } else {
         crumbs.appendChild(el('a', { href: '#', text: '📂 Все проекты', onclick: function (e) { e.preventDefault(); listScProjects(false); } }));
         crumbs.appendChild(document.createTextNode(' › '));
@@ -971,7 +1064,7 @@
           var ta = Math.max.apply(null, subs[a].map(function (f) { return f.t; })), tb = Math.max.apply(null, subs[b].map(function (f) { return f.t; }));
           return tb - ta || b.localeCompare(a);
         }).forEach(function (name) { folderRow(cur.concat([name]), name); });
-        here.filter(function (f) { return f.parts.length === cur.length; }).forEach(function (f) { fileRow(f, false); });
+        shown(here.filter(function (f) { return f.parts.length === cur.length; })).forEach(function (f) { fileRow(f, false); });
         if (!tbody.childNodes.length) tbody.appendChild(el('tr', {}, [el('td', { colspan: '5', class: 'muted', text: 'Пусто' })]));
       }
       state(cbAll, visible);
@@ -982,15 +1075,19 @@
       clearBtn.classList.toggle('hide', !n);
     }
     function folderRow(path, label) {
-      var list = under(path), cb = el('input', { type: 'checkbox', title: 'Отметить всю папку' });
+      var all = under(path), list = shown(all), cb = el('input', { type: 'checkbox', title: 'Отметить всю папку' });
+      if (!list.length) return;                                      // всё загружено и скрыто
+      var dn = all.filter(isDone), last = dn.map(function (f) { return done[f.d.id]; }).sort().pop();
+      var badge = dn.length === all.length ? el('span', { class: 'badge b-ok', text: '✓ в Weblate ' + fmtDate(last) })
+        : dn.length ? el('span', { class: 'badge b-part', text: 'загружено ' + dn.length + ' из ' + all.length }) : el('span', { class: 'badge b-new', text: 'новое' });
       state(cb, list); visible = visible.concat(list.filter(function (f) { return visible.indexOf(f) < 0; }));
       cb.addEventListener('click', function (e) { e.stopPropagation(); });
       cb.addEventListener('change', function () { setMany(list, cb.checked); draw(); });
       var langs = list.map(function (f) { return f.d.targetLanguage; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
-      var tr = el('tr', { class: 'folder', title: 'Открыть папку' }, [el('td', {}, [cb]), el('td', {}, [el('b', { text: '📁 ' + label })]),
+      var tr = el('tr', { class: 'folder' + (dn.length === all.length ? ' done' : ''), title: 'Открыть папку' }, [el('td', {}, [cb]), el('td', {}, [el('b', { text: '📁 ' + label }), badge]),
         el('td', { class: 'muted', text: langs.length === 1 ? langs[0] : langs.length + ' яз.' }),
-        el('td', { class: 'muted', text: 'файлов ' + list.length }),
-        el('td', { class: list.every(function (f) { return docReady(f.d); }) ? 'ok' : 'muted', text: status(list) })]);
+        el('td', { class: 'muted', text: 'файлов ' + all.length }),
+        el('td', { class: all.every(function (f) { return docReady(f.d); }) ? 'ok' : 'muted', text: status(all) })]);
       tr.addEventListener('click', function () { cur = path.slice(); scImpFilter.value = ''; draw(); });
       tbody.appendChild(tr);
     }
@@ -1000,7 +1097,9 @@
       cb.checked = !!picked[f.d.id];
       cb.addEventListener('click', function (e) { e.stopPropagation(); });
       cb.addEventListener('change', function () { setMany([f], cb.checked); draw(); });
-      var tr = el('tr', {}, [el('td', {}, [cb]), el('td', { text: scDocKey(f.d.name) }), el('td', { text: f.d.targetLanguage || '' }),
+      var tr = el('tr', isDone(f) ? { class: 'done' } : {}, [el('td', {}, [cb]),
+        el('td', {}, [document.createTextNode(scDocKey(f.d.name)), isDone(f) ? el('span', { class: 'badge b-ok', text: '✓ ' + shortDate(done[f.d.id]), title: 'загружено в Weblate ' + fmtDate(done[f.d.id]) }) : null]),
+        el('td', { text: f.d.targetLanguage || '' }),
         el('td', { class: 'muted', text: withPath ? [f.folder ? '📁 ' + f.folder : '', f.day].filter(Boolean).join(' · ') : f.day }),
         el('td', { class: ok ? 'ok' : 'muted', text: ok ? '✓ готово' : 'в работе' + (pg != null ? ' ' + pg + '%' : '') })]);
       tr.addEventListener('click', function () { setMany([f], !picked[f.d.id]); draw(); });
@@ -1013,11 +1112,80 @@
     scImpList.appendChild(scImpFilter);
     scImpList.appendChild(crumbs);
     scImpList.appendChild(el('div', { class: 'ftable' }, [t]));
+    scImpList.appendChild(el('div', { class: 'row' }, [el('label', { class: 'chk' }, [scImpHide, 'скрыть уже загруженное'])]));
     scImpList.appendChild(el('div', { class: 'row' }, [el('span', { class: 'muted', text: 'Как загружать:' }), scImpMode, count, clearBtn]));
     scImpList.appendChild(el('div', { class: 'row' }, [goBtn, takeBtn, zipBtn]));
+    scImpRes = el('div', { class: 'res hide' });
+    scImpList.appendChild(scImpRes);
+    scImpRedraw = draw;
+    scImpUnpick = function (ids) { ids.forEach(function (id) { delete picked[id]; }); draw(); };
     draw();
   }
   /* скачать отмеченные документы и положить в «Загрузить обратно» как обычные файлы */
+  /* загрузка из блока 3 с результатом прямо здесь, без перехода на другую вкладку */
+  function inlineUpload(found) {
+    var box = scImpRes;
+    if (!box) return;
+    box.classList.remove('hide'); box.textContent = '';
+    var line = el('div', { class: 'line', text: 'Загружаю…' }), fill = el('div');
+    box.appendChild(line); box.appendChild(el('div', { class: 'bar' }, [fill]));
+    scImpMsg.className = 'muted'; scImpMsg.textContent = 'Забрала ' + found.length + ' файл(ов) из Smartcat — загружаю, результат ниже';
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    var skipped = found.filter(function (u) { return u.error || u.skip; });
+    runUpload(function (u) { return found.indexOf(u) >= 0; }, {
+      tick: function (ok, bad, total, took) {
+        fill.style.width = Math.round(100 * (ok + bad) / Math.max(1, total)) + '%';
+        line.textContent = 'Загружаю: ' + (ok + bad) + ' из ' + total + ' · ' + took + ' — Weblate обрабатывает файлы одного компонента по очереди';
+      },
+      fail: function (e) { line.className = 'line red'; line.textContent = '✗ ' + friendly(e); },
+      done: function (todo, opts, took) {
+        box.textContent = '';
+        var sentIds = todo.filter(function (u) { return u.sent && u.scDocId; }).map(function (u) { return u.scDocId; });
+        if (scImpUnpick) scImpUnpick(sentIds);
+        scImpMsg.className = todo.some(function (u) { return !u.sent; }) ? 'red' : 'ok';
+        scImpMsg.textContent = todo.length ? 'Готово — результат ниже' : 'Загружать нечего';
+        var sent = todo.filter(function (u) { return u.sent; }), failed = todo.filter(function (u) { return !u.sent; });
+        var acc = sent.reduce(function (a, u) { return a + (Number(u.accepted) || 0); }, 0);
+        var where = function (u) { return u.c + ' · ' + langName(u.lang); };
+        var srch = function (u, key) { return '/translate/' + u.p + '/' + u.c + '/' + u.lang + '/?q=' + encodeURIComponent('context:"' + key + '"'); };
+        if (!todo.length) box.appendChild(el('div', { class: 'line', text: 'Загружать нечего — причины в списке на вкладке «⬆ Загрузить обратно»' }));
+        else box.appendChild(el('div', { class: 'line' }, [el('b', { text: (failed.length ? '' : '✓ ') + 'Загружено ' + sent.length + ' из ' + todo.length }),
+          document.createTextNode(' · строк принято ' + acc.toLocaleString('ru-RU') + ' · ' + took)]));
+        box.appendChild(el('div', { class: 'bar' }, [el('div', { style: 'width:100%' })]));
+        if (failed.length) box.appendChild(el('div', { class: 'line red', text: '✗ С ошибкой ' + failed.length + ': ' +
+          failed.map(function (u) { return where(u) + ' — ' + (u.upError || 'не загружено'); }).join('; ') }));
+        if (skipped.length) box.appendChild(el('div', { class: 'line muted', text: 'Пропущено ' + skipped.length + ': ' +
+          skipped.map(function (u) { return (u.c ? where(u) : u.name.split('/').pop()) + ' — ' + (u.error || u.skip); }).join('; ') }));
+        var fx = sent.filter(function (u) { return u.fixedKeys && u.fixedKeys.length; });
+        if (fx.length) {
+          var keys = {};
+          fx.forEach(function (u) { u.fixedKeys.forEach(function (k) { (keys[k] = keys[k] || []).push(u); }); });
+          var ln = el('div', { class: 'line' }, [document.createTextNode('⚠ Смарткат испортил строки — убрала, остальное загружено: ')]);
+          Object.keys(keys).forEach(function (k, i) {
+            if (i) ln.appendChild(document.createTextNode(', '));
+            ln.appendChild(el('a', { href: srch(keys[k][0], k), target: '_blank', text: k }));
+            ln.appendChild(document.createTextNode(' (' + keys[k][0].c + ', ' + keys[k].length + ' яз.)'));
+          });
+          box.appendChild(ln);
+        }
+        var vs = sent.filter(function (u) { return u.varSkipped; });
+        if (vs.length) box.appendChild(el('div', { class: 'line red', text: '✗ Переменные: не загружено строк ' + vs.reduce(function (a, u) { return a + u.varSkipped; }, 0) +
+          ' (сломанная или лишняя переменная) — список на вкладке «⬆ Загрузить обратно»' }));
+        var der = sent.filter(function (u) { return u.derived; });
+        if (der.length) box.appendChild(el('div', { class: 'line', text: 'ℹ Плюралки вынесла в .json: ' +
+          der.map(function (u) { return u.c; }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', ') + ' (' + der.length + ' файл.)' }));
+        var prob = sent.filter(function (u) { return u.upSkipped || u.notFound; });
+        if (prob.length) { var pd = el('details', {}, [el('summary', { text: 'Какие строки не легли — файлов: ' + prob.length })]); box.appendChild(pd); explainAll(prob, pd); }
+        if (todo.length) {
+          var ft = el('table', {}, [el('tr', {}, [el('th', { text: 'Файл' }), el('th', { text: 'Куда' }), el('th', { text: 'Статус' })])]);
+          todo.forEach(function (u) { ft.appendChild(el('tr', {}, [el('td', { text: u.name.split('/').pop() }), el('td', { text: where(u) }), el('td', { class: u.sent ? 'ok' : 'red', text: u.status || '' })])); });
+          box.appendChild(el('details', {}, [el('summary', { text: 'По файлам — ' + todo.length }), ft]));
+          box.appendChild(el('details', {}, [el('summary', { text: 'Полный отчёт' }), uploadReport(todo, opts || {}, took)]));
+        }
+        box.appendChild(el('div', { class: 'row' }, [el('button', { class: 'b g s', text: 'Открыть на вкладке «⬆ Загрузить обратно»', onclick: function () { tab('imp'); } })]));
+      }
+    });
+  }
   /* скачать отмеченное архивом с именами как в Weblate: <компонент>/global_site-<компонент>-<язык>.po, <компонент>_<язык>_plural form.json */
   function zipScFiles(found) {
     var files = [], bad = 0;
@@ -1058,9 +1226,10 @@
           });
         }
         return u;
-      }, function (e) { return { name: 'Smartcat/' + base + '.po', text: '', filled: 0, total: 0, error: e.message, scName: scDocKey(d.name) }; }).then(function (u) {
+      }, function (e) { return { name: 'Smartcat/' + base + '.po', text: '', filled: 0, total: 0, error: e.message, scName: scDocKey(d.name), scDocId: d.id }; }).then(function (u) {
         u.note = 'из Smartcat';
         u.scImp = true;
+        u.scDocId = d.id;
         /* Smartcat отдаёт неподтверждённое как «требует правки» — считаем строки с текстом, импортируем как переведённые */
         if (!u.error && !/\.json$/i.test(u.name)) {
           var inf = poInfo(u.text);
@@ -1084,11 +1253,11 @@
       renderPreview();
       var bad = found.filter(function (u) { return u.error; }).length;
       scImpMsg.className = bad ? 'red' : 'ok';
+      if (upload) { inlineUpload(found); return; }
       scImpMsg.textContent = '✓ Забрала ' + (found.length - bad) + (bad ? ', не поняла куда: ' + bad : '') +
-        (upload ? ' — загружаю, результат на вкладке «⬆ Загрузить обратно»' : ' — проверь и нажми «Загрузить в Weblate» на вкладке «⬆ Загрузить обратно»') +
+        ' — проверь и нажми «Загрузить в Weblate» на вкладке «⬆ Загрузить обратно»' +
         (bad ? '. Для нераспознанных выбери компонент в колонке «Куда»' : '');
       tab('imp');
-      if (upload) runUpload(function (u) { return found.indexOf(u) >= 0; });
     }).catch(function (e) { scImpMsg.className = 'red'; scImpMsg.textContent = '✗ ' + e.message; }).then(function () { btn.disabled = false; });
   }
   /* AZ по платформе: у андроида свой язык az_N11, у остальных — обычный az */
@@ -1292,7 +1461,8 @@
     }).then(loadScConfig);
   }
   /* копия настроек в файл (без API-ключа) — для нового компьютера или коллеги */
-  var BACKUP_KEYS = ['wlx_links', 'wlx_langs', 'wlx_layout', 'wlx_en', 'wlx_pj', 'wlx_mt_links', 'wlx_sc_split', 'wlx_m', 'wlx_f', 'wlx_c', 'wlx_presets_exp', 'wlx_presets_sc'];
+  var BACKUP_KEYS = ['wlx_links', 'wlx_langs', 'wlx_layout', 'wlx_en', 'wlx_pj', 'wlx_mt_links', 'wlx_sc_split', 'wlx_m', 'wlx_f', 'wlx_c', 'wlx_presets_exp', 'wlx_presets_sc',
+    'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip'];
   var restoreInput = el('input', { type: 'file', accept: '.json', class: 'hide' });
   function backupSettings() {
     loadScConfig().then(function (c) {
@@ -2089,13 +2259,33 @@
     uploads.forEach(function (u) {
       u.row = el('td', { class: u.error ? 'red' : (u.sent ? 'ok' : 'muted'), text: u.error || u.status || u.skip || (u.note ? 'готов · ' + u.note : 'готов') });
       t.appendChild(el('tr', {}, [
-        el('td', { text: u.name }),
+        (function () {
+          var vr = varScan(u), hn = vr ? vr.filter(function (x) { return x.hard; }).length : 0;
+          return el('td', {}, [el('div', { text: u.name }), vr ? el('div', { class: hn ? 'red' : 'muted',
+            text: '⚠ переменные: ' + vr.length + ' стр.' + (hn ? (varSkip.checked ? ' — с ошибкой не загружу: ' + hn : ', с ошибкой: ' + hn) : ' — проверь') }) : null]);
+        })(),
         u.lang ? el('td', { title: u.p + '/' + u.c + '/' + u.lang }, [el('div', { text: u.c }), langLabel(u.lang)]) : u.needComp ? compPicker(u) : el('td', { text: '—' }),
         el('td', { class: 'n', text: u.filled + ' из ' + u.total }),
         u.row
       ]));
     });
     preview.appendChild(t);
+    var withVars = uploads.filter(function (u) { return varScan(u); });
+    if (withVars.length) {
+      var vt = el('table', {}, [el('tr', {}, [el('th', { text: 'Где' }), el('th', { text: 'Ключ' }), el('th', { text: 'Перевод' }), el('th', { text: 'Что не так' })])]);
+      var vn = 0, vh = 0;
+      withVars.forEach(function (u) {
+        u.vars.forEach(function (x) {
+          vn++; if (x.hard) vh++;
+          vt.appendChild(el('tr', {}, [el('td', { text: u.c + ' · ' + langName(u.lang) }),
+            el('td', {}, [el('a', { href: '/translate/' + u.p + '/' + u.c + '/' + u.lang + '/?q=' + encodeURIComponent(x.ctx ? 'context:"' + x.ctx + '"' : 'source:"' + x.src.slice(0, 60) + '"'), target: '_blank', text: x.ctx || x.src.slice(0, 50) })]),
+            el('td', { class: 'brtr', text: x.tr }),
+            el('td', {}, x.probs.map(function (p) { return el('div', { class: p.hard ? 'red' : 'muted', text: (p.hard ? '✗ ' : '? ') + p.text }); }))]));
+        });
+      });
+      preview.appendChild(el('details', vh ? { open: '' } : {}, [el('summary', { class: vh ? 'red' : 'muted',
+        text: 'Переменные в переводах — строк: ' + vn + (vh ? ', с ошибкой: ' + vh : '') + ' (✗ — ошибка, ? — проверь глазами)' }), vt]));
+    }
     preview.appendChild(el('div', { class: 'row' }, [
       el('span', { class: 'muted', text: 'Файлов: ' + uploads.length }),
       el('button', { class: 'b g s', text: 'Очистить список', onclick: function () { uploads = []; renderPreview(); } })
@@ -2373,6 +2563,13 @@
       out.push(k.split('/').slice(1).join('/') + ': ' + by[k].sort(function (a, b) { return langName(a.lang).localeCompare(langName(b.lang), 'ru'); })
         .map(function (u) { return langName(u.lang) + ' ' + (u.accepted != null ? u.accepted : '✓'); }).join(', '));
     });
+    var vsk = sent.filter(function (u) { return u.varSkipped; });
+    if (vsk.length) {
+      out.push('Переменные — не загружено строк: ' + sum(vsk, 'varSkipped') + ' (сломанная или лишняя переменная):');
+      vsk.forEach(function (u) { u.vars.filter(function (x) { return x.hard; }).forEach(function (x) {
+        out.push('  ' + u.c + ' · ' + langName(u.lang) + ' · ' + (x.ctx || x.src.slice(0, 40)) + ': ' + x.probs.filter(function (p) { return p.hard; })[0].text);
+      }); });
+    }
     failed.forEach(function (u) { out.push('✗ ' + (u.c || u.name) + ' · ' + (u.lang ? langName(u.lang) : '') + ': ' + (u.upError || 'не загружено')); });
     var fixedU = sent.filter(function (u) { return u.fixedKeys && u.fixedKeys.length; });
     if (fixedU.length) {
@@ -2394,10 +2591,10 @@
     return el('div', { class: 'blk' }, [el('h2', { text: 'Отчёт' }), pre, el('div', { class: 'row' }, [copy, note])]);
   }
   /* после загрузки: какие именно строки не легли (не найдено / пропущено) — со ссылками на Weblate */
-  function explainAll(list) {
+  function explainAll(list, into) {
     if (!list.length) return;
     var box = el('div', { class: 'blk' }, [el('h2', { text: 'Какие строки не легли' }), el('p', { class: 'muted', text: 'Сверяю файлы со строками в Weblate…' })]);
-    upResults.appendChild(box);
+    (into || upResults).appendChild(box);
     var groups = [];
     pool(list, 3, function (u) {
       return explainUpload(u).then(function (items) { if (items.length) groups.push({ u: u, items: items }); }, function (e) {
@@ -2426,8 +2623,10 @@
       } }), note]));
     });
   }
-  function runUpload(only) {
+  function runUpload(only, hooks) {
+    hooks = hooks || {};
     var todo = uploads.filter(function (u) { return !u.error && !u.skip && !u.sent && (typeof only !== 'function' || only(u)); });
+    if (!todo.length && hooks.done) { hooks.done([], null, ''); return; }
     if (!todo.length) {
       var sentAll = uploads.length && uploads.every(function (u) { return u.sent || u.error || u.skip; }) && uploads.some(function (u) { return u.sent; });
       upResults.textContent = sentAll ? '✓ Всё из списка уже загружено — повторно загружать не нужно. Можно нажать «Очистить список».'
@@ -2447,6 +2646,7 @@
     function progress() {
       upResults.textContent = 'Загружаю: готово ' + (ok + bad) + ' из ' + todo.length + ' · ' + secs(t0) +
         '. Weblate обрабатывает файлы одного компонента по очереди — не закрывай окно, пока всё не станет «✓ принято».';
+      if (hooks.tick) hooks.tick(ok, bad, todo.length, secs(t0));
     }
     todo.forEach(function (u) { setRow(u, 'muted', 'в очереди'); });
     progress();
@@ -2459,11 +2659,16 @@
         var o = u.opts || (u.fromSc ? SC_OPTS : opts);
         /* «переведённые и одобренные» без включённой проверки Weblate не принимает — тогда «переведённые» */
         u.usedOpts = o;
-        return uploadPo(u, o, token).catch(function (e) {
+        var sendU = u; u.varSkipped = 0;
+        if (varSkip.checked && varScan(u)) {
+          var hardV = u.vars.filter(function (x) { return x.hard; });
+          if (hardV.length) { sendU = Object.assign({}, u, { text: dropEntries(u.text, hardV.map(function (x) { return x.idx; })) }); u.varSkipped = hardV.length; }
+        }
+        return uploadPo(sendU, o, token).catch(function (e) {
           if (o.conflicts !== 'replace-approved' || !/Проверка перевода не включена|review/i.test(String(e.message || e))) throw e;
           u.fellBack = true;
           u.usedOpts = Object.assign({}, o, { conflicts: 'replace-translated' });
-          return uploadPo(u, u.usedOpts, token);
+          return uploadPo(sendU, u.usedOpts, token);
         }).then(function (r) {
           clearInterval(rowTimer);
           u.sent = true; ok++;
@@ -2472,7 +2677,8 @@
             : '✓ принято ' + (r.accepted != null ? r.accepted : '?') + ' из ' + (r.total != null ? r.total : '?') +
               (r.skipped ? ', пропущено ' + r.skipped : '') + (r.not_found ? ', не найдено ' + r.not_found : '') +
               (r.skipped || r.not_found ? ' (какие — ниже)' : '') +
-              (u.fellBack ? ' · в компоненте выключена проверка — залито с «Изменять переведённые строки»' : ''));
+              (u.fellBack ? ' · в компоненте выключена проверка — залито с «Изменять переведённые строки»' : '') +
+              (u.varSkipped ? ' · не загружено из-за переменных: ' + u.varSkipped : ''));
         }).catch(function (e) {
           clearInterval(rowTimer);
           bad++;
@@ -2485,11 +2691,14 @@
       clearInterval(tick);
       upResults.textContent = 'Готово: загружено ' + ok + (bad ? ', с ошибкой ' + bad + ' (наведи на ошибку, чтобы увидеть подробности)' : '') + ' · ' + secs(t0);
       markScUploaded(todo);
+      markScDone(todo);
       upResults.appendChild(uploadReport(todo, opts, secs(t0)));
       explainAll(todo.filter(function (u) { return u.sent && (u.upSkipped || u.notFound); }));
+      if (hooks.done) hooks.done(todo, opts, secs(t0));
     }).catch(function (e) {
       clearInterval(tick);
       upResults.textContent = friendly(e);
+      if (hooks.fail) hooks.fail(e);
     }).then(function () { upBtn.disabled = false; });
   }
 
