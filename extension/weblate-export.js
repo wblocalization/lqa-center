@@ -1849,14 +1849,46 @@
     });
   }
   /* из .json с плюралками убираем то, что осталось на русском (не переведено) */
+  /* для плюралки: какую русскую форму выгрузка подставляет в каждый ключ («ключ_one» → «{{count}} товар», «ключ_other» → «{{count}} товаров»…) */
+  function pluralPlaceholders(x, fmt, srcCode, tgtCode) {
+    var out = {};
+    if (!x.source || x.source.length < 2 || !x.context) return out;
+    var n = x.target && x.target.length > 1 ? x.target.length : pluralCats(tgtCode).length;
+    var tgtCats = fitCats(pluralCats(tgtCode), n), srcCats = fitCats(pluralCats(srcCode), x.source.length);
+    pluralSuffixes(fmt, tgtCode, n).forEach(function (suf, i) {
+      var j = Math.min(i, x.source.length - 1);
+      if (tgtCats && srcCats) {
+        j = srcCats.indexOf(tgtCats[i]);
+        if (j < 0) j = srcCats.indexOf('many') >= 0 ? srcCats.indexOf('many') : x.source.length - 1;
+      }
+      out[x.context + suf] = x.source[j];
+    });
+    return out;
+  }
+  /* из .json с плюралками убираем то, что не переведено: строка, где ВСЕ формы совпадают с русскими заготовками выгрузки.
+     Если хоть одна форма другая — переводчик строку трогал, оставляем (в киргизском «{{count}} товар» — это перевод). */
   function stripJson(u) {
     var keys = Object.keys(u.obj);
     if (keys.some(function (k) { return typeof u.obj[k] !== 'string'; })) return Promise.resolve(u);
-    return units(u.p, u.c, u.lang, 'has:plural').then(function (list) {
-      var src = {};
-      list.forEach(function (x) { (x.source || []).forEach(function (s) { src[s] = 1; }); });
+    return Promise.all([units(u.p, u.c, u.lang, 'has:plural'), componentFormat(u.p, u.c), withTranslations(u.p, u.c)]).then(function (res) {
+      var list = res[0], fmt = res[1], trs = res[2] ? res[2].trs : [];
+      var srcT = trs.filter(function (t) { return t.is_source; })[0], srcCode = srcT ? srcT.language.code : 'ru';
+      var anySrc = {}, drop = {}, owned = {};
+      list.forEach(function (x) { (x.source || []).forEach(function (s) { anySrc[s] = 1; }); });
+      list.forEach(function (x) {
+        if (!x.context) return;
+        var ph = pluralPlaceholders(x, fmt, srcCode, u.lang);
+        var mine = keys.filter(function (k) { return k === x.context || k.indexOf(x.context + '_') === 0; });
+        if (!mine.length) return;
+        mine.forEach(function (k) { owned[k] = 1; });
+        var untouched = mine.every(function (k) { var v = u.obj[k]; return !v || (k in ph ? v === ph[k] : anySrc[v]); });
+        if (untouched) mine.forEach(function (k) { drop[k] = 1; });
+      });
       var kept = {}, dropped = 0;
-      keys.forEach(function (k) { var v = u.obj[k]; if (!v || src[v]) dropped++; else kept[k] = v; });
+      keys.forEach(function (k) {
+        var v = u.obj[k];
+        if (!v || drop[k] || (!owned[k] && anySrc[v])) dropped++; else kept[k] = v;
+      });
       u.filled = Object.keys(kept).length;
       u.text = JSON.stringify(kept, null, 2) + '\n';
       if (!u.filled) u.skip = 'всё ещё на русском — похоже, не переведено, пропущу';
