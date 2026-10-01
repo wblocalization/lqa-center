@@ -749,10 +749,10 @@
   scImpMode.className = 'presel';
   scImpMode.addEventListener('change', function () { sset('wlx_scimp_mode', scImpMode.value); });
   var scImpBody = el('div', { class: 'hide' }, [
-    el('div', { class: 'row' }, [scImpProject, scImpBtn]),
-    scImpMsg,
+    el('div', { class: 'row' }, [scImpMsg, scImpBtn]),
     scImpList
   ]);
+  scImpBtn.style.marginLeft = 'auto';
   var scImpOpen = el('button', { class: 'b s', text: 'Открыть', onclick: function () {
     var open = scImpBody.classList.toggle('hide') === false;
     scImpOpen.textContent = open ? 'Свернуть' : 'Открыть';
@@ -761,7 +761,7 @@
   } });
   var scImpBox = el('div', { class: 'scimp card' }, [
     el('div', { class: 'head' }, [el('h3', { text: '3. Готовые файлы из Smartcat → в Weblate' }), scImpOpen]),
-    el('p', { class: 'hint', text: 'Любой проект Smartcat, даже если файлы грузили руками (например, веб). Можно и файлы, которые ещё в работе.' }),
+    el('p', { class: 'hint', text: 'Все проекты Smartcat → папки → файлы, даже если файлы грузили руками (например, веб). Можно и файлы, которые ещё в работе.' }),
     scImpBody
   ]);
   scImpProject.style.flex = '1'; scImpProject.style.minWidth = '240px'; scImpProject.style.margin = '0';
@@ -793,13 +793,80 @@
     var st = d.workflowStages || [];
     return st.length ? Math.round(Math.min.apply(null, st.map(function (x) { return x.progress || 0; }))) : null;
   }
+  /* блок 3: все проекты → папки → файлы */
+  var scProjCache = null, scOpenPr = null;
   function listScFiles() {
-    scImpBtn.disabled = true; scImpList.textContent = ''; scImpMsg.className = 'muted'; scImpMsg.textContent = 'Смотрю проект…';
-    loadScConfig().then(function (c) {
-      if (!c || !c.accountId || !c.hasKey) throw new Error('Smartcat не подключён (⚙)');
-      return scCall('sc-resolve-project', { ref: scImpProject.value.trim() || c.project || SC_PROJECT_DEFAULT });
-    }).then(function (pr) {
-      return scCall('sc-project', { id: pr.id }).then(function (full) { renderScFiles(pr, full.documents || []); });
+    if (scOpenPr) return openScProject(scOpenPr.id);
+    return listScProjects(true);
+  }
+  function scGuard() {
+    return loadScConfig().then(function (c) { if (!c || !c.accountId || !c.hasKey) throw new Error('Smartcat не подключён (⚙)'); return c; });
+  }
+  function listScProjects(reload) {
+    scOpenPr = null;
+    scImpBtn.disabled = true; scImpList.textContent = ''; scImpMsg.className = 'muted'; scImpMsg.textContent = 'Загружаю проекты…';
+    var cfg;
+    scGuard().then(function (c) {
+      cfg = c;
+      return scProjCache && !reload ? scProjCache : scCall('sc-projects').then(function (l) { scProjCache = l; return l; });
+    }).then(function (list) {
+      /* проект из сетапа — наверх */
+      var ref = String(cfg.project || SC_PROJECT_DEFAULT), idm = /([0-9a-f]{8}-[0-9a-f-]{27,})/i.exec(ref);
+      var pin = list.filter(function (p) { return idm ? p.id === idm[1] : p.name === ref; })[0];
+      renderScProjects(pin ? [pin].concat(list.filter(function (p) { return p !== pin; })) : list, pin);
+    }).catch(function (e) { scImpMsg.className = 'red'; scImpMsg.textContent = '✗ ' + e.message; })
+      .then(function () { scImpBtn.disabled = false; });
+  }
+  function renderScProjects(list, pin) {
+    scImpList.textContent = '';
+    scImpMsg.className = 'muted'; scImpMsg.textContent = 'Проектов: ' + list.length;
+    var tbody = el('tbody');
+    var crumbs = el('div', { class: 'crumbs' }, [el('b', { text: '📂 Все проекты Smartcat' })]);
+    function draw() {
+      tbody.textContent = '';
+      var raw = scImpFilter.value.trim(), q = raw.toLowerCase().split(/\s+/).filter(Boolean);
+      var idm = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(raw);
+      if (idm) {
+        var tr0 = el('tr', { class: 'folder' }, [el('td', {}, [el('b', { text: '🔗 Открыть проект по ссылке' })]), el('td', { colspan: '3', class: 'muted', text: idm[1] })]);
+        tr0.addEventListener('click', function () { openScProject(idm[1]); });
+        tbody.appendChild(tr0);
+      }
+      var shown = 0;
+      list.forEach(function (p) {
+        if (q.length && !idm && !q.every(function (w) { return String(p.name).toLowerCase().indexOf(w) >= 0; })) return;
+        if (idm && p.id !== idm[1]) return;
+        if (++shown > 300) return;
+        var d = Date.parse(p.modified || p.created || '');
+        var tr = el('tr', { class: 'folder', title: 'Открыть проект' }, [
+          el('td', {}, [el('b', { text: (p === pin ? '⭐ ' : '📁 ') + p.name })]),
+          el('td', { class: 'muted', text: (p.targetLanguages || []).length ? p.targetLanguages.length + ' яз.' : '' }),
+          el('td', { class: 'muted', text: d ? new Date(d).toLocaleDateString('ru-RU') : '' }),
+          el('td', { class: String(p.status).toLowerCase() === 'completed' ? 'ok' : 'muted', text: projStatus(p.status) })]);
+        tr.addEventListener('click', function () { openScProject(p.id); });
+        tbody.appendChild(tr);
+      });
+      if (shown > 300) tbody.appendChild(el('tr', {}, [el('td', { colspan: '4', class: 'muted', text: 'и ещё ' + (shown - 300) + ' — уточни поиск' })]));
+      if (!tbody.childNodes.length) tbody.appendChild(el('tr', {}, [el('td', { colspan: '4', class: 'muted', text: 'Ничего не нашлось' })]));
+    }
+    scImpFilter.value = '';
+    scImpFilter.oninput = draw;
+    scImpFilter.placeholder = '🔍 поиск проекта по названию — или вставь ссылку на проект';
+    scImpList.appendChild(scImpFilter);
+    scImpList.appendChild(crumbs);
+    scImpList.appendChild(el('div', { class: 'ftable' }, [el('table', {}, [
+      el('thead', {}, [el('tr', {}, [el('th', { text: 'Проект' }), el('th', { text: 'Языки' }), el('th', { text: 'Изменён' }), el('th', { text: 'Статус' })])]), tbody])]));
+    draw();
+  }
+  function projStatus(s) {
+    s = String(s || '').toLowerCase();
+    return { created: 'создан', inprogress: 'в работе', completed: '✓ завершён', canceled: 'отменён', cancelled: 'отменён' }[s] || s;
+  }
+  function openScProject(id) {
+    scImpBtn.disabled = true; scImpMsg.className = 'muted'; scImpMsg.textContent = 'Открываю проект…';
+    scGuard().then(function () { return scCall('sc-project', { id: id }); }).then(function (full) {
+      scOpenPr = { id: full.id || id, name: full.name || id };
+      scImpFilter.value = '';
+      renderScFiles(scOpenPr, full.documents || []);
     }).catch(function (e) { scImpMsg.className = 'red'; scImpMsg.textContent = '✗ ' + e.message; })
       .then(function () { scImpBtn.disabled = false; });
   }
@@ -841,10 +908,18 @@
       var q = scImpFilter.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
       if (q.length) {
         /* поиск: все подходящие файлы из всех папок */
-        crumbs.appendChild(el('span', { class: 'muted', text: 'Найдено по всему проекту:' }));
+        crumbs.appendChild(el('a', { href: '#', text: '📂 Все проекты', onclick: function (e) { e.preventDefault(); listScProjects(false); } }));
+        crumbs.appendChild(el('span', { class: 'muted', text: ' › ' + pr.name + ' — найдено по всему проекту:' }));
+        /* сначала папки (по названию), потом файлы */
+        var paths = {};
+        files.forEach(function (f) { f.parts.forEach(function (x, k) { paths[f.parts.slice(0, k + 1).join('/')] = 1; }); });
+        Object.keys(paths).filter(function (path) { var low = path.toLowerCase(); return q.every(function (w) { return low.indexOf(w) >= 0; }); })
+          .sort().forEach(function (path) { folderRow(path.split('/'), path); });
         files.filter(function (f) { return q.every(function (w) { return f.hay.indexOf(w) >= 0; }); }).forEach(function (f) { fileRow(f, true); });
       } else {
-        var home = el('a', { href: '#', text: '📂 ' + pr.name, onclick: function (e) { e.preventDefault(); cur = []; draw(); } });
+        crumbs.appendChild(el('a', { href: '#', text: '📂 Все проекты', onclick: function (e) { e.preventDefault(); listScProjects(false); } }));
+        crumbs.appendChild(document.createTextNode(' › '));
+        var home = cur.length ? el('a', { href: '#', text: pr.name, onclick: function (e) { e.preventDefault(); cur = []; draw(); } }) : el('b', { text: pr.name });
         crumbs.appendChild(home);
         cur.forEach(function (p, k) {
           crumbs.appendChild(document.createTextNode(' › '));
@@ -856,19 +931,7 @@
         Object.keys(subs).sort(function (a, b) {
           var ta = Math.max.apply(null, subs[a].map(function (f) { return f.t; })), tb = Math.max.apply(null, subs[b].map(function (f) { return f.t; }));
           return tb - ta || b.localeCompare(a);
-        }).forEach(function (name) {
-          var list = subs[name], cb = el('input', { type: 'checkbox', title: 'Отметить всю папку' });
-          state(cb, list); visible = visible.concat(list);
-          cb.addEventListener('click', function (e) { e.stopPropagation(); });
-          cb.addEventListener('change', function () { setMany(list, cb.checked); draw(); });
-          var langs = list.map(function (f) { return f.d.targetLanguage; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
-          var tr = el('tr', { class: 'folder', title: 'Открыть папку' }, [el('td', {}, [cb]), el('td', {}, [el('b', { text: '📁 ' + name })]),
-            el('td', { class: 'muted', text: langs.length === 1 ? langs[0] : langs.length + ' яз.' }),
-            el('td', { class: 'muted', text: 'файлов ' + list.length }),
-            el('td', { class: list.every(function (f) { return docReady(f.d); }) ? 'ok' : 'muted', text: status(list) })]);
-          tr.addEventListener('click', function () { cur = cur.concat([name]); draw(); });
-          tbody.appendChild(tr);
-        });
+        }).forEach(function (name) { folderRow(cur.concat([name]), name); });
         here.filter(function (f) { return f.parts.length === cur.length; }).forEach(function (f) { fileRow(f, false); });
         if (!tbody.childNodes.length) tbody.appendChild(el('tr', {}, [el('td', { colspan: '5', class: 'muted', text: 'Пусто' })]));
       }
@@ -879,8 +942,21 @@
       goBtn.disabled = takeBtn.disabled = !n;
       clearBtn.classList.toggle('hide', !n);
     }
+    function folderRow(path, label) {
+      var list = under(path), cb = el('input', { type: 'checkbox', title: 'Отметить всю папку' });
+      state(cb, list); visible = visible.concat(list.filter(function (f) { return visible.indexOf(f) < 0; }));
+      cb.addEventListener('click', function (e) { e.stopPropagation(); });
+      cb.addEventListener('change', function () { setMany(list, cb.checked); draw(); });
+      var langs = list.map(function (f) { return f.d.targetLanguage; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
+      var tr = el('tr', { class: 'folder', title: 'Открыть папку' }, [el('td', {}, [cb]), el('td', {}, [el('b', { text: '📁 ' + label })]),
+        el('td', { class: 'muted', text: langs.length === 1 ? langs[0] : langs.length + ' яз.' }),
+        el('td', { class: 'muted', text: 'файлов ' + list.length }),
+        el('td', { class: list.every(function (f) { return docReady(f.d); }) ? 'ok' : 'muted', text: status(list) })]);
+      tr.addEventListener('click', function () { cur = path.slice(); scImpFilter.value = ''; draw(); });
+      tbody.appendChild(tr);
+    }
     function fileRow(f, withPath) {
-      visible.push(f);
+      if (visible.indexOf(f) < 0) visible.push(f);
       var cb = el('input', { type: 'checkbox' }), ok = docReady(f.d), pg = docProgress(f.d);
       cb.checked = !!picked[f.d.id];
       cb.addEventListener('click', function (e) { e.stopPropagation(); });
@@ -893,7 +969,7 @@
     }
     cbAll.addEventListener('change', function () { setMany(visible, cbAll.checked); draw(); });
     scImpFilter.oninput = draw;
-    scImpFilter.placeholder = '🔍 поиск по всему проекту: имя файла, язык, папка или дата — например «wb-web kk»';
+    scImpFilter.placeholder = '🔍 поиск по папкам и файлам проекта — например «280926» или «wb-web kk»';
     var t = el('table', {}, [el('thead', {}, [el('tr', {}, [el('th', {}, [cbAll]), el('th', { text: 'Имя' }), el('th', { text: 'Язык' }), el('th', { text: 'Дата / файлов' }), el('th', { text: 'Статус' })])]), tbody]);
     scImpList.appendChild(scImpFilter);
     scImpList.appendChild(crumbs);
@@ -1103,7 +1179,7 @@
     var name = scSetupQuick.value;
     switchSetup(name).then(function (c) {
       scSetupNote.textContent = c ? 'проект: ' + (c.project || SC_PROJECT_DEFAULT) : '';
-      scImpProject.placeholder = 'ссылка на проект в Smartcat; пусто — проект из сетапа «' + name + '»';
+      if (!scImpBody.classList.contains('hide') && !scOpenPr) listScProjects(false);
     });
   });
   function newSetup() {

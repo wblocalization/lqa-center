@@ -205,6 +205,21 @@ chrome.notifications.onClicked.addListener(async (id) => {
   } catch (e) { console.error('Weblate LQA:', e); }
 });
 
+/* все проекты аккаунта (постранично), свежие сверху */
+SC_HANDLERS['sc-projects'] = async () => {
+  const out = [], seen = new Set(), step = 100;
+  for (let off = 0; off < 3000; off += step) {
+    const list = await (await scFetch('/project/list?offset=' + off + '&limit=' + step)).json();
+    if (!Array.isArray(list) || !list.length) break;
+    let fresh = 0;
+    list.forEach((p) => { if (!seen.has(p.id)) { seen.add(p.id); fresh++; out.push({ id: p.id, name: p.name, status: p.status || '',
+      created: p.creationDate || '', modified: p.modificationDate || p.creationDate || '', deadline: p.deadline || '',
+      targetLanguages: p.targetLanguages || [] }); } });
+    if (list.length < step || !fresh) break;       // последняя страница (или API не умеет offset)
+  }
+  out.sort((a, b) => String(b.modified).localeCompare(String(a.modified)));
+  return out;
+};
 SC_HANDLERS['sc-ready-get'] = async () => (await chrome.storage.local.get('scReady')).scReady || {};
 SC_HANDLERS['sc-watch-now'] = () => checkSmartcatReady();
 
