@@ -245,7 +245,7 @@
       if (f.msgid === undefined) return;
       var strs = Object.keys(f).filter(function (k) { return k.indexOf('msgstr') === 0; }).map(function (k) { return f[k]; });
       out.push({
-        lines: lines, fuzzy: fuzzy, obsolete: obsolete, msgid: f.msgid, plural: f.msgid_plural || '', strs: strs,
+        lines: lines, fuzzy: fuzzy, obsolete: obsolete, msgid: f.msgid, plural: f.msgid_plural || '', strs: strs, ctx: f.msgctxt || '',
         header: f.msgid === '' && !f.msgid_plural,
         done: !!strs.length && strs.every(function (x) { return x !== ''; }) && !fuzzy
       });
@@ -1073,6 +1073,9 @@
       });
     }).then(function () {
       if (upload === 'zip') return zipScFiles(found);
+      return withPlurals(found);
+    }).then(function (found) {
+      if (!found) return;
       found.forEach(function (u) {
         var kind = function (x) { return /\.json$/i.test(x.name); };
         if (!u.error) uploads = uploads.filter(function (x) { return !(x.p === u.p && x.c === u.c && x.lang === u.lang && kind(x) === kind(u)); });
@@ -1962,7 +1965,7 @@
     })).then(function (groups) {
       var all = [].concat.apply([], groups);
       if (!all.length) throw new Error('Не нашла .po файлов');
-      return Promise.all(all.map(detect));
+      return Promise.all(all.map(detect)).then(withPlurals);
     }).then(function (found) {
       found.forEach(function (u) {
         var kind = function (x) { return /\.json$/i.test(x.name) ? 'json' : 'po'; };
@@ -1971,6 +1974,86 @@
       });
       renderPreview();
     }).catch(function (e) { errU.textContent = friendly(e); });
+  }
+  function poStr(s) { return String(s || '').replace(/\\(["\\nt])/g, function (m, c) { return c === 'n' ? '\n' : c === 't' ? '\t' : c; }); }
+  /* плюралки в .po для json-компонентов (i18next): Weblate их из .po не принимает (у русского 3 формы, в .po влезает 2) —
+     выносим в отдельный «…_plural form.json», а из .po убираем */
+  function splitPoPlurals(u) {
+    if (!u || u.error || !u.p || !u.c || !u.lang || !u.text || /\.json$/i.test(u.name)) return Promise.resolve(null);
+    var es = poEntries(u.text);
+    if (!es.some(function (e) { return !e.header && e.plural; })) return Promise.resolve(null);
+    return componentFormat(u.p, u.c).then(function (fmt) {
+      if (!/i18next|json/i.test(fmt || '')) return null;
+      var pl = es.filter(function (e) { return !e.header && !e.obsolete && e.plural; });
+      u.text = es.filter(function (e) { return e.header || !e.plural; }).map(function (e) { return e.lines.join('\n'); }).join('\n\n') + '\n';
+      var inf = poInfo(u.text);
+      u.filled = u.fromSc || u.scImp ? inf.withText : inf.filled; u.total = inf.total;
+      if (!u.filled && !u.skip) u.skip = 'кроме плюралок переводить нечего';
+      var cats = pluralCats(u.lang), sufs = pluralSuffixes(fmt, u.lang, cats.length), obj = {}, n = 0;
+      pl.forEach(function (e) {
+        var forms = e.strs.map(poStr);
+        if (!forms.some(Boolean) || !e.ctx) return;
+        n++;
+        var ctx = poStr(e.ctx);
+        sufs.forEach(function (suf, i) {
+          var v = forms.length === 1 ? forms[0] : forms[i];      // одна форма в .po (грузинский) — во все ключи
+          if (v) obj[ctx + suf] = v;
+        });
+      });
+      u.note = (u.note ? u.note + ' · ' : '') + 'плюралки (' + pl.length + ') вынесла в .json — из .po Weblate их не принимает';
+      if (!n) return null;
+      return { name: u.name.replace(/\.po$/i, '') + ' — плюралки.json', text: JSON.stringify(obj, null, 2) + '\n', obj: obj,
+        p: u.p, c: u.c, lang: u.lang, filled: Object.keys(obj).length, total: Object.keys(obj).length, derived: true,
+        fromSc: u.fromSc, scKey: u.scKey, scImp: u.scImp, opts: u.opts, note: 'плюралки из .po' };
+    }, function () { return null; });
+  }
+  /* добавить к файлам вынесенные плюралки; если подрядчик прислал свой json на тот же компонент и язык — берём его */
+  function withPlurals(list) {
+    return Promise.all(list.map(splitPoPlurals)).then(function (extra) {
+      var real = list.concat(uploads).filter(function (x) { return /\.json$/i.test(x.name) && !x.derived && !x.error; });
+      extra.forEach(function (d) {
+        if (!d) return;
+        if (real.some(function (x) { return x.p === d.p && x.c === d.c && x.lang === d.lang; })) return;
+        list.push(d);
+      });
+      return list;
+    });
+  }
+  /* какие строки не легли: сверяем файл со строками в Weblate */
+  function explainUpload(u) {
+    var o = u.usedOpts || {};
+    return units(u.p, u.c, u.lang, '').then(function (list) {
+      var byCtx = {}, bySrc = {};
+      list.forEach(function (x) { if (x.context) byCtx[x.context] = x; bySrc[(x.source || []).join('\u001e')] = x; });
+      var items = [];
+      if (/\.json$/i.test(u.name)) {
+        var obj = {}; try { obj = JSON.parse(u.text); } catch (e) {}
+        Object.keys(obj).forEach(function (k) { items.push({ key: k, alt: k.replace(/_(zero|one|two|few|many|other|plural|\d+)$/, ''), src: '', val: obj[k] }); });
+      } else {
+        poEntries(u.text).forEach(function (e) {
+          if (e.header || e.obsolete || !e.strs.some(Boolean)) return;
+          var k = poStr(e.ctx);
+          items.push({ key: k, alt: k, src: poStr(e.msgid), val: e.strs.map(poStr).join(' | ') });
+        });
+      }
+      var out = [];
+      items.forEach(function (it) {
+        var x = (it.key && (byCtx[it.key] || byCtx[it.alt])) || (!it.key && Object.keys(bySrc).filter(function (k) { return k.split('\u001e')[0] === it.src; }).map(function (k) { return bySrc[k]; })[0]);
+        var label = it.key ? it.key + (it.src ? ' — «' + it.src.slice(0, 50) + (it.src.length > 50 ? '…' : '') + '»' : '') : it.src.slice(0, 60);
+        if (!x) {
+          out.push({ label: label, why: 'нет такой строки в компоненте (не найдено)', href: '/translate/' + u.p + '/' + u.c + '/' + u.lang + '/?q=' + encodeURIComponent(it.key ? 'context:"' + it.alt + '"' : 'source:"' + it.src.slice(0, 60) + '"') });
+          return;
+        }
+        var tgt = (x.target || []).join(' | '), st = x.state || 0, why = '';
+        if (st >= 100) why = 'строка только для чтения';
+        else if (tgt && tgt === it.val) return;                                   // такой же перевод уже есть — не проблема
+        else if (!o.conflicts && st >= 20) why = 'уже переведена — режим «только непереведённые» её не трогает';
+        else if (o.conflicts === 'replace-translated' && st >= 30) why = 'одобрена — режим «переведённые» одобренные не трогает';
+        else return;
+        out.push({ label: label, why: why, href: x.web_url || x.translate_url || ('/translate/' + u.p + '/' + u.c + '/' + u.lang + '/?q=' + encodeURIComponent('context:"' + (x.context || '') + '"')) });
+      });
+      return out;
+    });
   }
   /* ручной выбор компонента, если по имени не нашёлся */
   var compListId = 'wlx-comps-' + Math.random().toString(16).slice(2), compList = null;
@@ -2310,6 +2393,39 @@
     } });
     return el('div', { class: 'blk' }, [el('h2', { text: 'Отчёт' }), pre, el('div', { class: 'row' }, [copy, note])]);
   }
+  /* после загрузки: какие именно строки не легли (не найдено / пропущено) — со ссылками на Weblate */
+  function explainAll(list) {
+    if (!list.length) return;
+    var box = el('div', { class: 'blk' }, [el('h2', { text: 'Какие строки не легли' }), el('p', { class: 'muted', text: 'Сверяю файлы со строками в Weblate…' })]);
+    upResults.appendChild(box);
+    var groups = [];
+    pool(list, 3, function (u) {
+      return explainUpload(u).then(function (items) { if (items.length) groups.push({ u: u, items: items }); }, function (e) {
+        groups.push({ u: u, items: [{ label: '—', why: 'не получилось сверить: ' + e.message }] });
+      });
+    }).then(function () {
+      box.textContent = '';
+      box.appendChild(el('h2', { text: 'Какие строки не легли' }));
+      if (!groups.length) { box.appendChild(el('p', { class: 'muted', text: 'Всё, что не принято, уже было в Weblate с таким же переводом — смотреть нечего.' })); return; }
+      var txt = [];
+      groups.sort(function (a, b) { return (a.u.c + a.u.lang).localeCompare(b.u.c + b.u.lang); }).forEach(function (g) {
+        var head = g.u.c + ' · ' + langName(g.u.lang) + (/\.json$/i.test(g.u.name) ? ' (json)' : '');
+        txt.push(head + ':');
+        var t = el('table', {}, [el('tr', {}, [el('th', { text: 'Строка' }), el('th', { text: 'Почему' })])]);
+        g.items.forEach(function (it) {
+          txt.push('  ' + it.label + ' — ' + it.why);
+          t.appendChild(el('tr', {}, [el('td', {}, [it.href ? el('a', { href: it.href, target: '_blank', text: it.label }) : el('span', { text: it.label })]), el('td', { class: 'muted', text: it.why })]));
+        });
+        box.appendChild(el('details', { open: '' }, [el('summary', { text: head + ' — строк: ' + g.items.length }), t]));
+      });
+      var text = 'Не легли в Weblate:\n' + txt.join('\n'), note = el('span', { class: 'muted' });
+      box.appendChild(el('div', { class: 'row' }, [el('button', { class: 'b g s', text: '📋 Скопировать список', onclick: function () {
+        var done = function () { note.textContent = 'Скопировано ✓'; };
+        var fb = function () { var a = document.createElement('textarea'); a.value = text; document.body.appendChild(a); a.select(); try { document.execCommand('copy'); done(); } catch (e) {} a.remove(); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fb); else fb();
+      } }), note]));
+    });
+  }
   function runUpload(only) {
     var todo = uploads.filter(function (u) { return !u.error && !u.skip && !u.sent && (typeof only !== 'function' || only(u)); });
     if (!todo.length) {
@@ -2342,17 +2458,20 @@
         var rowTimer = setInterval(function () { if (!u.sent) setRow(u, 'muted', 'загружаю… ' + secs(started)); }, 1000);
         var o = u.opts || (u.fromSc ? SC_OPTS : opts);
         /* «переведённые и одобренные» без включённой проверки Weblate не принимает — тогда «переведённые» */
+        u.usedOpts = o;
         return uploadPo(u, o, token).catch(function (e) {
           if (o.conflicts !== 'replace-approved' || !/Проверка перевода не включена|review/i.test(String(e.message || e))) throw e;
           u.fellBack = true;
-          return uploadPo(u, Object.assign({}, o, { conflicts: 'replace-translated' }), token);
+          u.usedOpts = Object.assign({}, o, { conflicts: 'replace-translated' });
+          return uploadPo(u, u.usedOpts, token);
         }).then(function (r) {
           clearInterval(rowTimer);
           u.sent = true; ok++;
-          u.accepted = r.accepted; u.upTotal = r.total; u.upSkipped = r.skipped || 0;
+          u.accepted = r.accepted; u.upTotal = r.total; u.upSkipped = r.skipped || 0; u.notFound = r.not_found || 0;
           setRow(u, 'ok', r.viaForm ? '✓ отправлено (проверь в Weblate)'
             : '✓ принято ' + (r.accepted != null ? r.accepted : '?') + ' из ' + (r.total != null ? r.total : '?') +
               (r.skipped ? ', пропущено ' + r.skipped : '') + (r.not_found ? ', не найдено ' + r.not_found : '') +
+              (r.skipped || r.not_found ? ' (какие — ниже)' : '') +
               (u.fellBack ? ' · в компоненте выключена проверка — залито с «Изменять переведённые строки»' : ''));
         }).catch(function (e) {
           clearInterval(rowTimer);
@@ -2367,6 +2486,7 @@
       upResults.textContent = 'Готово: загружено ' + ok + (bad ? ', с ошибкой ' + bad + ' (наведи на ошибку, чтобы увидеть подробности)' : '') + ' · ' + secs(t0);
       markScUploaded(todo);
       upResults.appendChild(uploadReport(todo, opts, secs(t0)));
+      explainAll(todo.filter(function (u) { return u.sent && (u.upSkipped || u.notFound); }));
     }).catch(function (e) {
       clearInterval(tick);
       upResults.textContent = friendly(e);
