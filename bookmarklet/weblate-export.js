@@ -527,6 +527,7 @@
     '.ftable th{position:sticky;top:0;background:#f7f8fa;z-index:1}',
     '.ftable td,.ftable th{padding:6px 8px}',
     '.ftable tr{cursor:pointer}',
+    'input.pick{display:block;width:100%;min-width:170px;box-sizing:border-box;padding:5px 7px;border:1px solid #d9dde5;border-radius:6px;font:inherit;font-size:12.5px}',
     '.ftable tr.folder td{background:#fafbfc}',
     '.ftable tr:hover td{background:#f3f7f5}',
     '.crumbs{margin-top:8px;font-size:13px;color:#1d2330}',
@@ -891,6 +892,7 @@
     var count = el('span', { class: 'muted' });
     var goBtn = el('button', { class: 'b', onclick: function () { takeScFiles(sel(), goBtn, true); } });
     var takeBtn = el('button', { class: 'b g', text: 'Сначала посмотреть', onclick: function () { takeScFiles(sel(), takeBtn, false); } });
+    var zipBtn = el('button', { class: 'b g', text: '⬇ Скачать ZIP', title: 'Скачать отмеченные с именами как в Weblate (по папкам компонентов)', onclick: function () { takeScFiles(sel(), zipBtn, 'zip'); } });
     var clearBtn = el('button', { class: 'b g s', text: 'Снять всё', onclick: function () { picked = {}; draw(); } });
     function sel() { return files.filter(function (f) { return picked[f.d.id]; }).map(function (f) { return f.d; }); }
     function setMany(list, on) { list.forEach(function (f) { if (on) picked[f.d.id] = 1; else delete picked[f.d.id]; }); }
@@ -939,7 +941,7 @@
       var n = sel().length;
       count.textContent = 'отмечено файлов: ' + n;
       goBtn.textContent = '⬆ Загрузить в Weblate (' + n + ')';
-      goBtn.disabled = takeBtn.disabled = !n;
+      goBtn.disabled = takeBtn.disabled = zipBtn.disabled = !n;
       clearBtn.classList.toggle('hide', !n);
     }
     function folderRow(path, label) {
@@ -975,21 +977,40 @@
     scImpList.appendChild(crumbs);
     scImpList.appendChild(el('div', { class: 'ftable' }, [t]));
     scImpList.appendChild(el('div', { class: 'row' }, [el('span', { class: 'muted', text: 'Как загружать:' }), scImpMode, count, clearBtn]));
-    scImpList.appendChild(el('div', { class: 'row' }, [goBtn, takeBtn]));
+    scImpList.appendChild(el('div', { class: 'row' }, [goBtn, takeBtn, zipBtn]));
     draw();
   }
   /* скачать отмеченные документы и положить в «Загрузить обратно» как обычные файлы */
+  /* скачать отмеченное архивом с именами как в Weblate: <компонент>/global_site-<компонент>-<язык>.po, <компонент>_<язык>_plural form.json */
+  function zipScFiles(found) {
+    var files = [], bad = 0;
+    found.forEach(function (u) {
+      var json = /\.json$/i.test(u.name), text = u.orig || u.text || '';
+      if (u.p && u.c && u.lang && !u.error) {
+        files.push({ name: fileKey(u.c) + '/' + poName({ p: u.p, component: u.c, language: u.lang, ext: json ? 'json' : 'po' }), text: text });
+      } else { bad++; files.push({ name: 'не распознано/' + (u.scName || u.name.split('/').pop()) + (json ? '.json' : '.po'), text: text }); }
+    });
+    files.sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+    saveBlob(makeZip(files), 'smartcat_' + today() + '.zip');
+    scImpMsg.className = bad ? 'red' : 'ok';
+    scImpMsg.textContent = '✓ Скачан архив: ' + (files.length - bad) + ' файл(ов) с именами как в Weblate' + (bad ? ', не распознано: ' + bad + ' (папка «не распознано»)' : '');
+  }
   function takeScFiles(docs, btn, upload) {
     if (!docs.length) return;
     btn.disabled = true; scImpMsg.className = 'muted';
     var n = 0, found = [];
     scImpMsg.textContent = 'Скачиваю 0 из ' + docs.length + '…';
     pool(docs, 3, function (d) {
-      var lang = String(d.targetLanguage || ''), base = scDocKey(d.name).replace(/\s*\(\d+\)$/, '');
-      var lc = lang.replace(/-/g, '_').toLowerCase(), tail = base.toLowerCase().replace(/-/g, '_');
-      if (lang && !(tail.slice(-(lc.length + 1)) === '_' + lc)) base += '-' + lang.replace(/-/g, '_');
+      var lang = String(d.targetLanguage || ''), base = scDocKey(d.name).replace(/\s*\(\d+\)$/, '').replace(/\([^)]*\)$/, '');
+      /* язык в конце имени («b2b.en», «…-kk») убираем — язык берём из Smartcat */
+      var lm = /^(.+)[._-]([a-z]{2,3})(?:[_-][A-Za-z0-9]+)?$/i.exec(base);
+      if (lm && [baseLang(lang), 'ru', 'en'].indexOf(lm[2].toLowerCase()) >= 0) base = lm[1];
+      if (lang) base += '-' + lang.replace(/-/g, '_');
+      var path = String(d.fullPath || d.path || '').replace(/^\/+/, ''), cut = path.lastIndexOf('/');
+      var dir = cut > 0 ? path.slice(0, cut).split('/').pop() : '';
       return scCall('sc-export', { documentId: d.id }).then(function (r) {
-        return detect({ name: 'Smartcat/' + base + '.po', text: r.text });
+        var json = /^\s*[\[{]/.test(r.text);
+        return detect({ name: 'Smartcat/' + (dir ? dir + '/' : '') + base + (json ? '.json' : '.po'), text: r.text }).then(function (u) { u.orig = r.text; u.scName = scDocKey(d.name); return u; });
       }).then(function (u) {
         /* язык берём из Smartcat, если в файле указан другой */
         if (!u.error && u.p && u.c && lang && (!u.lang || baseLang(u.lang) !== baseLang(lang))) {
@@ -1000,7 +1021,7 @@
           });
         }
         return u;
-      }, function (e) { return { name: 'Smartcat/' + base + '.po', text: '', filled: 0, total: 0, error: e.message }; }).then(function (u) {
+      }, function (e) { return { name: 'Smartcat/' + base + '.po', text: '', filled: 0, total: 0, error: e.message, scName: scDocKey(d.name) }; }).then(function (u) {
         u.note = 'из Smartcat';
         u.scImp = true;
         /* Smartcat отдаёт неподтверждённое как «требует правки» — считаем строки с текстом, импортируем как переведённые */
@@ -1014,15 +1035,18 @@
         scImpMsg.textContent = 'Скачиваю ' + (++n) + ' из ' + docs.length + '…';
       });
     }).then(function () {
+      if (upload === 'zip') return zipScFiles(found);
       found.forEach(function (u) {
-        if (!u.error) uploads = uploads.filter(function (x) { return !(x.p === u.p && x.c === u.c && x.lang === u.lang && !/\.json$/i.test(x.name)); });
+        var kind = function (x) { return /\.json$/i.test(x.name); };
+        if (!u.error) uploads = uploads.filter(function (x) { return !(x.p === u.p && x.c === u.c && x.lang === u.lang && kind(x) === kind(u)); });
         uploads.push(u);
       });
       renderPreview();
       var bad = found.filter(function (u) { return u.error; }).length;
       scImpMsg.className = bad ? 'red' : 'ok';
       scImpMsg.textContent = '✓ Забрала ' + (found.length - bad) + (bad ? ', не поняла куда: ' + bad : '') +
-        (upload ? ' — загружаю, результат на вкладке «⬆ Загрузить обратно»' : ' — проверь и нажми «Загрузить в Weblate» на вкладке «⬆ Загрузить обратно»');
+        (upload ? ' — загружаю, результат на вкладке «⬆ Загрузить обратно»' : ' — проверь и нажми «Загрузить в Weblate» на вкладке «⬆ Загрузить обратно»') +
+        (bad ? '. Для нераспознанных выбери компонент в колонке «Куда»' : '');
       tab('imp');
       if (upload) runUpload(function (u) { return found.indexOf(u) >= 0; });
     }).catch(function (e) { scImpMsg.className = 'red'; scImpMsg.textContent = '✗ ' + e.message; }).then(function () { btn.disabled = false; });
@@ -1751,16 +1775,41 @@
     return hit.length === 1 ? hit[0].language.code : null;
   }
   /* имя файла без языка → компонент: сначала среди компонентов прошлой выгрузки */
+  function compNorm(x) { return String(x || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  /* все компоненты проектов, с которыми работаем (для поиска по имени и ручного выбора) */
+  function knownComps() {
+    var projects = [defaultProject(), 'global_site'];
+    savedComps().concat(parseLinks(location.pathname)).forEach(function (x) { if (projects.indexOf(x.p) < 0) projects.push(x.p); });
+    return Promise.all(projects.filter(function (p, i, a) { return p && a.indexOf(p) === i; }).map(function (p) {
+      return projectComponents(p).catch(function () { return []; });
+    })).then(function (lists) {
+      var seen = {}, out = [];
+      [].concat.apply([], lists).concat(savedComps()).forEach(function (x) {
+        if (x.glossary || seen[x.p + '/' + x.c]) return;
+        seen[x.p + '/' + x.c] = 1; out.push({ p: x.p, c: x.c });
+      });
+      return out;
+    });
+  }
   function resolveComponent(key) {
     var sc = savedComps(), last = function (c) { return c.split('/').pop(); };
     var cands = sc.filter(function (x) { return fileKey(x.c) === key || x.c === key || x.p + '-' + fileKey(x.c) === key; });
     if (!cands.length) cands = sc.filter(function (x) { return last(x.c) === key; });
     if (!cands.length) cands = sc.filter(function (x) { return last(x.c).slice(-(key.length + 1)) === '-' + key; });
     if (cands.length > 1) return Promise.resolve(null);
+    if (cands[0]) return withTranslations(cands[0].p, cands[0].c);
     var dp = defaultProject();
-    if (!cands[0] && key.indexOf(dp + '-') === 0) key = key.slice(dp.length + 1);   // global_site-wb-ios_new → wb-ios_new
-    var pick = cands[0] || { p: dp, c: key.split('__').join('/') };
-    return withTranslations(pick.p, pick.c);
+    if (key.indexOf(dp + '-') === 0) key = key.slice(dp.length + 1);   // global_site-wb-ios_new → wb-ios_new
+    var n = compNorm(key);
+    if (n.length < 2) return Promise.resolve(null);
+    /* по всем компонентам: без учёта регистра и дефисов (aiAssistant → ai-assistant), потом по окончанию (→ wb-web-ai-assistant) */
+    return knownComps().then(function (all) {
+      var hit = all.filter(function (x) { return compNorm(fileKey(x.c)) === n || compNorm(last(x.c)) === n || compNorm(x.p + '-' + fileKey(x.c)) === n; });
+      if (!hit.length && n.length >= 4) hit = all.filter(function (x) { var m = compNorm(last(x.c)); return m.length > n.length && m.slice(-n.length) === n; });
+      if (hit.length === 1) return withTranslations(hit[0].p, hit[0].c);
+      if (hit.length > 1) return null;
+      return withTranslations(dp, key.split('__').join('/'));
+    });
   }
   /* из .json с плюралками убираем то, что осталось на русском (не переведено) */
   function stripJson(u) {
@@ -1801,19 +1850,37 @@
       }
     }
     var parts = f.name.split('/'), base = parts.pop().replace(/\.(po|json)$/i, '').replace(/[ _.-]*plurals?([ _-]*forms?)?$/i, '');
-    var suffix = /^(.+)[._-]([a-z]{2,3}(?:[_@-][A-Za-z0-9]+)?)$/.exec(base);
-    u.c = suffix ? suffix[1] : base;
-    var folder = parts.pop() || '';
-    if (folder === ENGLISH_DIR) folder = 'en';
-    var wanted = h['Language'] || (suffix && suffix[2]) || folder;
-    if (!wanted) { u.error = 'не понятно, какой это язык'; return Promise.resolve(u); }
-    return resolveComponent(u.c).then(function (r) {
-      if (!r) { u.error = 'компонент «' + u.c + '» не найден — переименуй файл в <компонент>_<язык>'; return u; }
-      u.p = r.p; u.c = r.c;
-      u.lang = matchLanguage(wanted.replace('-', '_'), r.trs) || byRuName(folder, r.trs);
-      if (!u.lang) { u.error = 'язык «' + wanted + '» не найден в компоненте'; return u; }
-      return isJson ? stripJson(u) : u;
+    var namePart = base, wanted = h['Language'] || '', alt = '';
+    /* как из Smartcat: «b2b.kk(kk)», «aiAssistant.az(az-Latn)», «kk(kk)» */
+    var scm = /^(.*?)[._ -]?([A-Za-z]{2,3}(?:[_@-][A-Za-z0-9]+)?)\(([^)]+)\)$/.exec(base);
+    var suffix = !scm && /^(.+)[._-]([a-z]{2,3}(?:[_@-][A-Za-z0-9]+)?)$/.exec(base);
+    if (scm) { namePart = scm[1]; wanted = wanted || scm[2]; alt = scm[3]; }
+    else if (suffix) { namePart = suffix[1]; wanted = wanted || suffix[2]; }
+    var folder = parts.length ? parts[parts.length - 1] : '';
+    var folderLang = folder === ENGLISH_DIR ? 'en' : folder;
+    if (!wanted && (!scm && !suffix)) wanted = '';
+    /* компонент: из имени файла, иначе из папки (wb-web-ai-assistant/kk(kk).po) */
+    var cands = [namePart, folder, parts[parts.length - 2]].filter(function (x, i, a) { return x && x !== ENGLISH_DIR && a.indexOf(x) === i; });
+    u.c = namePart || folder;
+    u.want = { lang: wanted || folderLang, alt: alt, folder: folderLang };
+    if (!wanted && !folderLang) { u.error = 'не понятно, какой это язык'; return Promise.resolve(u); }
+    function tryNext(i) {
+      if (i >= cands.length) return Promise.resolve(null);
+      return resolveComponent(cands[i]).then(function (r) { return r || tryNext(i + 1); });
+    }
+    return tryNext(0).then(function (r) {
+      if (!r) { u.error = 'не нашла компонент «' + u.c + '» — выбери его в колонке «Куда»'; u.needComp = true; return u; }
+      return applyComp(u, r, isJson);
     });
+  }
+  /* компонент найден (или выбран руками) → язык → готово */
+  function applyComp(u, r, isJson) {
+    u.p = r.p; u.c = r.c; delete u.error; delete u.needComp;
+    var w = u.want || {};
+    u.lang = (w.lang && matchLanguage(String(w.lang).replace('-', '_'), r.trs)) || (w.alt && matchLanguage(String(w.alt).replace(/-/g, '_'), r.trs)) ||
+      (w.alt && matchLanguage(baseLang(w.alt), r.trs)) || byRuName(w.folder, r.trs);
+    if (!u.lang) { u.error = 'язык «' + (w.lang || w.alt || '?') + '» не найден в компоненте «' + r.c + '»'; return u; }
+    return isJson ? stripJson(u) : u;
   }
   function addFiles(list) {
     errU.textContent = '';
@@ -1835,6 +1902,31 @@
       renderPreview();
     }).catch(function (e) { errU.textContent = friendly(e); });
   }
+  /* ручной выбор компонента, если по имени не нашёлся */
+  var compListId = 'wlx-comps-' + Math.random().toString(16).slice(2), compList = null;
+  function compPicker(u) {
+    var inp = el('input', { type: 'text', list: compListId, placeholder: 'начни вводить компонент…', class: 'pick' });
+    var ok = el('button', { class: 'b s', text: 'OK', onclick: function () {
+      var v = inp.value.trim(), all = compList || [];
+      var x = all.filter(function (c) { return c.p + '/' + c.c === v || c.c === v; })[0];
+      if (!x) { inp.style.borderColor = '#c0392b'; return; }
+      ok.disabled = true;
+      withTranslations(x.p, x.c).then(function (r) {
+        if (!r) throw new Error('нет доступа к компоненту');
+        return applyComp(u, r, /\.json$/i.test(u.name));
+      }).then(function () {
+        uploads = uploads.filter(function (y) { return y === u || !(y.p === u.p && y.c === u.c && y.lang === u.lang && /\.json$/i.test(y.name) === /\.json$/i.test(u.name)); });
+        renderPreview();
+      }, function (e) { ok.disabled = false; inp.title = e.message; inp.style.borderColor = '#c0392b'; });
+    } });
+    if (!compList) knownComps().then(function (all) {
+      compList = all;
+      var dl = root.getElementById ? root.getElementById(compListId) : null;
+      if (!dl) { dl = el('datalist', { id: compListId }); root.appendChild(dl); }
+      all.forEach(function (c) { dl.appendChild(el('option', { value: c.p + '/' + c.c })); });
+    });
+    return el('td', {}, [el('div', { class: 'row', style: 'margin:0;gap:6px;flex-wrap:nowrap' }, [inp, ok])]);
+  }
   function renderPreview() {
     preview.textContent = ''; upResults.textContent = '';
     if (!uploads.length) { upSec.classList.add('hide'); return; }
@@ -1845,7 +1937,7 @@
       u.row = el('td', { class: u.error ? 'red' : (u.sent ? 'ok' : 'muted'), text: u.error || u.status || u.skip || (u.note ? 'готов · ' + u.note : 'готов') });
       t.appendChild(el('tr', {}, [
         el('td', { text: u.name }),
-        u.lang ? el('td', { title: u.p + '/' + u.c + '/' + u.lang }, [el('div', { text: u.c }), langLabel(u.lang)]) : el('td', { text: '—' }),
+        u.lang ? el('td', { title: u.p + '/' + u.c + '/' + u.lang }, [el('div', { text: u.c }), langLabel(u.lang)]) : u.needComp ? compPicker(u) : el('td', { text: '—' }),
         el('td', { class: 'n', text: u.filled + ' из ' + u.total }),
         u.row
       ]));
