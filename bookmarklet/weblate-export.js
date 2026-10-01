@@ -340,6 +340,43 @@
     });
     return { headers: headers, filled: filled, total: total, withText: withText };
   }
+  /* Smartcat иногда портит длинные строки (эмодзи, неразрывный пробел): кавычка не закрыта, конец исходника уезжает в msgstr.
+     Weblate тогда отклоняет файл целиком («end-of-line within string»). Такие записи выкидываем, остальное оставляем.
+     → null, если файл в порядке; иначе { text, dropped: [ключи] } */
+  var PO_STR = /^\s*(?:#~\s*)?(?:(msgctxt|msgid_plural|msgid|msgstr(?:\[\d+\])?)\s+)?"((?:[^"\\]|\\.)*)"\s*$/;
+  function fixPo(text) {
+    var lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+    var bad = lines.some(function (l) { return l.trim() && l.trim()[0] !== '#' && !PO_STR.test(l); });
+    if (!bad) return null;
+    var groups = [], g = null;
+    lines.forEach(function (l) {
+      var t = l.trim(), m = PO_STR.exec(l), key = m && m[1];
+      if (!t) { g = null; return; }
+      var startsNew = !g || (g.hasStr && (t[0] === '#' || key === 'msgctxt' || key === 'msgid'));
+      if (startsNew) { g = { lines: [], ok: true, hasStr: false, ctx: '', id: null }; groups.push(g); }
+      g.lines.push(l);
+      if (t[0] === '#') { if (g.hasStr || g.id !== null) g.ok = false; return; }
+      if (!m) { g.ok = false; return; }
+      if (key === 'msgctxt') g.ctx = m[2];
+      if (key === 'msgid') g.id = m[2];
+      if (key && key.indexOf('msgstr') === 0) g.hasStr = true;
+    });
+    var dropped = [], out = [];
+    groups.forEach(function (x) {
+      var hasId = x.id !== null;
+      if (x.ok && hasId && x.hasStr) { out.push(x.lines.join('\n')); return; }
+      if (!hasId && !x.hasStr && x.lines.every(function (l) { return l.trim()[0] === '#'; })) return;   // осиротевшие комментарии
+      dropped.push(x.ctx || (x.id ? x.id.slice(0, 40) : 'строка ' + (out.length + dropped.length + 1)));
+    });
+    return { text: out.join('\n\n') + '\n', dropped: dropped };
+  }
+  function applyPoFix(u) {
+    if (/\.json$/i.test(u.name) || !u.text) return;
+    var fx = fixPo(u.text);
+    if (!fx) return;
+    u.text = fx.text; u.fixedKeys = fx.dropped;
+    u.note = (u.note ? u.note + ' · ' : '') + 'смарткат испортил ' + fx.dropped.length + ' стр. — убрала, остальное загружу (' + fx.dropped.join(', ') + ')';
+  }
 
   /* ---------- ZIP (store, UTF-8 names) ---------- */
   var CRC = (function () {
@@ -1836,7 +1873,8 @@
       u.total = vals.length;
       u.filled = vals.filter(function (v) { return v !== ''; }).length;
     } else {
-      var inf = poInfo(f.text);
+      applyPoFix(u);
+      var inf = poInfo(u.text);
       h = inf.headers; u.filled = inf.filled; u.total = inf.total;
       if (!inf.filled) u.skip = 'в файле нет переведённых строк — пропущу';
       var lt = /\/projects\/([^\s>"]+)/.exec(h['Language-Team'] || '');
@@ -2130,8 +2168,9 @@
         if (!comp || !lang) { u.error = 'не понимаю, куда это: документ «' + d.name + '», язык ' + d.targetLanguage; uploads.push(u); return Promise.resolve(); }
         u.p = comp.p; u.c = comp.c; u.lang = lang;
         return scCall('sc-export', { documentId: d.id }).then(function (r) {
-          var inf = poInfo(r.text);
-          u.text = r.text; u.filled = inf.withText; u.total = inf.total;
+          u.text = r.text; applyPoFix(u);
+          var inf = poInfo(u.text);
+          u.filled = inf.withText; u.total = inf.total;
           if (!inf.withText) u.skip = 'Smartcat вернул пустой перевод — машинный перевод в документе ещё не появился';
           return withTranslations(u.p, u.c).then(function (w) {
             if (!w) { u.error = 'компонент «' + u.c + '» не найден в Weblate'; return; }
@@ -2220,6 +2259,11 @@
         .map(function (u) { return langName(u.lang) + ' ' + (u.accepted != null ? u.accepted : '✓'); }).join(', '));
     });
     failed.forEach(function (u) { out.push('✗ ' + (u.c || u.name) + ' · ' + (u.lang ? langName(u.lang) : '') + ': ' + (u.upError || 'не загружено')); });
+    var fixedU = sent.filter(function (u) { return u.fixedKeys && u.fixedKeys.length; });
+    if (fixedU.length) {
+      out.push('Испорчены в Smartcat — не загружены, проверь вручную:');
+      fixedU.forEach(function (u) { out.push('  ' + u.c + ' · ' + langName(u.lang) + ': ' + u.fixedKeys.join(', ')); });
+    }
     var text = out.join('\n');
     var pre = el('pre', { class: 'report', text: text });
     var note = el('span', { class: 'muted' });
