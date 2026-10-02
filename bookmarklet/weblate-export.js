@@ -361,12 +361,16 @@
       if (key === 'msgid') g.id = m[2];
       if (key && key.indexOf('msgstr') === 0) g.hasStr = true;
     });
-    var dropped = [], out = [];
+    var dropped = [], out = [], lastKey = '';
     groups.forEach(function (x) {
       var hasId = x.id !== null;
-      if (x.ok && hasId && x.hasStr) { out.push(x.lines.join('\n')); return; }
+      var key = x.ctx || (x.id ? poStr(x.id).slice(0, 40) : '');
+      if (x.ok && hasId && x.hasStr) { out.push(x.lines.join('\n')); lastKey = key; return; }
       if (!hasId && !x.hasStr && x.lines.every(function (l) { return l.trim()[0] === '#'; })) return;   // осиротевшие комментарии
-      dropped.push(x.ctx || (x.id ? x.id.slice(0, 40) : 'строка ' + (out.length + dropped.length + 1)));
+      /* кусок без ключа — обрывок предыдущей испорченной строки: не считаем отдельной строкой */
+      if (!key) { if (!dropped.length || dropped[dropped.length - 1] !== lastKey) dropped.push(lastKey ? lastKey + ' (обрывок)' : 'без ключа'); return; }
+      if (dropped.indexOf(key) < 0) dropped.push(key);
+      lastKey = key;
     });
     return { text: out.join('\n\n') + '\n', dropped: dropped };
   }
