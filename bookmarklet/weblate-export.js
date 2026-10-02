@@ -1873,7 +1873,13 @@
         .filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', ') + ' — только в архиве, в Smartcat для веба уходит только английский.' }));
       if (!files.length && !webGroup) { box.appendChild(el('p', { class: 'muted', text: 'Отправлять в Smartcat нечего.' })); return; }
       box.appendChild(el('p', { class: 'muted', text: 'Языки: ' + langs.map(function (l) { return langName(l) + ' → ' + map(l); }).join(', ') + '.' +
-        (jsonCount ? ' Плюралки (.json) в Smartcat не отправляются.' : '') }));
+        '' }));
+      if (jsonCount) {
+        var jsByLang = {};
+        res.filter(function (r) { return r.ext === 'json'; }).forEach(function (r) { (jsByLang[r.language] = jsByLang[r.language] || []).push(r.component); });
+        box.appendChild(el('p', { class: 'muted', text: 'Плюралки (.json) в Smartcat не отправляются — они только в архиве: ' +
+          Object.keys(jsByLang).sort().map(function (l) { return langName(l) + ' — ' + jsByLang[l].length + ' (' + jsByLang[l].join(', ') + ')'; }).join('; ') + '.' }));
+      }
       var msg = el('div', { class: 'muted' });
       /* английский — ещё и в отдельные проекты по платформе, без папки */
       var enTargets = { android: c.enAndroid || SC_EN_DEFAULTS.android, ios: c.enIos || SC_EN_DEFAULTS.ios };
