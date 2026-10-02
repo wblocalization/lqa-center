@@ -1892,11 +1892,12 @@
           if (list && list.length) { g.note.className = 'red'; g.note.textContent = 'В Smartcat уже есть проект «' + g.input.value.trim() + '» — будет создан ещё один с тем же именем. Можно поменять название.'; }
         }, function () {});
       }
-      if (c.project) scCall('sc-resolve-project', { ref: c.project }).then(function (pr) {
+      if (c.project && files.length) scCall('sc-resolve-project', { ref: c.project }).then(function (pr) {
         targetName = pr.name;
         var pl = projectLangs(pr);
-        if (pl.missing.length) box.insertBefore(el('p', { class: 'red', text: 'В проекте «' + pr.name + '» нет: ' + pl.missing.map(langName).join(', ') +
-          ' — эти языки не отправлю (в проекте: ' + pl.all.join(', ') + ').' }), groupsBox);
+        var warn = el('p', { class: 'red', text: 'В проекте «' + pr.name + '» нет: ' + pl.missing.map(langName).join(', ') +
+          ' — эти языки не отправлю (в проекте: ' + pl.all.join(', ') + ').' });
+        if (pl.missing.length) { if (groupsBox.parentNode === box) box.insertBefore(warn, groupsBox); else box.appendChild(warn); }
         groupsBox.querySelectorAll('label').forEach(function (l) { if (l.firstChild && l.firstChild.nodeType === 3) l.firstChild.textContent = 'Папка в проекте «' + pr.name + '»'; });
       }, function (e) { msg.className = 'red'; msg.textContent = '✗ Проект в Smartcat: ' + e.message; });
       if (files.length) {
