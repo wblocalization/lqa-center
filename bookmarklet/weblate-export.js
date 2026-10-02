@@ -1789,7 +1789,8 @@
   }
   function renderSmartcat(res, container) {
     var po = res.filter(function (r) { return r.ext !== 'json'; });
-    if (!po.length) return;
+    var js = res.filter(function (r) { return r.ext === 'json' && r.strings; });
+    if (!po.length && !js.length) return;
     var box = el('div', { class: 'track' }, [el('h2', { text: '4. Отправить в Smartcat' })]);
     (container || results).appendChild(box);
     return loadScConfig().then(function (c) {
@@ -1806,7 +1807,13 @@
         var key = r.p + '-' + fileKey(r.component) + '-' + r.language;
         return { name: key + '.po', key: key, p: r.p, c: r.component, lang: r.language, text: r.text, strings: r.strings, src: r.src };
       }).filter(function (f) { return f.strings; });
-      var jsonCount = res.length - po.length;
+      /* плюралки (.json) — тоже в Smartcat: «<компонент>_<язык>_plural form.json» */
+      js.forEach(function (r) {
+        if (langs.indexOf(r.language) < 0) langs.push(r.language);
+        var name = poName(r);
+        files.push({ name: name, key: name.replace(/\.json$/i, ''), p: r.p, c: r.component, lang: r.language, text: r.text, strings: r.strings, src: r.src, json: true });
+      });
+      var jsonCount = 0;
       /* веб: в Smartcat уходит только английский — в свой проект («МП Web»), в папку «ДДММГГ web»; остальные языки веба — только в архиве */
       var webAll = files.filter(function (f) { return scPlatform(f.p, f.c) === 'web'; });
       var webEn = webAll.filter(function (f) { return isEnglish(f.lang); });
@@ -1941,7 +1948,7 @@
           send.forEach(function (f) { byKey[f.key] = f; lmap[pl.codes[f.lang].toLowerCase()] = f.lang; });
           r.documents.forEach(function (d) {
             var f = byKey[scDocKey(d.name)] || byKey[scDocKey(d.fullPath)];
-            if (f) docs[d.id] = { p: f.p, c: f.c, lang: f.lang }; else lost.push(d.name + ' (' + d.targetLanguage + ')');
+            if (f) docs[d.id] = { p: f.p, c: f.c, lang: f.lang, json: !!f.json }; else lost.push(d.name + ' (' + d.targetLanguage + ')');
           });
           if (pl.missing.length) lost.unshift('языков нет в проекте, не отправлены: ' + pl.missing.map(langName).join(', '));
           var key = pr.id + '#' + (folder || 'root');
@@ -2435,7 +2442,8 @@
         var info = pr.docs && pr.docs[d.id];
         var name = info ? info.p + '-' + fileKey(info.c) + '-' + info.lang : scDocKey(d.name) + '-' + d.targetLanguage;
         return scCall('sc-export', { documentId: d.id }).then(function (r) {
-          files.push({ name: folder + '/' + name + '.po', text: r.text });
+          var isJ = (info && info.json) || /^\s*[\[{]/.test(r.text);
+          files.push({ name: folder + '/' + (isJ && info ? poName({ p: info.p, component: info.c, language: info.lang, ext: 'json' }) : name + (isJ ? '.json' : '.po')), text: r.text });
           st.textContent = 'Скачано ' + (++n) + ' из ' + ready.length + '…';
         }, function (e) { files.push({ name: folder + '/ОШИБКА_' + name + '.txt', text: String(e.message || e) }); });
       }).then(function () {
@@ -2489,7 +2497,7 @@
     }).catch(function (e) { msg.className = 'red'; msg.textContent = '✗ ' + e.message; btn.disabled = false; });
   }
   function renderScImport() { renderScList(scBack, true); }
-  function scDocKey(name) { return String(name || '').split('/').pop().replace(/\.po$/i, ''); }
+  function scDocKey(name) { return String(name || '').split('/').pop().replace(/\.(po|json)$/i, ''); }
   function fetchSc(pr, st, btn, auto) {
     var prKey = pr.key || pr.id;
     btn.disabled = true; st.className = 'muted'; st.textContent = 'Проверяю проект…';
@@ -2510,18 +2518,27 @@
         if (!comp || !lang) { u.error = 'не понимаю, куда это: документ «' + d.name + '», язык ' + d.targetLanguage; uploads.push(u); return Promise.resolve(); }
         u.p = comp.p; u.c = comp.c; u.lang = lang;
         return scCall('sc-export', { documentId: d.id }).then(function (r) {
-          u.text = r.text; applyPoFix(u);
-          var inf = poInfo(u.text);
-          u.filled = inf.withText; u.total = inf.total;
-          if (!inf.withText) u.skip = 'Smartcat вернул пустой перевод — машинный перевод в документе ещё не появился';
+          u.text = r.text;
+          u.json = !!(comp && comp.json) || /^\s*[\[{]/.test(r.text);
+          if (u.json) {
+            try { u.obj = JSON.parse(r.text); } catch (e) { u.error = 'файл .json из Smartcat не читается'; return; }
+            var vals = Object.keys(u.obj).map(function (k) { return u.obj[k]; });
+            u.total = vals.length; u.filled = vals.filter(Boolean).length;
+          } else {
+            applyPoFix(u);
+            var inf = poInfo(u.text);
+            u.filled = inf.withText; u.total = inf.total;
+            if (!inf.withText) u.skip = 'Smartcat вернул пустой перевод — машинный перевод в документе ещё не появился';
+          }
           return withTranslations(u.p, u.c).then(function (w) {
             if (!w) { u.error = 'компонент «' + u.c + '» не найден в Weblate'; return; }
             var code = matchLanguage(u.lang, w.trs);           /* в старых именах бывает «uz» вместо «uz_Latn» */
-            if (code) u.lang = code; else u.error = 'языка ' + u.lang + ' нет в компоненте';
+            if (code) u.lang = code; else { u.error = 'языка ' + u.lang + ' нет в компоненте'; return; }
+            if (u.json) { u.name = 'x.json'; return stripJson(u); }
           });
         }, function (e) { u.error = e.message; }).then(function () {
-          uploads = uploads.filter(function (x) { return !(x.fromSc && x.p === u.p && x.c === u.c && x.lang === u.lang); });
-          if (u.p && u.c) u.name = 'Smartcat/' + scFileName({ p: u.p, component: u.c, language: u.lang });
+          uploads = uploads.filter(function (x) { return !(x.fromSc && x.p === u.p && x.c === u.c && x.lang === u.lang && !!x.json === !!u.json); });
+          if (u.p && u.c) u.name = 'Smartcat/' + (u.json ? poName({ p: u.p, component: u.c, language: u.lang, ext: 'json' }) : scFileName({ p: u.p, component: u.c, language: u.lang }));
           uploads.push(u);
           st.textContent = 'Скачано ' + (++n) + ' из ' + ready.length + '…';
         });
