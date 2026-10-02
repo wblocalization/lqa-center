@@ -2230,11 +2230,11 @@
     });
   }
   /* ручной выбор компонента, если по имени не нашёлся */
-  var compListId = 'wlx-comps-' + Math.random().toString(16).slice(2), compList = null;
+  var compListId = 'wlx-comps-' + Math.random().toString(16).slice(2), pickComps = null;   // не путать с compList на вкладке «Выгрузить»
   function compPicker(u) {
     var inp = el('input', { type: 'text', list: compListId, placeholder: 'начни вводить компонент…', class: 'pick' });
     var ok = el('button', { class: 'b s', text: 'OK', onclick: function () {
-      var v = inp.value.trim(), all = compList || [];
+      var v = inp.value.trim(), all = pickComps || [];
       var x = all.filter(function (c) { return c.p + '/' + c.c === v || c.c === v; })[0];
       if (!x) { inp.style.borderColor = '#c0392b'; return; }
       ok.disabled = true;
@@ -2246,8 +2246,8 @@
         renderPreview();
       }, function (e) { ok.disabled = false; inp.title = e.message; inp.style.borderColor = '#c0392b'; });
     } });
-    if (!compList) knownComps().then(function (all) {
-      compList = all;
+    if (!pickComps) knownComps().then(function (all) {
+      pickComps = all;
       var dl = root.getElementById ? root.getElementById(compListId) : null;
       if (!dl) { dl = el('datalist', { id: compListId }); root.appendChild(dl); }
       all.forEach(function (c) { dl.appendChild(el('option', { value: c.p + '/' + c.c })); });
