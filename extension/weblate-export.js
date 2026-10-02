@@ -1371,6 +1371,35 @@
   var scEnAndroid = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.android });
   var scEnIos = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.ios });
   var scEnWeb = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.web });
+  /* кого назначать на английский — из «Моей команды» Smartcat */
+  var asgOn = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
+  var asgList = el('div', { class: 'team' });
+  var asgMsg = el('span', { class: 'muted' });
+  var asgSel = [];
+  function asgSave() { return scCall('sc-set-config', { config: { enAssign: asgSel, enAssignOn: asgOn.checked } }).then(loadScConfig); }
+  function asgRender(team) {
+    asgList.textContent = '';
+    var list = team || asgSel;
+    if (!list.length) { asgList.appendChild(el('p', { class: 'muted', text: 'Никто не выбран — нажми «Загрузить команду из Smartcat».' })); return; }
+    list.forEach(function (x) {
+      var cb = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
+      cb.checked = asgSel.some(function (y) { return y.id === x.id; });
+      cb.addEventListener('change', function () {
+        asgSel = asgSel.filter(function (y) { return y.id !== x.id; });
+        if (cb.checked) asgSel.push({ id: x.id, name: x.name });
+        asgSave().then(function () { asgMsg.textContent = 'Сохранено: ' + (asgSel.length ? asgSel.map(function (y) { return y.name; }).join(', ') : 'никто'); });
+      });
+      asgList.appendChild(el('label', { class: 'blk', style: 'margin-top:4px;color:#1d2330' }, [cb, x.name + (x.email ? ' · ' + x.email : '')]));
+    });
+  }
+  asgOn.addEventListener('change', function () { asgSave(); });
+  var asgLoad = el('button', { class: 'b g s', text: 'Загрузить команду из Smartcat', onclick: function () {
+    asgMsg.textContent = 'Загружаю…'; asgLoad.disabled = true;
+    scCall('sc-team').then(function (team) {
+      asgMsg.textContent = 'В команде: ' + team.length + '. Отметь, кого назначать.';
+      asgRender(team);
+    }, function (e) { asgMsg.textContent = '✗ ' + e.message; }).then(function () { asgLoad.disabled = false; });
+  } });
   var scLangs = el('textarea', { class: 'small', placeholder: 'если Smartcat не принимает код языка, например:\nuz_Latn=uz-Latn' });
   var scExtra = el('textarea', { class: 'small', placeholder: '{"workflowStages": ["translation"]}' });
   var scMsg = el('div', { class: 'muted' });
@@ -1454,6 +1483,8 @@
       scKey.value = ''; scKey.placeholder = c.hasKey ? 'ключ сохранён — впиши новый, чтобы заменить' : 'API-ключ';
       scLangs.value = c.langMap; scExtra.value = c.extra; scProject.value = c.project === SC_PROJECT_DEFAULT ? '' : c.project;
       scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos; scEnWeb.value = c.enWeb || '';
+      asgSel = (c.enAssign || []).slice(); asgOn.checked = c.enAssignOn !== false;
+      if (!asgList.querySelector('input')) asgRender(null);
     });
   }
   function saveScSettings() {
@@ -1477,7 +1508,7 @@
       var data = { weblateExtensionSettings: 1, saved: new Date().toISOString(), smartcat: c ? {
         server: c.server, customUrl: c.customUrl, accountId: c.accountId, langMap: c.langMap, extra: c.extra,
         project: c.project === SC_PROJECT_DEFAULT ? '' : c.project, enAndroid: c.enAndroid, enIos: c.enIos, enWeb: c.enWeb || '',
-        setups: c.setups || [], setup: c.setup || '' } : null, local: local };
+        setups: c.setups || [], setup: c.setup || '', enWebKeep: 1, enAssign: c.enAssign || [], enAssignOn: c.enAssignOn !== false } : null, local: local };
       saveBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), 'weblate-extension-settings.json');
       scMsg.textContent = 'Сохранено в файл (без API-ключа)';
     });
@@ -1514,6 +1545,11 @@
     el('label', {}, ['Английский дополнительно в проект (android) — пусто = стандартный', scEnAndroid]),
     el('label', {}, ['Английский дополнительно в проект (ios) — пусто = стандартный', scEnIos]),
     el('label', {}, ['Веб: английский → проект (остальные языки веба в Smartcat не уходят), папка «ДДММГГ web» — пусто = «' + SC_EN_DEFAULTS.web + '»', scEnWeb]),
+    el('h3', { text: 'Назначать на английский' }),
+    el('p', { class: 'muted', text: 'Кого из «Моей команды» Smartcat сразу назначать на английские документы при отправке: EN android, EN ios и веб («МП Web»). Режим — все, кто принял. Машинный перевод (AI translation) не трогается.' }),
+    el('label', { class: 'blk', style: 'color:#1d2330' }, [asgOn, 'назначать автоматически при отправке']),
+    el('div', { class: 'row' }, [asgLoad, asgMsg]),
+    asgList,
     el('details', {}, [el('summary', { text: 'Дополнительно' }),
       el('label', {}, ['Коды языков для Smartcat (код_weblate=код_smartcat, по строке)', scLangs]),
       el('label', {}, ['Доп. параметры создания проекта (JSON, добавляются к стандартным)', scExtra])]),
@@ -1906,7 +1942,7 @@
               if (!code) throw new Error('в проекте «' + pr.name + '» нет английского (в нём: ' + pls.join(', ') + ')');
               return scCall('sc-add-docs', { projectId: pr.id, files: by[pl].map(function (f) {
                 return { name: ddmmyy() + '_' + f.name, text: f.text, targetLanguages: [code] };
-              }) }).then(function (r) { acc.push({ ok: true, text: pl + ' → ' + pr.name + ' (' + r.documents.length + ' док.)' }); return acc; });
+              }) }).then(function (r) { acc.push({ ok: true, text: pl + ' → ' + pr.name + ' (' + r.documents.length + ' док.)', docIds: r.documents.map(function (d) { return d.id; }) }); return acc; });
             }).catch(function (e) { acc.push({ ok: false, text: pl + ': ' + e.message }); return acc; });
           });
         }, Promise.resolve([]));
@@ -1955,7 +1991,7 @@
           var list = scProjects().filter(function (x) { return (x.key || x.id) !== key; });
           list.unshift({ key: key, id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), created: new Date().toISOString(), docs: docs, files: {}, langs: lmap });
           saveScProjects(list);
-          return { id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), docs: Object.keys(docs).length, lost: lost };
+          return { id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), docs: Object.keys(docs).length, lost: lost, docIds: Object.keys(docs) };
         });
       }
       var btn = el('button', { class: 'b', text: 'Отправить в Smartcat', onclick: function () {
@@ -1972,7 +2008,7 @@
         if (webGroup) chain = chain.then(function (prev) {
           return scCall('sc-resolve-project', { ref: webRef }).then(function (pr) {
             return addToProject(webGroup, pr, webGroup.input.value.trim() || ddmmyy() + ' web');
-          }).then(function (res) { made.push(res); webGroup.input.disabled = true; return prev; });
+          }).then(function (res) { res.enDocs = true; made.push(res); webGroup.input.disabled = true; return prev; });
         });
         var enRes = [];
         if (enFiles.length) chain = chain.then(function () { return sendEnglish().then(function (r) { enRes = r; }); });
@@ -1993,6 +2029,19 @@
           enRes.forEach(function (x) {
             msg.appendChild(el('div', { class: x.ok ? 'ok' : 'red', text: (x.ok ? '✓ Английский: ' : '✗ Английский: ') + x.text }));
           });
+          /* назначить переводчиков на английские документы (EN android / EN ios / веб) */
+          var enDocIds = [].concat.apply([], enRes.filter(function (x) { return x.ok && x.docIds; }).map(function (x) { return x.docIds; }))
+            .concat([].concat.apply([], made.filter(function (p) { return p.enDocs && p.docIds; }).map(function (p) { return p.docIds; })));
+          var who = c.enAssign || [];
+          if (enDocIds.length && c.enAssignOn !== false && who.length) {
+            var am = el('div', { class: 'muted', text: 'Назначаю на английский: ' + who.map(function (x) { return x.name; }).join(', ') + '…' });
+            msg.appendChild(am);
+            scCall('sc-assign', { documentIds: enDocIds, userIds: who.map(function (x) { return x.id; }) }).then(function () {
+              am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.) — назначены: ' + who.map(function (x) { return x.name; }).join(', ') + ' (все, кто примет)';
+            }, function (e) { am.className = 'red'; am.textContent = '✗ Не получилось назначить переводчиков: ' + e.message + ' — назначь в Smartcat вручную'; });
+          } else if (enDocIds.length && !who.length) {
+            msg.appendChild(el('div', { class: 'muted', text: 'Переводчики на английский не назначены — выбрать их можно в ⚙ → «Назначать на английский».' }));
+          }
           made.forEach(function (p) {
             (p.lost || []).forEach(function (t) {
               msg.appendChild(el('div', { class: 'red', text: /^языков нет/.test(t) ? p.name + ': ' + t : 'Не поняла, к какому компоненту/языку относится: ' + t }));

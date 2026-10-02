@@ -46,7 +46,7 @@ const SC_HANDLERS = {
     const c = await scConfig();
     return { server: c.server || 'eu', customUrl: c.customUrl || '', accountId: c.accountId || '', hasKey: !!c.apiKey,
       langMap: c.langMap || '', extra: c.extra || '', project: c.project || '',
-      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
+      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', enAssign: c.enAssign || [], enAssignOn: c.enAssignOn !== false, base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
   },
   async 'sc-set-config'(m) {
     const c = await scConfig();
@@ -219,6 +219,43 @@ SC_HANDLERS['sc-projects'] = async () => {
   }
   out.sort((a, b) => String(b.modified).localeCompare(String(a.modified)));
   return out;
+};
+/* «Моя команда» в Smartcat — для назначения переводчиков */
+SC_HANDLERS['sc-team'] = async () => {
+  const out = [], seen = new Set();
+  for (let skip = 0; skip < 2000; skip += 100) {
+    const r = await scFetch('/account/searchMyTeam', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skip, limit: 100 }) });
+    const list = await r.json();
+    const arr = Array.isArray(list) ? list : (list && (list.items || list.users || list.result)) || [];
+    let fresh = 0;
+    arr.forEach((x) => {
+      const id = x.id || x.userId; if (!id || seen.has(id)) return;
+      seen.add(id); fresh++;
+      out.push({ id, name: [x.firstName, x.lastName].filter(Boolean).join(' ') || x.name || x.email || id, email: x.email || '' });
+    });
+    if (arr.length < 100 || !fresh) break;
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
+};
+/* назначить людей из «Моей команды» на документы (этап 1 — перевод); документ после загрузки ещё разбирается — повторяем */
+SC_HANDLERS['sc-assign'] = async (m) => {
+  const body = (strategy) => JSON.stringify({ documentIds: m.documentIds, stageNumber: m.stage || 1, strategy, userIds: m.userIds });
+  let last;
+  for (let i = 0; i < 8; i++) {
+    for (const strategy of ['distributeAmongAll', 'DistributeAmongAll']) {
+      try {
+        await scFetch('/document/assignFromMyTeam', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body(strategy) });
+        return { ok: true, tries: i + 1 };
+      } catch (e) {
+        last = e;
+        if (!/strategy/i.test(String(e.message))) break;      // другое написание режима пробуем только при ошибке про режим
+      }
+    }
+    await sleep(5000);
+  }
+  throw last;
 };
 SC_HANDLERS['sc-ready-get'] = async () => (await chrome.storage.local.get('scReady')).scReady || {};
 SC_HANDLERS['sc-watch-now'] = () => checkSmartcatReady();
