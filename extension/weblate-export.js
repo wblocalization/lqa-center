@@ -484,13 +484,76 @@
     end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
     return new Blob(parts.concat(central, [end.buffer]), { type: 'application/zip' });
   }
-  function saveBlob(blob, name) {
+  function downloadBlob(blob, name) {
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = name;
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
   }
+  /* ---------- папка для архивов: выбирается один раз (File System Access API), хранится в IndexedDB ---------- */
+  var dirHandle = null, dirLoaded = null;
+  function dirDb(op, val) {
+    return new Promise(function (res, rej) {
+      var rq = indexedDB.open('wlx-dir', 1);
+      rq.onupgradeneeded = function () { rq.result.createObjectStore('h'); };
+      rq.onerror = function () { rej(rq.error); };
+      rq.onsuccess = function () {
+        var db = rq.result, st = db.transaction('h', op === 'get' ? 'readonly' : 'readwrite').objectStore('h');
+        var r = op === 'get' ? st.get('dir') : op === 'del' ? st.delete('dir') : st.put(val, 'dir');
+        r.onsuccess = function () { res(r.result); db.close(); };
+        r.onerror = function () { rej(r.error); };
+      };
+    });
+  }
+  function loadDir() {
+    if (!dirLoaded) dirLoaded = dirDb('get').then(function (h) { dirHandle = h || null; return dirHandle; }, function () { return null; });
+    return dirLoaded;
+  }
+  function pickDir() {
+    if (!window.showDirectoryPicker) return Promise.reject(new Error('этот браузер не умеет выбирать папку — нужен Chrome'));
+    return window.showDirectoryPicker({ id: 'wlx-archives', mode: 'readwrite', startIn: 'desktop' }).then(function (h) {
+      dirHandle = h; dirLoaded = Promise.resolve(h);
+      return dirDb('put', h).then(function () { return h; });
+    });
+  }
+  function forgetDir() { dirHandle = null; dirLoaded = Promise.resolve(null); return dirDb('del'); }
+  function freeName(dir, name) {
+    var m = /^(.*?)(\.[^.]+)?$/.exec(name), n = 1;
+    function tryName(nm) {
+      return dir.getFileHandle(nm).then(function () { n++; return n > 99 ? nm : tryName(m[1] + ' (' + n + ')' + (m[2] || '')); }, function () { return nm; });
+    }
+    return tryName(name);
+  }
+  function saveToDir(blob, name) {
+    var h = dirHandle;
+    return h.queryPermission({ mode: 'readwrite' }).then(function (p) { return p === 'granted' ? p : h.requestPermission({ mode: 'readwrite' }); }).then(function (p) {
+      if (p !== 'granted') throw new Error('нет разрешения на папку');
+      var sub = sget('wlx_dir_dated') === '0' ? '' : ddmmyy();
+      return (sub ? h.getDirectoryHandle(sub, { create: true }) : Promise.resolve(h)).then(function (d) {
+        return freeName(d, name).then(function (nm) {
+          return d.getFileHandle(nm, { create: true }).then(function (fh) { return fh.createWritable(); })
+            .then(function (w) { return w.write(blob).then(function () { return w.close(); }); })
+            .then(function () { return h.name + '/' + (sub ? sub + '/' : '') + nm; });
+        });
+      });
+    });
+  }
+  /* архивы (.zip) — в выбранную папку, если она есть; остальное и запасной вариант — обычное скачивание */
+  function saveBlob(blob, name) {
+    if (!/\.zip$/i.test(name) || !dirHandle) { downloadBlob(blob, name); return; }
+    saveToDir(blob, name).then(function (path) { toast('✓ Сохранено: ' + path); }, function (e) {
+      downloadBlob(blob, name);
+      toast('Папка для архивов недоступна (' + (e.message || e) + ') — скачала в «Загрузки». Проверь папку в ⚙', true);
+    });
+  }
+  var toastEl = null, toastTimer = null;
+  function toast(text, bad) {
+    if (!toastEl) return;
+    toastEl.textContent = text; toastEl.className = 'toast' + (bad ? ' bad' : '');
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { toastEl.className = 'toast hide'; }, bad ? 12000 : 6000);
+  }
+  loadDir();
 
   /* ---------- ZIP read (stored / deflate) ---------- */
   function readZip(buf) {
@@ -648,6 +711,8 @@
     '.res .line{font-size:13.5px;margin:4px 0}',
     '.res .bar{margin:6px 0 10px}',
     '.scimp label.chk input{margin-right:2px}',
+    '.toast{position:sticky;top:0;z-index:5;margin:4px 0 8px;padding:9px 12px;border-radius:8px;background:#e3f4ec;color:#147a5c;font-size:13.5px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.08)}',
+    '.toast.bad{background:#fdecea;color:#b03a2e}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -1383,6 +1448,25 @@
   var scEnAndroid = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.android });
   var scEnIos = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.ios });
   var scEnWeb = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.web });
+  /* папка для архивов */
+  var dirInfo = el('span', { class: 'muted' });
+  var dirDated = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
+  dirDated.checked = sget('wlx_dir_dated') !== '0';
+  dirDated.addEventListener('change', function () { sset('wlx_dir_dated', dirDated.checked ? '1' : '0'); dirShow(); });
+  function dirShow() {
+    loadDir().then(function (h) {
+      if (!h) { dirInfo.className = 'muted'; dirInfo.textContent = 'не выбрана — архивы скачиваются в «Загрузки»'; dirForget.classList.add('hide'); return; }
+      dirForget.classList.remove('hide');
+      return h.queryPermission({ mode: 'readwrite' }).then(function (p) {
+        dirInfo.className = p === 'granted' ? 'ok' : 'muted';
+        dirInfo.textContent = 'архивы → «' + h.name + (dirDated.checked ? '/ДДММГГ' : '') + '»' + (p === 'granted' ? '' : ' (Chrome спросит разрешение при первом сохранении)');
+      });
+    });
+  }
+  var dirPick = el('button', { class: 'b g s', text: '📁 Выбрать папку…', onclick: function () {
+    pickDir().then(function () { dirShow(); toast('✓ Папка для архивов: ' + dirHandle.name); }, function (e) { if (e && e.name !== 'AbortError') { dirInfo.className = 'red'; dirInfo.textContent = '✗ ' + (e.message || e); } });
+  } });
+  var dirForget = el('button', { class: 'b g s', text: 'Сбросить', onclick: function () { forgetDir().then(dirShow); } });
   /* отправка android + ios по расписанию */
   var schOn = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
   var schText = el('input', { type: 'text', placeholder: 'вт 14:00, пт 10:00' });
@@ -1532,6 +1616,7 @@
       scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos; scEnWeb.value = c.enWeb || '';
       asgSel = (c.enAssign || []).slice(); asgOn.checked = c.enAssignOn !== false;
       schOn.checked = !!c.schedOn; schText.value = c.sched || 'вт 14:00, пт 10:00'; schShowNext();
+      dirShow();
       if (!asgList.querySelector('input')) asgRender(null);
     });
   }
@@ -1547,7 +1632,7 @@
   }
   /* копия настроек в файл (без API-ключа) — для нового компьютера или коллеги */
   var BACKUP_KEYS = ['wlx_links', 'wlx_langs', 'wlx_layout', 'wlx_en', 'wlx_pj', 'wlx_mt_links', 'wlx_sc_split', 'wlx_m', 'wlx_f', 'wlx_c', 'wlx_presets_exp', 'wlx_presets_sc',
-    'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip'];
+    'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip', 'wlx_dir_dated'];
   var restoreInput = el('input', { type: 'file', accept: '.json', class: 'hide' });
   function backupSettings() {
     loadScConfig().then(function (c) {
@@ -1593,6 +1678,10 @@
     el('label', {}, ['Английский дополнительно в проект (android) — пусто = стандартный', scEnAndroid]),
     el('label', {}, ['Английский дополнительно в проект (ios) — пусто = стандартный', scEnIos]),
     el('label', {}, ['Веб: английский → проект (остальные языки веба в Smartcat не уходят), папка «ДДММГГ web» — пусто = «' + SC_EN_DEFAULTS.web + '»', scEnWeb]),
+    el('h3', { text: 'Папка для архивов' }),
+    el('p', { class: 'muted', text: 'Куда сохранять zip для подрядчиков (например, «Подрядчики» на рабочем столе). Выбирается один раз; Chrome может иногда переспросить разрешение. Если папка недоступна — архив скачается в «Загрузки».' }),
+    el('div', { class: 'row' }, [dirPick, dirForget, dirInfo]),
+    el('label', { class: 'blk', style: 'color:#1d2330' }, [dirDated, 'складывать в подпапку с датой (ДДММГГ)']),
     el('h3', { text: 'Отправка android и ios по расписанию' }),
     el('p', { class: 'muted', text: 'В это время (по Москве) расширение само делает «🚀 Выгрузить и отправить в Smartcat» для android и ios и присылает уведомление с итогом. Нужно, чтобы компьютер и Chrome были включены и ты была залогинена в Weblate. Пропущено — придёт уведомление с кнопкой «Отправить сейчас». Если сегодня уже отправляли — второй раз не шлёт. Включай только на одном компьютере.' }),
     el('label', { class: 'blk', style: 'color:#1d2330' }, [schOn, 'отправлять по расписанию']),
@@ -1648,6 +1737,7 @@
           el('button', { class: 'x', title: 'Закрыть', text: '×', onclick: hide })
         ])
       ]),
+      toastEl = el('div', { class: 'toast hide' }),
       settingsPane,
       mainArea = el('div', {}, [
         el('div', { class: 'tabs' }, HAS_EXT ? [tabExp, tabSc, tabImp] : [tabExp, tabImp]),
