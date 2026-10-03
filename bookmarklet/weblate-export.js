@@ -1308,12 +1308,23 @@
     }).catch(function (e) {
       scOut.appendChild(el('div', { class: 'err', text: friendly(e) }));
       prog.classList.add('hide');
+      if (autoSend) autoDone({ error: friendly(e) });
     }).then(function () { scRun.disabled = false; scRunSend.disabled = false; });
   }
 
   function scFileName(r) { return r.p + '-' + fileKey(r.component) + '-' + r.language + '.po'; }
+  /* запуск по расписанию: «🚀 Выгрузить и отправить», итог — в фон (уведомление) */
+  var scAutoHook = null;
+  function autoDone(r) { if (scAutoHook) { var h = scAutoHook; scAutoHook = null; h(r); } }
+  function autoSend(slot) {
+    return new Promise(function (resolve) {
+      scAutoHook = function (r) { r.slot = slot; scCall('sc-auto-done', r).catch(function () {}); resolve(r); };
+      tab('sc'); runScPreset(true);
+      setTimeout(function () { autoDone({ error: 'не дождалась конца отправки за 15 минут — проверь вкладку Smartcat' }); }, 15 * 60000);
+    });
+  }
   function showScPreset(res, errs, autoSend) {
-    if (!res.length) { scOut.appendChild(el('p', { text: 'Непереведённых строк нет — всё переведено 🎉' })); }
+    if (!res.length) { scOut.appendChild(el('p', { text: 'Непереведённых строк нет — всё переведено 🎉' })); if (autoSend) autoDone({ nothing: true }); }
     else {
       var by = {}, plats = [];
       res.forEach(function (r) {
@@ -1343,8 +1354,9 @@
       if (only.length) scOut.appendChild(el('p', { class: 'muted', text: only.map(langName).join(', ') + ' — только в ZIP, в Smartcat не отправляется.' }));
       if (toSc.length) renderSmartcat(toSc, scOut).then(function (sendBtn) {
         if (autoSend && sendBtn) sendBtn.click();
-        else if (autoSend) scOut.appendChild(el('div', { class: 'err', text: 'Отправить не получилось: Smartcat не подключён (⚙)' }));
+        else if (autoSend) { scOut.appendChild(el('div', { class: 'err', text: 'Отправить не получилось: Smartcat не подключён (⚙)' })); autoDone({ error: 'Smartcat не подключён (⚙)' }); }
       });
+      else if (autoSend) autoDone({ nothing: true });
     }
     if (errs.length) {
       var et = el('table');
@@ -1371,6 +1383,41 @@
   var scEnAndroid = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.android });
   var scEnIos = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.ios });
   var scEnWeb = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.web });
+  /* отправка android + ios по расписанию */
+  var schOn = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
+  var schText = el('input', { type: 'text', placeholder: 'вт 14:00, пт 10:00' });
+  var schNext = el('span', { class: 'muted' });
+  var DOWS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+  function schParse(t) {
+    return String(t || '').split(/[,;\n]+/).map(function (x) {
+      var m = /(вс|пн|вт|ср|чт|пт|сб)\D*(\d{1,2})[:.](\d{2})/i.exec(x.trim());
+      return m ? { dow: DOWS.indexOf(m[1].toLowerCase()), h: +m[2], m: +m[3] } : null;
+    }).filter(Boolean);
+  }
+  function schShowNext() {
+    var slots = schParse(schText.value || 'вт 14:00, пт 10:00');
+    if (!slots.length) { schNext.className = 'red'; schNext.textContent = 'не поняла расписание — пиши так: вт 14:00, пт 10:00'; return; }
+    var now = Date.now(), best = null;
+    for (var d = 0; d < 8 && !best; d++) {
+      var day = new Date(now + 3 * 3600e3 + d * 864e5);
+      slots.forEach(function (s) {
+        if (day.getUTCDay() !== s.dow) return;
+        var t = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), s.h, s.m) - 3 * 3600e3;
+        if (t > now && (!best || t < best)) best = t;
+      });
+    }
+    var b = best ? new Date(best + 3 * 3600e3) : null;
+    schNext.className = 'muted';
+    schNext.textContent = !schOn.checked ? 'выключено' : b ? 'следующая: ' + DOWS[b.getUTCDay()] + ' ' + ('0' + b.getUTCDate()).slice(-2) + '.' + ('0' + (b.getUTCMonth() + 1)).slice(-2) +
+      ' в ' + ('0' + b.getUTCHours()).slice(-2) + ':' + ('0' + b.getUTCMinutes()).slice(-2) + ' МСК' : '';
+  }
+  function schSave() { return scCall('sc-set-config', { config: { schedOn: schOn.checked, sched: schText.value.trim() || 'вт 14:00, пт 10:00' } }).then(schShowNext); }
+  schOn.addEventListener('change', schSave);
+  schText.addEventListener('change', schSave);
+  var schRun = el('button', { class: 'b g s', text: 'Запустить сейчас', title: 'Сделать то же, что по расписанию: выгрузить android и ios и отправить в Smartcat (в фоновой вкладке)', onclick: function () {
+    if (!confirm('Выгрузить android и ios и отправить в Smartcat прямо сейчас (как по расписанию)?')) return;
+    scCall('sc-sched-run-now').then(function () { schNext.textContent = 'запущено — итог придёт уведомлением'; }, function (e) { schNext.textContent = '✗ ' + e.message; });
+  } });
   /* кого назначать на английский — из «Моей команды» Smartcat */
   var asgOn = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
   var asgList = el('div', { class: 'team' });
@@ -1484,6 +1531,7 @@
       scLangs.value = c.langMap; scExtra.value = c.extra; scProject.value = c.project === SC_PROJECT_DEFAULT ? '' : c.project;
       scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos; scEnWeb.value = c.enWeb || '';
       asgSel = (c.enAssign || []).slice(); asgOn.checked = c.enAssignOn !== false;
+      schOn.checked = !!c.schedOn; schText.value = c.sched || 'вт 14:00, пт 10:00'; schShowNext();
       if (!asgList.querySelector('input')) asgRender(null);
     });
   }
@@ -1545,6 +1593,11 @@
     el('label', {}, ['Английский дополнительно в проект (android) — пусто = стандартный', scEnAndroid]),
     el('label', {}, ['Английский дополнительно в проект (ios) — пусто = стандартный', scEnIos]),
     el('label', {}, ['Веб: английский → проект (остальные языки веба в Smartcat не уходят), папка «ДДММГГ web» — пусто = «' + SC_EN_DEFAULTS.web + '»', scEnWeb]),
+    el('h3', { text: 'Отправка android и ios по расписанию' }),
+    el('p', { class: 'muted', text: 'В это время (по Москве) расширение само делает «🚀 Выгрузить и отправить в Smartcat» для android и ios и присылает уведомление с итогом. Нужно, чтобы компьютер и Chrome были включены и ты была залогинена в Weblate. Пропущено — придёт уведомление с кнопкой «Отправить сейчас». Если сегодня уже отправляли — второй раз не шлёт. Включай только на одном компьютере.' }),
+    el('label', { class: 'blk', style: 'color:#1d2330' }, [schOn, 'отправлять по расписанию']),
+    el('label', {}, ['Когда (по Москве)', schText]),
+    el('div', { class: 'row' }, [schRun, schNext]),
     el('h3', { text: 'Назначать на английский' }),
     el('p', { class: 'muted', text: 'Кого из «Моей команды» Smartcat сразу назначать на английские документы при отправке: EN android, EN ios и веб («МП Web»). Режим — все, кто принял. Машинный перевод (AI translation) не трогается.' }),
     el('label', { class: 'blk', style: 'color:#1d2330' }, [asgOn, 'назначать автоматически при отправке']),
@@ -2020,6 +2073,8 @@
           msg.appendChild(el('div', { text: '✗ ' + e.message }));
         }).then(function () {
           renderScImport();
+          autoDone({ made: made.map(function (p) { return p.name + (p.docs != null ? ' (' + p.docs + ' док.)' : ''); }),
+            en: enRes.map(function (x) { return (x.ok ? '' : '✗ ') + x.text; }), error: msg.className === 'red' ? msg.textContent.slice(0, 200) : '' });
           if (!made.length) return;
           if (msg.className !== 'red') msg.textContent = '';
           msg.insertBefore(el('div', {}, [document.createTextNode(c.project ? '✓ Файлы добавлены: ' : '✓ Созданы проекты: ')].concat(made.map(function (p, i) {
@@ -2807,7 +2862,7 @@
   }
 
   document.body.appendChild(host);
-  window.__wlExport = { show: show, openTab: function (t) {
+  window.__wlExport = { show: show, autoSend: autoSend, openTab: function (t) {
     show(); tab(t);
     if (HAS_EXT) syncScProjects().then(function () { return scCall('sc-ready-get'); }).then(function (r) { scReady = r || {}; renderScImport(); }, function () {});
   } };

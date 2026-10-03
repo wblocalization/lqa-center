@@ -46,7 +46,7 @@ const SC_HANDLERS = {
     const c = await scConfig();
     return { server: c.server || 'eu', customUrl: c.customUrl || '', accountId: c.accountId || '', hasKey: !!c.apiKey,
       langMap: c.langMap || '', extra: c.extra || '', project: c.project || '',
-      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', enAssign: c.enAssign || [], enAssignOn: c.enAssignOn !== false, base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
+      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', enAssign: c.enAssign || [], enAssignOn: c.enAssignOn !== false, schedOn: !!c.schedOn, sched: c.sched || SCHED_DEFAULT, base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
   },
   async 'sc-set-config'(m) {
     const c = await scConfig();
@@ -178,14 +178,92 @@ async function checkSmartcatReady() {
 
 function ensureAlarm() {
   chrome.alarms.get('sc-watch', (a) => { if (!a) chrome.alarms.create('sc-watch', { periodInMinutes: 2 }); });
+  chrome.alarms.get('sc-sched', (a) => { if (!a) chrome.alarms.create('sc-sched', { periodInMinutes: 1 }); });
 }
 chrome.runtime.onInstalled.addListener(ensureAlarm);
 chrome.runtime.onStartup.addListener(ensureAlarm);
 ensureAlarm();
-chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'sc-watch') checkSmartcatReady().catch((e) => console.error('Weblate LQA:', e)); });
+chrome.alarms.onAlarm.addListener((a) => {
+  if (a.name === 'sc-watch') checkSmartcatReady().catch((e) => console.error('Weblate LQA:', e));
+  if (a.name === 'sc-sched') schedTick().catch((e) => console.error('Weblate LQA:', e));
+});
+
+/* ---------- Отправка android + ios в Smartcat по расписанию (время московское) ----------
+   В назначенное время открываем Weblate в фоновой вкладке и жмём «🚀 Выгрузить и отправить в Smartcat».
+   Пропустили (компьютер спал, Chrome закрыт) — уведомление с кнопкой «Отправить сейчас», само не шлём.
+   Если сегодня уже отправляли android / ios — второй раз не отправляем. */
+const SCHED_DEFAULT = 'вт 14:00, пт 10:00';
+const DOW = { 'вс': 0, 'пн': 1, 'вт': 2, 'ср': 3, 'чт': 4, 'пт': 5, 'сб': 6 };
+const DOW_NAME = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+function parseSched(t) {
+  return String(t || '').split(/[,;\n]+/).map((x) => {
+    const m = /(вс|пн|вт|ср|чт|пт|сб)\D*(\d{1,2})[:.](\d{2})/i.exec(x.trim());
+    return m ? { dow: DOW[m[1].toLowerCase()], h: +m[2], m: +m[3], label: m[1].toLowerCase() + ' ' + m[2].padStart(2, '0') + ':' + m[3] } : null;
+  }).filter(Boolean);
+}
+const mskNow = (t = Date.now()) => new Date(t + 3 * 3600e3);        // UTC-поля этой даты = московское время
+const ddmmyyMsk = (d) => String(d.getUTCDate()).padStart(2, '0') + String(d.getUTCMonth() + 1).padStart(2, '0') + String(d.getUTCFullYear()).slice(-2);
+async function schedTick() {
+  const { sc = {}, schedState = {} } = await chrome.storage.local.get(['sc', 'schedState']);
+  if (!sc.schedOn) return;
+  const now = Date.now(), m = mskNow(now), day = m.toISOString().slice(0, 10);
+  let changed = false;
+  for (const s of parseSched(sc.sched || SCHED_DEFAULT)) {
+    if (m.getUTCDay() !== s.dow) continue;
+    const slot = Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), m.getUTCDate(), s.h, s.m) - 3 * 3600e3;
+    const key = day + ' ' + s.label;
+    if (now < slot || schedState[key]) continue;
+    changed = true;
+    if (now - slot <= 20 * 60e3) { schedState[key] = 'run'; await chrome.storage.local.set({ schedState }); await runAuto(s.label); }
+    else {
+      schedState[key] = 'missed';
+      chrome.notifications.create('sc-sched-miss|' + s.label + '|' + now, { type: 'basic', iconUrl: 'icons/icon128.png', priority: 2, requireInteraction: true,
+        title: 'Smartcat: пропущена отправка ' + s.label, message: 'В ' + s.label + ' (МСК) компьютер или Chrome были выключены. Выгрузить android и ios и отправить сейчас?',
+        buttons: [{ title: 'Отправить сейчас' }, { title: 'Не надо' }] });
+    }
+  }
+  Object.keys(schedState).forEach((k) => { if (Date.parse(k.slice(0, 10)) < now - 14 * 864e5) { delete schedState[k]; changed = true; } });
+  if (changed) await chrome.storage.local.set({ schedState });
+}
+function schedNote(title, message, id) {
+  chrome.notifications.create(id || 'sc-sched-done|' + Date.now(), { type: 'basic', iconUrl: 'icons/icon128.png', priority: 2, title, message });
+}
+let autoTabId = null;
+async function runAuto(label) {
+  const { scProjects = [] } = await chrome.storage.local.get('scProjects');
+  const ld = new Date(), local = String(ld.getDate()).padStart(2, '0') + String(ld.getMonth() + 1).padStart(2, '0') + String(ld.getFullYear()).slice(-2);
+  const days = [ddmmyyMsk(mskNow()), local];          // имя папки — по часам компьютера; на всякий случай и московская дата
+  const already = scProjects.filter((p) => days.some((d) => new RegExp('#' + d + '_(android|ios)$').test(p.key || '')));
+  if (already.length) { schedNote('Smartcat: по расписанию не отправляю', 'Сегодня уже отправлено: ' + already.map((p) => p.name).join(', ') + '. Второй раз не шлю.'); return; }
+  const tab = await chrome.tabs.create({ url: WEBLATE_URL, active: false });
+  autoTabId = tab.id;
+  await new Promise((res) => {
+    const f = (tid, info) => { if (tid === tab.id && info.status === 'complete') { chrome.tabs.onUpdated.removeListener(f); res(); } };
+    chrome.tabs.onUpdated.addListener(f);
+    setTimeout(res, 60000);
+  });
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['weblate-export.js'] });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: (l) => { window.__wlExport && window.__wlExport.autoSend(l); }, args: [label || 'сейчас'] });
+  } catch (e) { schedNote('Smartcat: отправка по расписанию не удалась', String(e.message || e)); }
+}
+SC_HANDLERS['sc-auto-done'] = async (m) => {
+  const text = m.error ? '✗ ' + m.error : m.nothing ? 'Нечего отправлять — всё переведено 🎉'
+    : 'Отправлено: ' + (m.made || []).join(', ') + ((m.en || []).length ? '. Английский: ' + m.en.join(', ') : '');
+  schedNote(m.error ? 'Smartcat: отправка по расписанию не удалась' : 'Smartcat: отправлено по расписанию (' + (m.slot || '') + ')', text.slice(0, 300));
+  if (autoTabId) { const id = autoTabId; autoTabId = null; setTimeout(() => chrome.tabs.remove(id).catch(() => {}), 60000); }
+  return { ok: true };
+};
+SC_HANDLERS['sc-sched-run-now'] = async () => { await runAuto('вручную'); return { ok: true }; };
+chrome.notifications.onButtonClicked.addListener((id, idx) => {
+  if (!id.startsWith('sc-sched-miss|')) return;
+  chrome.notifications.clear(id);
+  if (idx === 0) runAuto(id.split('|')[1]).catch((e) => console.error('Weblate LQA:', e));
+});
+chrome.runtime.onStartup.addListener(() => { schedTick().catch(() => {}); });
 
 chrome.notifications.onClicked.addListener(async (id) => {
-  if (!id.startsWith('sc-ready|')) return;
+  if (!id.startsWith('sc-ready|') && !id.startsWith('sc-sched-done|')) return;
   chrome.notifications.clear(id);
   const tabs = await chrome.tabs.query({ url: WEBLATE_URL + '*' });
   let tab = tabs[0];
