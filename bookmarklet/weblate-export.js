@@ -539,6 +539,41 @@
       });
     });
   }
+  /* папки по платформам на компьютере: ДДММГГ_web / ДДММГГ_iOS / ДДММГГ_android */
+  function platDir(p, c) { var pl = scPlatform(p, c); return ddmmyy() + '_' + (pl === 'ios' ? 'iOS' : pl); }
+  /* выгрузка «папками»: если выбрана папка для архивов и включено «без zip» — пишем файлы прямо туда */
+  function unzipToDir() { return !!dirHandle && sget('wlx_dir_unzip') !== '0'; }
+  function saveFilesToDir(files) {
+    var h = dirHandle, cache = {};
+    function dirFor(path) {
+      var parts = path.split('/').slice(0, -1), key = '';
+      return parts.reduce(function (pr, part) {
+        return pr.then(function (d) { key += '/' + part; if (!cache[key]) cache[key] = d.getDirectoryHandle(part, { create: true }); return cache[key]; });
+      }, Promise.resolve(h));
+    }
+    return h.queryPermission({ mode: 'readwrite' }).then(function (p) { return p === 'granted' ? p : h.requestPermission({ mode: 'readwrite' }); }).then(function (p) {
+      if (p !== 'granted') throw new Error('нет разрешения на папку');
+      return files.reduce(function (pr, f) {
+        return pr.then(function () {
+          return dirFor(f.name).then(function (d) {
+            return d.getFileHandle(f.name.split('/').pop(), { create: true }).then(function (fh) { return fh.createWritable(); })
+              .then(function (w) { return w.write(new Blob([f.text])).then(function () { return w.close(); }); });
+          });
+        });
+      }, Promise.resolve()).then(function () {
+        var tops = {}; files.forEach(function (f) { var t = f.name.split('/')[0]; if (f.name.indexOf('/') > 0) tops[t] = (tops[t] || 0) + 1; });
+        return Object.keys(tops).sort().map(function (t) { return h.name + '/' + t + ' (' + tops[t] + ')'; }).join(', ');
+      });
+    });
+  }
+  /* сохранить набор файлов: папками (если можно) или одним zip */
+  function saveFiles(files, zipName) {
+    if (!unzipToDir()) { saveBlob(makeZip(files), zipName); return; }
+    saveFilesToDir(files).then(function (where) { toast('✓ Сохранено папками: ' + where); }, function (e) {
+      saveBlob(makeZip(files), zipName);
+      toast('Не получилось сохранить папками (' + (e.message || e) + ') — сохранила zip', true);
+    });
+  }
   /* архивы (.zip) — в выбранную папку, если она есть; остальное и запасной вариант — обычное скачивание */
   function saveBlob(blob, name) {
     if (!/\.zip$/i.test(name) || !dirHandle) { downloadBlob(blob, name); return; }
@@ -778,6 +813,12 @@
   var englishApart = el('input', { type: 'checkbox' });
   englishApart.checked = sget('wlx_en') !== '0';
   englishApart.addEventListener('change', function () { sset('wlx_en', englishApart.checked ? '1' : '0'); });
+  var skipEnglish = el('input', { type: 'checkbox' });
+  skipEnglish.checked = sget('wlx_noen') !== '0';
+  skipEnglish.addEventListener('change', function () { sset('wlx_noen', skipEnglish.checked ? '1' : '0'); });
+  var byPlatform = el('input', { type: 'checkbox' });
+  byPlatform.checked = sget('wlx_byplat') !== '0';
+  byPlatform.addEventListener('change', function () { sset('wlx_byplat', byPlatform.checked ? '1' : '0'); });
   var langSec = el('div', { class: 'hide' }, [
     el('h2', { text: '2. Языки' }),
     el('div', { class: 'row' }, [
@@ -795,6 +836,8 @@
     el('h2', { text: 'Как разложить файлы в архиве' }),
     layoutBox,
     el('label', { class: 'muted blk' }, [englishApart, ' английский всегда отдельно — в папку «Английский ШТАТ»']),
+    el('label', { class: 'muted blk' }, [byPlatform, ' сверху — папки по платформам: ДДММГГ_web / ДДММГГ_iOS / ДДММГГ_android']),
+    el('label', { class: 'muted blk' }, [skipEnglish, ' английский не скачивать — он уходит в Smartcat (шаг «4. Отправить в Smartcat»)']),
     el('div', { class: 'row' }, [goBtn]),
     err2
   ]);
@@ -1407,9 +1450,9 @@
       });
       scOut.appendChild(el('div', { class: 'row' }, [
         el('button', { class: 'b', text: '⬇ Скачать ZIP (' + plats.sort().join(' / ') + ' отдельно)', onclick: function () {
-          var files = res.map(function (r) { return { name: ddmmyy() + '_' + scPlatform(r.p, r.component) + '/' + scFileName(r), text: r.text }; });
+          var files = res.map(function (r) { return { name: platDir(r.p, r.component) + '/' + scFileName(r), text: r.text }; });
           files.sort(function (a, b) { return a.name.localeCompare(b.name); });
-          saveBlob(makeZip(files), 'smartcat_' + ddmmyy() + '.zip');
+          saveFiles(files, 'smartcat_' + ddmmyy() + '.zip');
         } })
       ]));
       scOut.appendChild(t);
@@ -1451,6 +1494,9 @@
   /* папка для архивов */
   var dirInfo = el('span', { class: 'muted' });
   var dirDated = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
+  var dirUnzip = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
+  dirUnzip.checked = sget('wlx_dir_unzip') !== '0';
+  dirUnzip.addEventListener('change', function () { sset('wlx_dir_unzip', dirUnzip.checked ? '1' : '0'); });
   dirDated.checked = sget('wlx_dir_dated') !== '0';
   dirDated.addEventListener('change', function () { sset('wlx_dir_dated', dirDated.checked ? '1' : '0'); dirShow(); });
   function dirShow() {
@@ -1632,7 +1678,7 @@
   }
   /* копия настроек в файл (без API-ключа) — для нового компьютера или коллеги */
   var BACKUP_KEYS = ['wlx_links', 'wlx_langs', 'wlx_layout', 'wlx_en', 'wlx_pj', 'wlx_mt_links', 'wlx_sc_split', 'wlx_m', 'wlx_f', 'wlx_c', 'wlx_presets_exp', 'wlx_presets_sc',
-    'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip', 'wlx_dir_dated'];
+    'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip', 'wlx_dir_dated', 'wlx_dir_unzip', 'wlx_byplat', 'wlx_noen'];
   var restoreInput = el('input', { type: 'file', accept: '.json', class: 'hide' });
   function backupSettings() {
     loadScConfig().then(function (c) {
@@ -1681,7 +1727,8 @@
     el('h3', { text: 'Папка для архивов' }),
     el('p', { class: 'muted', text: 'Куда сохранять zip для подрядчиков (например, «Подрядчики» на рабочем столе). Выбирается один раз; Chrome может иногда переспросить разрешение. Если папка недоступна — архив скачается в «Загрузки».' }),
     el('div', { class: 'row' }, [dirPick, dirForget, dirInfo]),
-    el('label', { class: 'blk', style: 'color:#1d2330' }, [dirDated, 'складывать в подпапку с датой (ДДММГГ)']),
+    el('label', { class: 'blk', style: 'color:#1d2330' }, [dirUnzip, 'выгрузку непереведённого сохранять папками, без zip (ДДММГГ_web / ДДММГГ_iOS / ДДММГГ_android)']),
+    el('label', { class: 'blk', style: 'color:#1d2330' }, [dirDated, 'zip-архивы класть в подпапку с датой (ДДММГГ)']),
     el('h3', { text: 'Отправка android и ios по расписанию' }),
     el('p', { class: 'muted', text: 'В это время (по Москве) расширение само делает «🚀 Выгрузить и отправить в Smartcat» для android и ios и присылает уведомление с итогом. Нужно, чтобы компьютер и Chrome были включены и ты была залогинена в Weblate. Пропущено — придёт уведомление с кнопкой «Отправить сейчас». Если сегодня уже отправляли — второй раз не шлёт. Включай только на одном компьютере.' }),
     el('label', { class: 'blk', style: 'color:#1d2330' }, [schOn, 'отправлять по расписанию']),
@@ -1908,22 +1955,26 @@
       var layoutHint = el('span', { class: 'muted' });
       function updateHint() {
         var l = currentLayout();
-        layoutHint.textContent = (l === 'language' ? 'папки по языкам' : l === 'flat' ? 'все файлы в одной папке' : 'папки по компонентам') +
-          (englishApart.checked ? ', английский — в «' + ENGLISH_DIR + '»' : '') + ' + summary.csv (раскладку можно поменять выше)';
+        layoutHint.textContent = (byPlatform.checked ? 'сверху ' + ddmmyy() + '_web / _iOS / _android, внутри ' : '') +
+          (l === 'language' ? 'папки по языкам' : l === 'flat' ? 'все файлы в одной папке' : 'папки по компонентам') +
+          (skipEnglish.checked ? ', без английского (он — в Smartcat)' : englishApart.checked ? ', английский — в «' + ENGLISH_DIR + '»' : '') + ' + summary.csv' +
+          (unzipToDir() ? ' → сразу папками в «' + dirHandle.name + '»' : '') + ' (раскладку можно поменять выше)';
       }
       updateHint();
       layoutBox.addEventListener('change', updateHint);
       englishApart.addEventListener('change', updateHint);
+      byPlatform.addEventListener('change', updateHint);
+      skipEnglish.addEventListener('change', updateHint);
       results.appendChild(el('div', { class: 'row' }, [
         el('button', { class: 'b', text: '⬇ Скачать всё одним архивом', onclick: function () {
-          var layout = currentLayout(), eng = englishApart.checked;
-          var files = res.map(function (r) { return { name: archivePath(r, layout, eng), text: r.text }; });
+          var layout = currentLayout(), eng = englishApart.checked, byPlat = byPlatform.checked;
+          var files = res.filter(function (r) { return !(skipEnglish.checked && isEnglish(r.language)); }).map(function (r) { return { name: (byPlat ? platDir(r.p, r.component) + '/' : '') + archivePath(r, layout, eng), text: r.text }; });
           files.sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
           var csv = '﻿компонент;язык;код;формат;строк;слов\n' + res.map(function (r) {
             return [r.component, langName(r.language), r.language, r.ext || 'po', r.strings, r.words].join(';');
           }).join('\n') + '\n';
-          files.push({ name: 'summary.csv', text: csv });
-          saveBlob(makeZip(files), 'weblate_all_' + today() + '.zip');
+          files.push({ name: (byPlat ? ddmmyy() + '_summary.csv' : 'summary.csv'), text: csv });
+          saveFiles(files, 'weblate_all_' + today() + '.zip');
         } }),
         layoutHint
       ]));
