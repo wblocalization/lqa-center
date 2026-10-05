@@ -1425,6 +1425,15 @@
     }).then(function () { scRun.disabled = false; scRunSend.disabled = false; });
   }
 
+  /* служебные флаги Weblate о состоянии строки («keep-needs-editing», «fuzzy») в Smartcat не отправляем:
+     с ними Smartcat может не дать машперевод; форматные флаги (java-printf-format и т. п.) оставляем */
+  function scSendText(t) {
+    if (/^\s*[\[{]/.test(t)) return t;
+    return t.replace(/^#,(.*)$/mg, function (m, flags) {
+      var keep = flags.split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x && !/^(fuzzy|keep-needs-editing)$/i.test(x); });
+      return keep.length ? '#, ' + keep.join(', ') : '\u0000';
+    }).replace(/^\u0000\n/mg, '');
+  }
   function scFileName(r) { return r.p + '-' + fileKey(r.component) + '-' + r.language + '.po'; }
   /* запуск по расписанию: «🚀 Выгрузить и отправить», итог — в фон (уведомление) */
   var scAutoHook = null;
@@ -2141,7 +2150,7 @@
                 pls.filter(function (x) { return baseLang(x) === 'en'; })[0] || (pls.length ? null : map('en'));
               if (!code) throw new Error('в проекте «' + pr.name + '» нет английского (в нём: ' + pls.join(', ') + ')');
               return scCall('sc-add-docs', { projectId: pr.id, files: by[pl].map(function (f) {
-                return { name: ddmmyy() + '_' + f.name, text: f.text, targetLanguages: [code] };
+                return { name: ddmmyy() + '_' + f.name, text: scSendText(f.text), targetLanguages: [code] };
               }) }).then(function (r) { acc.push({ ok: true, text: pl + ' → ' + pr.name + ' (' + r.documents.length + ' док.)', docIds: r.documents.map(function (d) { return d.id; }) }); return acc; });
             }).catch(function (e) { acc.push({ ok: false, text: pl + ': ' + e.message }); return acc; });
           });
@@ -2178,7 +2187,7 @@
         var send = g.files.filter(function (f) { return pl.codes[f.lang]; });
         if (!send.length) return Promise.reject(new Error('ни одного выбранного языка нет в проекте «' + pr.name + '» (в нём: ' + pl.all.join(', ') + ')'));
         return scCall('sc-add-docs', { projectId: pr.id,
-          files: send.map(function (f) { return { name: (folder ? folder + '/' : '') + f.name, text: f.text, targetLanguages: [pl.codes[f.lang]] }; }) }).then(function (r) {
+          files: send.map(function (f) { return { name: (folder ? folder + '/' : '') + f.name, text: scSendText(f.text), targetLanguages: [pl.codes[f.lang]] }; }) }).then(function (r) {
           if (!r.documents.length) throw new Error('Smartcat не показал новых документов в проекте — проверь проект вручную');
           var lmap = {}, byKey = {}, docs = {}, lost = [];
           send.forEach(function (f) { byKey[f.key] = f; lmap[pl.codes[f.lang].toLowerCase()] = f.lang; });
