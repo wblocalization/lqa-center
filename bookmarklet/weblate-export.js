@@ -178,11 +178,11 @@
     });
   }
   /* языки машперевода — как в проекте Smartcat «AI translation 4 MP» */
-  var MT_LANGS = ['kk', 'ky', 'tg', 'ka', 'hy', 'uz', 'en'];
+  var MT_LANGS = ['kk', 'ky', 'tg', 'ka', 'hy', 'uz', 'az', 'en'];
   /* если в Weblate у языка несколько вариантов (en / en_US, uz / uz_Latn) — берём один:
      для узбекского латиницу, для остальных основной код */
-  /* выгружаем, но в Smartcat не отправляем */
-  var EXPORT_ONLY_LANGS = ['az'];
+  /* выгружаем, но в Smartcat не отправляем (сейчас таких нет: AZ тоже идёт на машперевод) */
+  var EXPORT_ONLY_LANGS = [];
   function mtPick(codes, bases) {
     var out = [];
     (bases || MT_LANGS).forEach(function (b) {
@@ -203,7 +203,7 @@
     web: 'МП Web'   // для веба в Smartcat уходит только английский — сюда, в папку «ДДММГГ web»
   };
   var SC_PROJECT_DEFAULT = 'AI translation 4 MP';
-  var SC_LANG_DEFAULTS = 'ru=ru-RU\nen=en\nen_US=en\nkk=kk\nky=ky\ntg=tg\nka=ka\nhy=hy\nuz=uz-Latn\nuz_Latn=uz-Latn';
+  var SC_LANG_DEFAULTS = 'ru=ru-RU\nen=en\nen_US=en\nkk=kk\nky=ky\ntg=tg\nka=ka\nhy=hy\nuz=uz-Latn\nuz_Latn=uz-Latn\naz=az-Latn';
   function scPlatform(p, c) {
     var t = (p + '/' + c).toLowerCase();
     if (/android/.test(t)) return 'android';
@@ -824,7 +824,7 @@
     el('div', { class: 'row' }, [
       el('button', { class: 'b g s', text: 'Все', onclick: function () { setAll(true); } }),
       el('button', { class: 'b g s', text: 'Снять все', onclick: function () { setAll(false); } }),
-      el('button', { class: 'b g s', text: 'Набор для Smartcat: KK KY TG KA HY UZ EN', title: 'Отметить языки, которые отправляем в Smartcat', onclick: function () {
+      el('button', { class: 'b g s', text: 'Набор для Smartcat: KK KY TG KA HY UZ AZ EN', title: 'Отметить языки, которые отправляем в Smartcat', onclick: function () {
         var inputs = Array.prototype.slice.call(langsBox.querySelectorAll('input'));
         var pick = mtPick(inputs.map(function (i) { return i.value; }));
         inputs.forEach(function (i) { i.checked = pick.indexOf(i.value) >= 0; });
@@ -996,7 +996,7 @@
     HAS_EXT ? el('div', { class: 'setrow' }, ['Сетап:', scSetupQuick, scSetupNote]) : null,
     el('div', { class: 'card' }, [
       el('h3', { text: '1. На машинный перевод' }),
-      el('p', { class: 'hint', text: 'Непереведённое из компонентов (по умолчанию android и ios) на KK KY TG KA HY UZ EN → ZIP и Smartcat. AZ — только в ZIP.' }),
+      el('p', { class: 'hint', text: 'Непереведённое из компонентов (по умолчанию android и ios) на KK KY TG KA HY UZ AZ EN → ZIP и Smartcat. AZ — обычный (не N11), и для android, и для ios.' }),
       el('div', { class: 'row' }, HAS_EXT ? [scRunSend, scRun] : [scRun]),
       el('details', {}, [el('summary', { text: 'Компоненты и наборы' }),
         scPresets,
@@ -1330,6 +1330,14 @@
         var json = /^\s*[\[{]/.test(r.text);
         return detect({ name: 'Smartcat/' + (dir ? dir + '/' : '') + base + (json ? '.json' : '.po'), text: r.text }).then(function (u) { u.orig = r.text; u.scName = scDocKey(d.name); return u; });
       }).then(function (u) {
+        /* AZ на машпереводе android/ios: в Smartcat это az-Latn, а в Weblate — обычный az (не az_Latn, не N11) */
+        if (!u.error && u.p && u.c && baseLang(lang) === 'az' && scPlatform(u.p, u.c) !== 'web') {
+          return withTranslations(u.p, u.c).then(function (w) {
+            var code = w && matchLanguage('az', w.trs);
+            if (code) u.lang = code;
+            return u;
+          });
+        }
         /* язык берём из Smartcat, если в файле указан другой */
         if (!u.error && u.p && u.c && lang && (!u.lang || baseLang(u.lang) !== baseLang(lang))) {
           return withTranslations(u.p, u.c).then(function (w) {
@@ -1373,13 +1381,10 @@
       tab('imp');
     }).catch(function (e) { scImpMsg.className = 'red'; scImpMsg.textContent = '✗ ' + e.message; }).then(function () { btn.disabled = false; });
   }
-  /* AZ по платформе: у андроида свой язык az_N11, у остальных — обычный az */
-  var AZ_BY_PLATFORM = { android: 'az_N11' };
+  /* AZ — обычный az и для android, и для ios (az_N11 и подобные в набор не берём) */
   function presetLangs(x, codes) {
-    var own = AZ_BY_PLATFORM[scPlatform(x.p, x.c)];
-    var az = own && codes.filter(function (c) { return c.toLowerCase() === own.toLowerCase(); })[0];
-    var rest = codes.filter(function (c) { return !/_n\d+$/i.test(c); });   /* az_N11 и подобные — только когда явно нужны */
-    return mtPick(rest).concat(az ? [az] : mtPick(rest, EXPORT_ONLY_LANGS));
+    var rest = codes.filter(function (c) { return !/_n\d+$/i.test(c); });
+    return mtPick(rest).concat(mtPick(rest, EXPORT_ONLY_LANGS));
   }
   function runScPreset(autoSend) {
     var text = scLinks.value.trim() || SC_DEFAULT_LINKS;
