@@ -116,12 +116,18 @@
       return trs;
     });
   }
+  /* Weblate может ответить 200, но не файлом (страница входа, техработы и т. п.) — тогда это ошибка, а не «всё переведено» */
+  function checkPo(t) {
+    if (/^\s*(#|msgid|msgctxt)/m.test(t) && /msgid\s+"/.test(t)) return t;
+    var title = (/<title[^>]*>([^<]*)/i.exec(t) || [])[1];
+    throw new Error('Weblate прислал не .po файл' + (title ? ': «' + title.trim() + '»' : t.trim() ? ': ' + t.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150) : ' (пустой ответ)'));
+  }
   function downloadPo(p, c, lang, q, viaUi) {
     var qs = '?format=po&q=' + encodeURIComponent(q) + '&_=' + Date.now();   // _= — чтобы ни один кэш не отдал старый файл
-    if (viaUi) return http('/download/' + p + '/' + c + '/' + lang + '/' + qs, true);
-    return http(trApi(p, c, lang) + 'file/' + qs, true)
+    if (viaUi) return http('/download/' + p + '/' + c + '/' + lang + '/' + qs, true).then(checkPo);
+    return http(trApi(p, c, lang) + 'file/' + qs, true).then(checkPo)
       .catch(function (e) {
-        return http('/download/' + p + '/' + c + '/' + lang + '/' + qs, true).catch(function () { throw e; });
+        return http('/download/' + p + '/' + c + '/' + lang + '/' + qs, true).then(checkPo).catch(function () { throw e; });
       });
   }
 
