@@ -57,7 +57,9 @@
 
   /* ---------- HTTP ---------- */
   function http(url, asText) {
-    return fetch(url, { credentials: 'same-origin', headers: { 'Accept': asText ? '*/*' : 'application/json' } })
+    /* без кэша браузера: Weblate отвечает «не изменилось» (304) по дате последней правки перевода,
+       а новые исходные строки её не двигают — и браузер отдавал старый файл без новых строк */
+    return fetch(url, { credentials: 'same-origin', cache: 'no-store', headers: { 'Accept': asText ? '*/*' : 'application/json' } })
       .then(function (r) {
         if (!r.ok) {
           return r.text().then(function (t) {
@@ -708,7 +710,7 @@
     if (i && i.value) return Promise.resolve(i.value);
     var m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
     if (m) return Promise.resolve(decodeURIComponent(m[1]));
-    return fetch('/', { credentials: 'same-origin' }).then(function (r) { return r.text(); }).then(function (t) {
+    return fetch('/', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (t) {
       var m2 = /name="csrfmiddlewaretoken"\s+value="([^"]+)"/.exec(t);
       if (!m2) throw new Error('Не нашла CSRF-токен — открой любую страницу Weblate и попробуй ещё раз');
       return m2[1];
