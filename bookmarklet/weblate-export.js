@@ -908,33 +908,107 @@
     return r ? r.value : 'component';
   }
   var englishApart = el('input', { type: 'checkbox' });
-  englishApart.checked = sget('wlx_en') !== '0';
+  englishApart.checked = false;   // английский в архив не кладём вообще — он уходит в Smartcat
   englishApart.addEventListener('change', function () { sset('wlx_en', englishApart.checked ? '1' : '0'); });
   var skipEnglish = el('input', { type: 'checkbox' });
-  skipEnglish.checked = sget('wlx_noen') !== '0';
+  skipEnglish.checked = true;
   skipEnglish.addEventListener('change', function () { sset('wlx_noen', skipEnglish.checked ? '1' : '0'); });
   var byPlatform = el('input', { type: 'checkbox' });
-  byPlatform.checked = sget('wlx_byplat') !== '0';
+  byPlatform.checked = true;      // всегда отдельный zip на платформу: ДДММГГ_web / _iOS / _android
   byPlatform.addEventListener('change', function () { sset('wlx_byplat', byPlatform.checked ? '1' : '0'); });
+  /* ---------- шаблоны языков ---------- */
+  var TPL_AUTO = '__auto', TPL_MANUAL = '';
+  var LANG_TPL_DEFAULTS = [
+    { name: '[Магазинка] Веб', bases: ['en', 'ka', 'kk', 'uz', 'ky', 'hy', 'tg', 'am', 'az'], plat: 'web' },
+    { name: '[Магазинка] Android и iOS', bases: ['en', 'ka', 'kk', 'uz', 'ky', 'hy', 'tg', 'az'], plat: 'mobile' }
+  ];
+  function langTemplates() {
+    var custom = [];
+    try { custom = JSON.parse(sget('wlx_langtpl') || '[]'); } catch (e) {}
+    var names = custom.map(function (t) { return t.name; });
+    return LANG_TPL_DEFAULTS.filter(function (t) { return names.indexOf(t.name) < 0; }).concat(custom.map(function (t) {
+      var d = LANG_TPL_DEFAULTS.filter(function (x) { return x.name === t.name; })[0];
+      return { name: t.name, bases: t.bases, plat: d ? d.plat : null, custom: true };
+    }));
+  }
+  function tplByPlat(pl) {
+    var key = pl === 'web' ? 'web' : 'mobile';
+    return langTemplates().filter(function (t) { return t.plat === key; })[0];
+  }
+  /* в режиме «Авто» у каждого компонента свои языки: веб — по шаблону «Веб», android/ios — по «Android и iOS» */
+  function tplLangsFor(x, checked) {
+    if (tplSel.value !== TPL_AUTO) return checked;
+    var t = tplByPlat(scPlatform(x.p, x.c));
+    if (!t) return checked;
+    var pick = mtPick(checked, t.bases);
+    return checked.filter(function (c) { return pick.indexOf(c) >= 0; });
+  }
+  var tplSel = el('select', { class: 'presel', style: 'width:auto' });
+  var tplHint = el('div', { class: 'muted' });
+  function tplRefresh() {
+    var cur = sget('wlx_langtpl_cur');
+    if (cur === null) cur = TPL_AUTO;
+    tplSel.textContent = '';
+    tplSel.appendChild(el('option', { value: TPL_AUTO, text: 'Авто: веб и android/iOS — каждый по своему шаблону' }));
+    langTemplates().forEach(function (t) { tplSel.appendChild(el('option', { value: t.name, text: t.name + ' — ' + t.bases.join(' ').toUpperCase() })); });
+    tplSel.appendChild(el('option', { value: TPL_MANUAL, text: 'Вручную (как отмечу)' }));
+    tplSel.value = cur;
+    if (tplSel.value !== cur) tplSel.value = TPL_AUTO;
+  }
+  function tplApply() {
+    var v = tplSel.value, inputs = Array.prototype.slice.call(langsBox.querySelectorAll('input'));
+    tplHint.textContent = '';
+    if (v === TPL_MANUAL || !inputs.length) return;
+    var codes = inputs.map(function (i) { return i.value; }), pick = [];
+    if (v === TPL_AUTO) {
+      var plats = {};
+      (comps || []).forEach(function (x) { plats[scPlatform(x.p, x.c) === 'web' ? 'web' : 'mobile'] = 1; });
+      Object.keys(plats).forEach(function (k) { var t = tplByPlat(k === 'web' ? 'web' : 'android'); if (t) pick = pick.concat(mtPick(codes, t.bases)); });
+      if (plats.web && plats.mobile) tplHint.textContent = 'Веб получит языки шаблона «Веб», android/iOS — шаблона «Android и iOS» (лишние языки компоненту не выгружаются).';
+    } else {
+      var t = langTemplates().filter(function (x) { return x.name === v; })[0];
+      if (t) pick = mtPick(codes, t.bases);
+    }
+    inputs.forEach(function (i) { i.checked = pick.indexOf(i.value) >= 0; });
+  }
+  tplSel.addEventListener('change', function () { sset('wlx_langtpl_cur', tplSel.value); tplApply(); });
+  var tplSave = el('button', { class: 'b g s', text: '💾 Сохранить как шаблон', onclick: function () {
+    var checked = Array.prototype.map.call(langsBox.querySelectorAll('input:checked'), function (i) { return i.value; });
+    if (!checked.length) { tplHint.textContent = 'Сначала отметь языки'; return; }
+    var cur = tplSel.value && tplSel.value !== TPL_AUTO ? tplSel.value : '';
+    var name = prompt('Название шаблона (то же название — перезапишет):', cur || '[Магазинка] ');
+    if (!name || !name.trim()) return;
+    name = name.trim();
+    var custom = [];
+    try { custom = JSON.parse(sget('wlx_langtpl') || '[]'); } catch (e) {}
+    var bases = checked.map(baseLang).filter(function (x, i, a) { return a.indexOf(x) === i; });
+    custom = custom.filter(function (t) { return t.name !== name; }).concat([{ name: name, bases: bases }]);
+    sset('wlx_langtpl', JSON.stringify(custom)); sset('wlx_langtpl_cur', name);
+    tplRefresh(); tplHint.textContent = 'Шаблон «' + name + '» сохранён: ' + bases.join(' ').toUpperCase();
+  } });
+  var tplDel = el('button', { class: 'b g s', text: '✕', title: 'Удалить свой шаблон (у стандартного — вернуть как было)', onclick: function () {
+    var v = tplSel.value, custom = [];
+    try { custom = JSON.parse(sget('wlx_langtpl') || '[]'); } catch (e) {}
+    if (!custom.some(function (t) { return t.name === v; })) { tplHint.textContent = 'Это стандартный шаблон — его можно изменить: отметь языки и «Сохранить как шаблон» с тем же названием.'; return; }
+    if (!confirm('Удалить шаблон «' + v + '»?')) return;
+    sset('wlx_langtpl', JSON.stringify(custom.filter(function (t) { return t.name !== v; })));
+    tplRefresh(); tplApply();
+  } });
+  tplRefresh();
   var langSec = el('div', { class: 'hide' }, [
     el('h2', { text: '2. Языки' }),
     el('div', { class: 'row' }, [
+      el('span', { class: 'muted', text: 'Шаблон:' }), tplSel, tplSave, tplDel,
       el('button', { class: 'b g s', text: 'Все', onclick: function () { setAll(true); } }),
-      el('button', { class: 'b g s', text: 'Снять все', onclick: function () { setAll(false); } }),
-      el('button', { class: 'b g s', text: 'Набор для Smartcat: KK KY TG KA HY UZ AZ EN', title: 'Отметить языки, которые отправляем в Smartcat', onclick: function () {
-        var inputs = Array.prototype.slice.call(langsBox.querySelectorAll('input'));
-        var pick = mtPick(inputs.map(function (i) { return i.value; }));
-        inputs.forEach(function (i) { i.checked = pick.indexOf(i.value) >= 0; });
-      } })
+      el('button', { class: 'b g s', text: 'Снять все', onclick: function () { setAll(false); } })
     ]),
+    tplHint,
     langsBox,
     el('label', { class: 'muted blk' }, [fuzzy, ' включать строки «требует правки»']),
     el('label', { class: 'muted blk' }, [pluralsJson, ' плюралки (множественное число) — отдельным .json, как у нас принято']),
     el('h2', { text: 'Как разложить файлы в архиве' }),
     layoutBox,
-    el('label', { class: 'muted blk' }, [englishApart, ' английский всегда отдельно — в папку «Английский ШТАТ»']),
-    el('label', { class: 'muted blk' }, [byPlatform, ' по платформам: отдельный zip на каждую — ДДММГГ_web.zip / ДДММГГ_iOS.zip / ДДММГГ_android.zip']),
-    el('label', { class: 'muted blk' }, [skipEnglish, ' английский не скачивать — он уходит в Smartcat (шаг «4. Отправить в Smartcat»)']),
+    el('p', { class: 'muted', text: 'Архивы сохраняются сами сразу после выгрузки: отдельный zip на платформу — ДДММГГ_web.zip / ДДММГГ_iOS.zip / ДДММГГ_android.zip. Английского в архивах нет — он уходит в Smartcat (шаг «4. Отправить в Smartcat»).' }),
     el('div', { class: 'row' }, [goBtn]),
     err2
   ]);
@@ -1559,8 +1633,9 @@
         t.appendChild(el('tr', {}, [el('td', { text: ddmmyy() + '_' + a.pl }), el('td', {}, [langLabel(a.lang)]),
           el('td', { class: 'n', text: String(a.strings) }), el('td', { class: 'n', text: String(a.words) })]));
       });
+      var scZipBtn;
       scOut.appendChild(el('div', { class: 'row' }, [
-        el('button', { class: 'b', text: '⬇ Скачать ZIP (' + plats.sort().join(' / ') + ' отдельно)', onclick: function () {
+        scZipBtn = el('button', { class: 'b', text: '⬇ Скачать ZIP ещё раз (' + plats.sort().join(' / ') + ' отдельно)', onclick: function () {
           /* английский в архив не кладём — он уходит в Smartcat */
           var files = res.filter(function (r) { return !isEnglish(r.language); }).map(function (r) { return { name: platDir(r.p, r.component) + '/' + scFileName(r), text: r.text }; });
           files.sort(function (a, b) { return a.name.localeCompare(b.name); });
@@ -1568,6 +1643,8 @@
         } })
       ]));
       scOut.appendChild(t);
+      /* ZIP сохраняем сразу (кроме запуска по расписанию) */
+      if (!scAutoHook && res.some(function (r) { return !isEnglish(r.language); })) scZipBtn.click();
       var toSc = res.filter(function (r) { return EXPORT_ONLY_LANGS.indexOf(baseLang(r.language)) < 0; });
       var only = res.filter(function (r) { return toSc.indexOf(r) < 0; }).map(function (r) { return r.language; })
         .filter(function (x, i, a) { return a.indexOf(x) === i; });
@@ -1664,28 +1741,42 @@
   var asgOn = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
   var asgList = el('div', { class: 'team' });
   var asgMsg = el('span', { class: 'muted' });
-  var asgSel = [];
-  function asgSave() { return scCall('sc-set-config', { config: { enAssign: asgSel, enAssignOn: asgOn.checked } }).then(loadScConfig); }
+  /* переводчики (этап 1) и редакторы (этап 2) на английский; один человек может быть и там, и там */
+  var asgSel = [], edSel = [];
+  function asgSave() { return scCall('sc-set-config', { config: { enAssign: asgSel, enEdit: edSel, enAssignOn: asgOn.checked } }).then(loadScConfig); }
+  function asgSummary() {
+    return 'Перевод: ' + (asgSel.length ? asgSel.map(function (y) { return y.name; }).join(', ') : 'никто') +
+      ' · Редактура: ' + (edSel.length ? edSel.map(function (y) { return y.name; }).join(', ') : 'никто');
+  }
   function asgRender(team) {
     asgList.textContent = '';
-    var list = team || asgSel;
+    var seen = {}, list = [];
+    (team || asgSel.concat(edSel)).forEach(function (x) { if (!seen[x.id]) { seen[x.id] = 1; list.push(x); } });
     if (!list.length) { asgList.appendChild(el('p', { class: 'muted', text: 'Никто не выбран — нажми «Загрузить команду из Smartcat».' })); return; }
+    var t = el('table', {}, [el('tr', {}, [el('th', { text: 'Человек' }), el('th', { text: 'Перевод' }), el('th', { text: 'Редактура' })])]);
     list.forEach(function (x) {
-      var cb = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
-      cb.checked = asgSel.some(function (y) { return y.id === x.id; });
-      cb.addEventListener('change', function () {
-        asgSel = asgSel.filter(function (y) { return y.id !== x.id; });
-        if (cb.checked) asgSel.push({ id: x.id, name: x.name });
-        asgSave().then(function () { asgMsg.textContent = 'Сохранено: ' + (asgSel.length ? asgSel.map(function (y) { return y.name; }).join(', ') : 'никто'); });
-      });
-      asgList.appendChild(el('label', { class: 'blk', style: 'margin-top:4px;color:#1d2330' }, [cb, x.name + (x.email ? ' · ' + x.email : '')]));
+      function box(getList, setList) {
+        var cb = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0' });
+        cb.checked = getList().some(function (y) { return y.id === x.id; });
+        cb.addEventListener('change', function () {
+          var l = getList().filter(function (y) { return y.id !== x.id; });
+          if (cb.checked) l.push({ id: x.id, name: x.name });
+          setList(l);
+          asgSave().then(function () { asgMsg.textContent = 'Сохранено. ' + asgSummary(); });
+        });
+        return el('td', {}, [cb]);
+      }
+      t.appendChild(el('tr', {}, [el('td', { text: x.name + (x.email ? ' · ' + x.email : '') }),
+        box(function () { return asgSel; }, function (l) { asgSel = l; }),
+        box(function () { return edSel; }, function (l) { edSel = l; })]));
     });
+    asgList.appendChild(t);
   }
   asgOn.addEventListener('change', function () { asgSave(); });
   var asgLoad = el('button', { class: 'b g s', text: 'Загрузить команду из Smartcat', onclick: function () {
     asgMsg.textContent = 'Загружаю…'; asgLoad.disabled = true;
     scCall('sc-team').then(function (team) {
-      asgMsg.textContent = 'В команде: ' + team.length + '. Отметь, кого назначать.';
+      asgMsg.textContent = 'В команде: ' + team.length + '. Отметь, кого назначать на перевод и на редактуру (можно одного человека на оба).';
       asgRender(team);
     }, function (e) { asgMsg.textContent = '✗ ' + e.message; }).then(function () { asgLoad.disabled = false; });
   } });
@@ -1772,7 +1863,7 @@
       scKey.value = ''; scKey.placeholder = c.hasKey ? 'ключ сохранён — впиши новый, чтобы заменить' : 'API-ключ';
       scLangs.value = c.langMap; scExtra.value = c.extra; scProject.value = c.project === SC_PROJECT_DEFAULT ? '' : c.project;
       scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos; scEnWeb.value = c.enWeb || '';
-      asgSel = (c.enAssign || []).slice(); asgOn.checked = c.enAssignOn !== false;
+      asgSel = (c.enAssign || []).slice(); edSel = (c.enEdit || []).slice(); asgOn.checked = c.enAssignOn !== false;
       schOn.checked = !!c.schedOn; schText.value = c.sched || 'вт 14:00, пт 10:00'; schShowNext();
       dirShow();
       if (!asgList.querySelector('input')) asgRender(null);
@@ -1789,7 +1880,7 @@
     }).then(loadScConfig);
   }
   /* копия настроек в файл (без API-ключа) — для нового компьютера или коллеги */
-  var BACKUP_KEYS = ['wlx_links', 'wlx_langs', 'wlx_layout', 'wlx_en', 'wlx_pj', 'wlx_mt_links', 'wlx_sc_split', 'wlx_m', 'wlx_f', 'wlx_c', 'wlx_presets_exp', 'wlx_presets_sc',
+  var BACKUP_KEYS = ['wlx_links', 'wlx_langs', 'wlx_langtpl', 'wlx_langtpl_cur', 'wlx_layout', 'wlx_en', 'wlx_pj', 'wlx_mt_links', 'wlx_sc_split', 'wlx_m', 'wlx_f', 'wlx_c', 'wlx_presets_exp', 'wlx_presets_sc',
     'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip', 'wlx_dir_dated', 'wlx_dir_unzip', 'wlx_byplat', 'wlx_noen'];
   var restoreInput = el('input', { type: 'file', accept: '.json', class: 'hide' });
   function backupSettings() {
@@ -1799,7 +1890,7 @@
       var data = { weblateExtensionSettings: 1, saved: new Date().toISOString(), smartcat: c ? {
         server: c.server, customUrl: c.customUrl, accountId: c.accountId, langMap: c.langMap, extra: c.extra,
         project: c.project === SC_PROJECT_DEFAULT ? '' : c.project, enAndroid: c.enAndroid, enIos: c.enIos, enWeb: c.enWeb || '',
-        setups: c.setups || [], setup: c.setup || '', enWebKeep: 1, enAssign: c.enAssign || [], enAssignOn: c.enAssignOn !== false } : null, local: local };
+        setups: c.setups || [], setup: c.setup || '', enWebKeep: 1, enAssign: c.enAssign || [], enEdit: c.enEdit || [], enAssignOn: c.enAssignOn !== false } : null, local: local };
       saveBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), 'weblate-extension-settings.json');
       scMsg.textContent = 'Сохранено в файл (без API-ключа)';
     });
@@ -1847,7 +1938,7 @@
     el('label', {}, ['Когда (по Москве)', schText]),
     el('div', { class: 'row' }, [schRun, schNext]),
     el('h3', { text: 'Назначать на английский' }),
-    el('p', { class: 'muted', text: 'Кого из «Моей команды» Smartcat сразу назначать на английские документы при отправке: EN android, EN ios и веб («МП Web»). Режим — все, кто принял. Машинный перевод (AI translation) не трогается.' }),
+    el('p', { class: 'muted', text: 'Кого из «Моей команды» Smartcat сразу назначать на английские документы при отправке: EN android, EN ios и веб («МП Web»). Перевод — этап 1, редактура — этап 2 (если он есть в проекте). Режим — все, кто принял. Один человек может быть и переводчиком, и редактором. Машинный перевод (AI translation) не трогается.' }),
     el('label', { class: 'blk', style: 'color:#1d2330' }, [asgOn, 'назначать автоматически при отправке']),
     el('div', { class: 'row' }, [asgLoad, asgMsg]),
     asgList,
@@ -1960,6 +2051,7 @@
       comps.forEach(function (x) { ul.appendChild(el('div', { text: x.p + ' / ' + x.c })); });
       compList.appendChild(el('details', {}, [el('summary', { text: 'Какие компоненты нашлись (' + comps.length + ')' }), ul]));
       langSec.classList.remove('hide');
+      tplRefresh(); tplApply();
     }).catch(function (e) {
       err1.textContent = (err1.textContent ? err1.textContent + '\n\n' : '') + friendly(e); info.textContent = '';
     }).then(function () { loadBtn.disabled = false; });
@@ -1980,7 +2072,9 @@
     var res = [], errs = [];
     return pool(comps, 4, function (x) {
       return translations(x.p, x.c).then(function (trs) {
-        return langs.reduce(function (chain, wanted) {
+        var mine = opts.langsFor ? opts.langsFor(x, langs) : langs;
+        langs.filter(function (l) { return mine.indexOf(l) < 0; }).forEach(function () { onTick(); });
+        return mine.reduce(function (chain, wanted) {
           return chain.then(function () {
             var code = matchLanguage(wanted, trs);
             if (!code) { errs.push([x.c, wanted, 'языка нет в компоненте']); onTick(); return; }
@@ -2029,7 +2123,7 @@
     function tick() { done++; barFill.style.width = Math.round(100 * done / total) + '%'; progText.textContent = 'Скачиваю… ' + done + ' из ' + total; }
     goBtn.disabled = true; resSec.classList.remove('hide'); results.textContent = '';
     barFill.style.width = '0%'; progText.textContent = 'Скачиваю… 0 из ' + total;
-    exportCore(comps, langs, { q: fuzzy.checked ? QUERY_ALL : QUERY_EMPTY, wantJson: pluralsJson.checked }, tick).then(function (r) {
+    exportCore(comps, langs, { q: fuzzy.checked ? QUERY_ALL : QUERY_EMPTY, wantJson: pluralsJson.checked, langsFor: tplLangsFor }, tick).then(function (r) {
       goBtn.disabled = false;
       progText.textContent = 'Готово!';
       barFill.style.width = '100%';
@@ -2043,11 +2137,13 @@
     (res || []).forEach(function (r) { got[r.language] = (got[r.language] || 0) + r.strings; });
     pool(comps, 4, function (x) {
       return translations(x.p, x.c).then(function (trs) {
+        var ml = tplLangsFor(x, langs);
         trs.forEach(function (t) {
           var code = t.language.code;
           if (t.is_source || /generated/i.test(t.language.name || '') || t.total == null || t.translated == null) return;
           var n = t.total - t.translated;
-          if (langs.indexOf(code) >= 0) { mine[code] = (mine[code] || 0) + n; return; }
+          if (ml.indexOf(code) >= 0) { mine[code] = (mine[code] || 0) + n; return; }
+          if (langs.indexOf(code) >= 0) return;   // отмечен, но этому компоненту по шаблону не нужен
           if (n > 0) left[code] = (left[code] || 0) + n;
         });
       }, function () {});
@@ -2116,6 +2212,12 @@
       ])]);
       Object.keys(by).sort(function (a, b) { return langName(a).localeCompare(langName(b), 'ru'); }).forEach(function (lang) {
         var a = by[lang];
+        if (isEnglish(lang)) {
+          t.appendChild(el('tr', {}, [el('td', { title: lang }, [langLabel(lang)]), el('td', { class: 'n', text: String(a.files) }),
+            el('td', { class: 'n', text: String(a.strings) }), el('td', { class: 'n', text: String(a.words) }),
+            el('td', { class: 'muted', text: 'в Smartcat, не в архив' })]));
+          return;
+        }
         t.appendChild(el('tr', {}, [
           el('td', { title: lang }, [langLabel(lang)]), el('td', { class: 'n', text: String(a.files) }),
           el('td', { class: 'n', text: String(a.strings) }), el('td', { class: 'n', text: String(a.words) }),
@@ -2138,8 +2240,7 @@
       englishApart.addEventListener('change', updateHint);
       byPlatform.addEventListener('change', updateHint);
       skipEnglish.addEventListener('change', updateHint);
-      results.appendChild(el('div', { class: 'row' }, [
-        el('button', { class: 'b', text: '⬇ Скачать всё одним архивом', onclick: function () {
+      function saveAll() {
           var layout = currentLayout(), eng = englishApart.checked, byPlat = byPlatform.checked;
           var files = res.filter(function (r) { return !(skipEnglish.checked && isEnglish(r.language)); }).map(function (r) { return { name: (byPlat ? platDir(r.p, r.component) + '/' : '') + archivePath(r, layout, eng), text: r.text }; });
           files.sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
@@ -2157,10 +2258,15 @@
               }).join('\n') + '\n' });
             });
           }
-          saveFiles(files, 'weblate_all_' + today() + '.zip');
-        } }),
+          if (files.some(function (f) { return !/summary\.csv$/.test(f.name); })) saveFiles(files, 'weblate_all_' + today() + '.zip');
+          else toast('В архив класть нечего — только английский, он уходит в Smartcat');
+      }
+      results.appendChild(el('div', { class: 'row' }, [
+        el('button', { class: 'b', text: '⬇ Скачать архивы ещё раз', onclick: saveAll }),
         layoutHint
       ]));
+      /* архивы сохраняем сразу, без лишнего клика */
+      if (res.some(function (r) { return !isEnglish(r.language); })) saveAll();
       results.appendChild(el('p', { class: 'muted', text: 'Или отдельный архив на язык:' }));
       results.appendChild(t);
       var dt = el('table', {}, [el('tr', {}, [el('th', { text: 'Компонент' }), el('th', { text: 'Язык' }),
@@ -2424,14 +2530,19 @@
           /* назначить переводчиков на английские документы (EN android / EN ios / веб) */
           var enDocIds = [].concat.apply([], enRes.filter(function (x) { return x.ok && x.docIds; }).map(function (x) { return x.docIds; }))
             .concat([].concat.apply([], made.filter(function (p) { return p.enDocs && p.docIds; }).map(function (p) { return p.docIds; })));
-          var who = c.enAssign || [];
-          if (enDocIds.length && c.enAssignOn !== false && who.length) {
-            var am = el('div', { class: 'muted', text: 'Назначаю на английский: ' + who.map(function (x) { return x.name; }).join(', ') + '…' });
-            msg.appendChild(am);
-            scCall('sc-assign', { documentIds: enDocIds, userIds: who.map(function (x) { return x.id; }) }).then(function () {
-              am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.) — назначены: ' + who.map(function (x) { return x.name; }).join(', ') + ' (все, кто примет)';
-            }, function (e) { am.className = 'red'; am.textContent = '✗ Не получилось назначить переводчиков: ' + e.message + ' — назначь в Smartcat вручную'; });
-          } else if (enDocIds.length && !who.length) {
+          var who = c.enAssign || [], eds = c.enEdit || [];
+          var roles = [{ stage: 1, label: 'перевод', list: who }, { stage: 2, label: 'редактура', list: eds }].filter(function (x) { return x.list.length; });
+          if (enDocIds.length && c.enAssignOn !== false && roles.length) {
+            roles.reduce(function (chain, ro) {
+              var am = el('div', { class: 'muted', text: 'Назначаю на английский (' + ro.label + '): ' + ro.list.map(function (x) { return x.name; }).join(', ') + '…' });
+              msg.appendChild(am);
+              return chain.then(function () {
+                return scCall('sc-assign', { documentIds: enDocIds, stage: ro.stage, userIds: ro.list.map(function (x) { return x.id; }) }).then(function () {
+                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + ' (все, кто примет)';
+                }, function (e) { am.className = 'red'; am.textContent = '✗ Не получилось назначить (' + ro.label + ', этап ' + ro.stage + '): ' + e.message + ' — назначь в Smartcat вручную'; });
+              });
+            }, Promise.resolve());
+          } else if (enDocIds.length && !who.length && !eds.length) {
             msg.appendChild(el('div', { class: 'muted', text: 'Переводчики на английский не назначены — выбрать их можно в ⚙ → «Назначать на английский».' }));
           }
           made.forEach(function (p) {
