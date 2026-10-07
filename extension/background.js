@@ -92,7 +92,12 @@ const SC_HANDLERS = {
     const hit = (Array.isArray(list) ? list : []).filter((p) => p.name === ref);
     if (!hit.length) throw new Error('в Smartcat не нашёлся проект «' + ref + '» — вставь ссылку на него');
     if (hit.length > 1) throw new Error('в Smartcat несколько проектов «' + ref + '» — вставь ссылку на нужный');
-    return { id: hit[0].id, name: hit[0].name, targetLanguages: hit[0].targetLanguages || [] };
+    /* в списке проектов языков может не быть — берём из карточки проекта */
+    let langs = hit[0].targetLanguages || [];
+    if (!langs.length) {
+      try { langs = (await (await scFetch('/project/' + encodeURIComponent(hit[0].id))).json()).targetLanguages || []; } catch (e) {}
+    }
+    return { id: hit[0].id, name: hit[0].name, targetLanguages: langs };
   },
   /* добавить файлы в существующий проект (путь в имени файла = папка) и вернуть только новые документы */
   async 'sc-add-docs'(m) {
