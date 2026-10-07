@@ -116,8 +116,9 @@
       return trs;
     });
   }
-  function downloadPo(p, c, lang, q) {
-    var qs = '?format=po&q=' + encodeURIComponent(q);
+  function downloadPo(p, c, lang, q, viaUi) {
+    var qs = '?format=po&q=' + encodeURIComponent(q) + '&_=' + Date.now();   // _= — чтобы ни один кэш не отдал старый файл
+    if (viaUi) return http('/download/' + p + '/' + c + '/' + lang + '/' + qs, true);
     return http(trApi(p, c, lang) + 'file/' + qs, true)
       .catch(function (e) {
         return http('/download/' + p + '/' + c + '/' + lang + '/' + qs, true).catch(function () { throw e; });
@@ -1977,7 +1978,13 @@
             if (!code) { errs.push([x.c, wanted, 'языка нет в компоненте']); onTick(); return; }
             var src = trs.filter(function (t) { return t.is_source; })[0];
             var srcCode = src ? src.language.code : 'ru';
+            var st = trs.filter(function (t) { return t.language.code === code; })[0];
+            var expect = st && st.total != null && st.translated != null ? st.total - st.translated : 0;
             return downloadPo(x.p, x.c, code, opts.q).then(function (raw) {
+              /* Weblate говорит, что непереведённое есть, а файл пустой — пробуем скачать как через интерфейс Weblate */
+              if (expect > 0 && !filterPo(raw, false).strings) return downloadPo(x.p, x.c, code, opts.q, true).catch(function () { return raw; });
+              return raw;
+            }).then(function (raw) {
               var r = filterPo(raw, false);
               if (!r.plurals || !opts.wantJson) return r;
               return Promise.all([units(x.p, x.c, code, opts.q + ' AND has:plural'), componentFormat(x.p, x.c)]).then(function (a) {
