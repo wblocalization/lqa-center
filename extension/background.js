@@ -46,7 +46,7 @@ const SC_HANDLERS = {
     const c = await scConfig();
     return { server: c.server || 'eu', customUrl: c.customUrl || '', accountId: c.accountId || '', hasKey: !!c.apiKey,
       langMap: c.langMap || '', extra: c.extra || '', project: c.project || '',
-      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', enAssign: c.enAssign || [], enEdit: c.enEdit || [], enAssignOn: c.enAssignOn !== false, schedOn: !!c.schedOn, sched: c.sched || SCHED_DEFAULT, base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
+      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', enAssign: c.enAssign || [], enEdit: c.enEdit || [], langWeb: c.langWeb || '', langMob: c.langMob || '', links: c.links || '', enAssignOn: c.enAssignOn !== false, schedOn: !!c.schedOn, sched: c.sched || SCHED_DEFAULT, base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
   },
   async 'sc-set-config'(m) {
     const c = await scConfig();

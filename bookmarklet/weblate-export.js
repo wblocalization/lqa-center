@@ -754,97 +754,120 @@
   var CSS = [
     ':host{all:initial}',
     '.back{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:2147483646;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px}',
-    '.box{background:#fff;color:#1d2330;width:100%;max-width:760px;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);padding:22px 22px 26px;font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}',
-    '.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}',
-    'h1{font-size:19px;margin:0}',
-    '.x{background:none;border:0;font-size:24px;line-height:1;cursor:pointer;color:#6b7385;padding:4px 8px}',
-    '.sub{color:#6b7385;margin:0 0 14px;font-size:13px}',
+    '.box{background:#fff;color:#1A0F2E;width:100%;max-width:760px;border-radius:18px;box-shadow:0 20px 60px rgba(26,15,46,.35);padding:0 22px 26px;overflow:hidden;font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}',
+    '.top{display:flex;justify-content:space-between;align-items:center;margin:0 -22px 12px;padding:14px 22px;background:linear-gradient(120deg,#FF3D8B,#7B2FF7);color:#FFF6EF}',
+    '.top .x{color:#FFF6EF}',
+    'h1{font-size:18px;margin:0;font-weight:800;letter-spacing:.2px}',
+    '.x{background:none;border:0;font-size:24px;line-height:1;cursor:pointer;color:#6B5F80;padding:4px 8px}',
+    '.sub{color:#6B5F80;margin:0 0 14px;font-size:13px}',
     'h2{font-size:14px;margin:18px 0 8px}',
-    'textarea{width:100%;box-sizing:border-box;min-height:140px;padding:9px 11px;border:1px solid #d9dde5;border-radius:8px;font:12.5px/1.5 Consolas,ui-monospace,monospace;resize:vertical;color:#1d2330;background:#fff}',
+    'textarea{width:100%;box-sizing:border-box;min-height:140px;padding:9px 11px;border:1px solid #DDD3EC;border-radius:8px;font:12.5px/1.5 Consolas,ui-monospace,monospace;resize:vertical;color:#1A0F2E;background:#fff}',
     '.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}',
-    'button.b{font:inherit;border:0;border-radius:8px;padding:9px 16px;cursor:pointer;background:#1b8a6b;color:#fff;font-weight:600}',
-    'button.g{background:#e8f5f0;color:#1b8a6b}',
+    'button.b{font:inherit;border:0;border-radius:8px;padding:9px 16px;cursor:pointer;background:#7B2FF7;color:#fff;font-weight:600}',
+    'button.g{background:#F1EAFE;color:#7B2FF7}',
     'button.s{padding:5px 11px;font-size:13px}',
     'button.big{font-size:16px;padding:12px 26px}',
     'button:disabled{opacity:.5;cursor:default}',
     '.langs{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px;margin-top:8px}',
     '.langs label{display:flex;gap:7px;align-items:center;padding:5px 7px;border-radius:6px;cursor:pointer}',
-    '.langs label:hover{background:#f3f5f8}',
-    '.muted{color:#6b7385;font-size:12.5px}',
+    '.langs label:hover{background:#F7F3FC}',
+    '.muted{color:#6B5F80;font-size:12.5px}',
     '.err{color:#c0392b;white-space:pre-wrap;margin-top:8px;font-size:13px}',
-    '.bar{height:9px;background:#e3e6ec;border-radius:6px;overflow:hidden;margin:8px 0 12px}',
-    '.bar>div{height:100%;width:0;background:#1b8a6b;transition:width .25s}',
+    '.bar{height:9px;background:#E4DCEF;border-radius:6px;overflow:hidden;margin:8px 0 12px}',
+    '.bar>div{height:100%;width:0;background:#7B2FF7;transition:width .25s}',
     'table{width:100%;border-collapse:collapse;font-size:13.5px}',
-    'th,td{text-align:left;padding:7px 5px;border-bottom:1px solid #eceef2}',
-    'th{color:#6b7385;font-weight:500;font-size:12.5px}',
+    'th,td{text-align:left;padding:7px 5px;border-bottom:1px solid #EDE6F6}',
+    'th{color:#6B5F80;font-weight:500;font-size:12.5px}',
     '.n{text-align:right;font-variant-numeric:tabular-nums}',
-    'details{margin-top:12px}summary{cursor:pointer;color:#6b7385;font-size:13px}',
+    'details{margin-top:12px}summary{cursor:pointer;color:#6B5F80;font-size:13px}',
     '.blk{display:block;margin-top:10px}',
     '.red{color:#c0392b}',
-    '.tabs{display:flex;gap:6px;margin:6px 0 4px;border-bottom:1px solid #eceef2;padding-bottom:10px}',
-    '.tab{font:inherit;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;background:#f3f5f8;color:#1d2330;font-weight:600}',
-    '.tab.on{background:#1b8a6b;color:#fff}',
-    '.drop{display:block;border:2px dashed #cfd5de;border-radius:10px;padding:22px;text-align:center;cursor:pointer;color:#6b7385}',
-    '.drop.over{border-color:#1b8a6b;background:#e8f5f0;color:#1b8a6b}',
+    '.tabs{display:flex;gap:6px;margin:6px 0 4px;border-bottom:1px solid #EDE6F6;padding-bottom:10px}',
+    '.tab{font:inherit;font-size:13px;border:0;border-radius:999px;padding:6px 12px;cursor:pointer;background:#F7F3FC;color:#1A0F2E;font-weight:600}',
+    '.tab.on{background:#1A0F2E;color:#D4FF3A}',
+    '.drop{display:block;border:2px dashed #D8CCEA;border-radius:10px;padding:22px;text-align:center;cursor:pointer;color:#6B5F80}',
+    '.drop.over{border-color:#7B2FF7;background:#F1EAFE;color:#7B2FF7}',
     '.drop input{display:none}',
     '.opts{display:grid;grid-template-columns:1fr;gap:10px}',
-    '.opts label{display:block;font-size:13px;color:#6b7385}',
-    'select{display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid #d9dde5;border-radius:8px;font:inherit;color:#1d2330;background:#fff}',
-    '.ok{color:#1b8a6b}',
+    '.opts label{display:block;font-size:13px;color:#6B5F80}',
+    'select{display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid #DDD3EC;border-radius:8px;font:inherit;color:#1A0F2E;background:#fff}',
+    '.ok{color:#1F8A5B}',
     '.flag{display:inline-block;width:24px;height:18px;flex:none;vertical-align:middle}',
     '.flag svg{width:24px;height:18px;display:block}',
     '.lang{display:inline-flex;align-items:center;gap:8px}',
     '.layouts{display:grid;gap:4px}',
     '.layouts label{display:flex;gap:8px;align-items:baseline;padding:5px 7px;border-radius:6px;cursor:pointer}',
-    '.layouts label:hover{background:#f3f5f8}',
-    '.complist{max-height:220px;overflow:auto;font:12.5px/1.6 Consolas,ui-monospace,monospace;color:#1d2330;padding:6px 0}',
-    '.settings{margin:6px 0 10px;padding:12px 14px;border-radius:10px;background:#f3f5f8}',
-    '.settings label{display:block;font-size:13px;color:#6b7385;margin-top:8px}',
-    '.settings input,.settings select,.track input{display:block;width:100%;box-sizing:border-box;margin-top:3px;padding:7px 9px;border:1px solid #d9dde5;border-radius:7px;font:inherit;color:#1d2330;background:#fff}',
+    '.layouts label:hover{background:#F7F3FC}',
+    '.complist{max-height:220px;overflow:auto;font:12.5px/1.6 Consolas,ui-monospace,monospace;color:#1A0F2E;padding:6px 0}',
+    '.settings{margin:6px 0 10px;padding:12px 14px;border-radius:10px;background:#F7F3FC}',
+    '.settings label{display:block;font-size:13px;color:#6B5F80;margin-top:8px}',
+    '.settings input,.settings select,.track input{display:block;width:100%;box-sizing:border-box;margin-top:3px;padding:7px 9px;border:1px solid #DDD3EC;border-radius:7px;font:inherit;color:#1A0F2E;background:#fff}',
     'textarea.small{min-height:56px;margin-top:3px}',
-    '.track{margin-top:18px;border-top:1px solid #eceef2;padding-top:4px}',
-    '.scimp{margin-bottom:12px;padding:10px 12px;border-radius:10px;background:#f3f5f8}',
+    '.track{margin-top:18px;border-top:1px solid #EDE6F6;padding-top:4px}',
+    '.scimp{margin-bottom:12px;padding:10px 12px;border-radius:10px;background:#F7F3FC}',
     '.scimp h2{margin-top:0}',
-    '.scimp label.chk{display:flex;gap:5px;align-items:center;font-size:13px;color:#6b7385;cursor:pointer}',
+    '.scimp label.chk{display:flex;gap:5px;align-items:center;font-size:13px;color:#6B5F80;cursor:pointer}',
     '.scimp input[type=checkbox]{width:16px;height:16px;margin:0;cursor:pointer}',
-    '.scimp details label.chk{color:#1d2330;padding:3px 0 3px 22px;gap:10px}',
+    '.scimp details label.chk{color:#1A0F2E;padding:3px 0 3px 22px;gap:10px}',
     '.scimp details summary{margin:8px 0 4px;font-size:13.5px}',
-    '.scimp input[type=text]{display:block;width:100%;box-sizing:border-box;margin:4px 0;padding:7px 9px;border:1px solid #d9dde5;border-radius:7px;font:inherit;background:#fff;color:#1d2330}',
-    '.scgroup{margin-top:10px;padding:8px 10px;border:1px solid #eceef2;border-radius:8px}',
-    'select.presel{display:inline-block;width:auto;min-width:220px;margin:0;padding:6px 8px;border:1px solid #d9dde5;border-radius:7px;font:inherit;background:#fff;color:#1d2330}',
-    'pre.report{white-space:pre-wrap;font:12.5px/1.55 Consolas,ui-monospace,monospace;background:#f3f5f8;border-radius:8px;padding:10px 12px;margin:6px 0;color:#1d2330}',
-    '.card{border:1px solid #e3e6ec;border-radius:12px;padding:14px 16px;margin-top:14px;background:#fff}',
+    '.scimp input[type=text]{display:block;width:100%;box-sizing:border-box;margin:4px 0;padding:7px 9px;border:1px solid #DDD3EC;border-radius:7px;font:inherit;background:#fff;color:#1A0F2E}',
+    '.scgroup{margin-top:10px;padding:8px 10px;border:1px solid #EDE6F6;border-radius:8px}',
+    'select.presel{display:inline-block;width:auto;min-width:220px;margin:0;padding:6px 8px;border:1px solid #DDD3EC;border-radius:7px;font:inherit;background:#fff;color:#1A0F2E}',
+    'pre.report{white-space:pre-wrap;font:12.5px/1.55 Consolas,ui-monospace,monospace;background:#F7F3FC;border-radius:8px;padding:10px 12px;margin:6px 0;color:#1A0F2E}',
+    '.card{border:1px solid #E4DCEF;border-radius:12px;padding:14px 16px;margin-top:14px;background:#fff}',
     '.card.scimp{background:#fff}',
     '.card .head{display:flex;justify-content:space-between;align-items:center;gap:10px}',
-    'h3{font-size:15px;margin:0;color:#1d2330}',
-    '.card .hint{color:#6b7385;font-size:12.5px;margin:4px 0 0}',
+    'h3{font-size:15px;margin:0;color:#1A0F2E}',
+    '.card .hint{color:#6B5F80;font-size:12.5px;margin:4px 0 0}',
     '.scrow{display:flex;gap:8px;align-items:center;padding:8px 0;border-top:1px solid #f0f1f4}',
     '.scrow .grow{flex:1;min-width:0}',
     '.scrow .grow div{margin-top:2px}',
-    '.ftable{max-height:380px;overflow:auto;margin-top:8px;border:1px solid #eceef2;border-radius:8px}',
+    '.ftable{max-height:380px;overflow:auto;margin-top:8px;border:1px solid #EDE6F6;border-radius:8px}',
     '.ftable table{font-size:13px}',
-    '.ftable th{position:sticky;top:0;background:#f7f8fa;z-index:1}',
+    '.ftable th{position:sticky;top:0;background:#F7F3FC;z-index:1}',
     '.ftable td,.ftable th{padding:6px 8px}',
     '.ftable tr{cursor:pointer}',
-    'input.pick{display:block;width:100%;min-width:170px;box-sizing:border-box;padding:5px 7px;border:1px solid #d9dde5;border-radius:6px;font:inherit;font-size:12.5px}',
-    '.ftable tr.folder td{background:#fafbfc}',
-    '.ftable tr:hover td{background:#f3f7f5}',
-    '.crumbs{margin-top:8px;font-size:13px;color:#1d2330}',
-    '.crumbs a{color:#1b8a6b;text-decoration:none;font-weight:600}',
+    'input.pick{display:block;width:100%;min-width:170px;box-sizing:border-box;padding:5px 7px;border:1px solid #DDD3EC;border-radius:6px;font:inherit;font-size:12.5px}',
+    '.ftable tr.folder td{background:#FBF9FE}',
+    '.ftable tr:hover td{background:#F7F3FC}',
+    '.crumbs{margin-top:8px;font-size:13px;color:#1A0F2E}',
+    '.crumbs a{color:#7B2FF7;text-decoration:none;font-weight:600}',
     '.ftable input[type=checkbox]{width:16px;height:16px;margin:0;cursor:pointer}',
-    '.setrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 0 4px;color:#6b7385;font-size:13px}',
+    '.setrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 0 4px;color:#6B5F80;font-size:13px}',
     '.settings h3{margin-top:16px}',
     '.settings .back2{margin-bottom:6px}',
     'td.brtr{max-width:320px;word-break:break-word}',
-    '.ftable tr.done td{background:#f4faf7}',
+    '.ftable tr.done td{background:#F4FBF7}',
     '.badge{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:10px;margin-left:6px;vertical-align:1px;white-space:nowrap}',
-    '.b-ok{background:#e3f4ec;color:#147a5c}.b-part{background:#fff4e0;color:#9a6200}.b-new{background:#eef1f5;color:#6b7385}',
-    '.res{margin-top:12px;border-top:1px solid #eceef2;padding-top:10px}',
+    '.b-ok{background:#e3f4ec;color:#147a5c}.b-part{background:#fff4e0;color:#9a6200}.b-new{background:#eef1f5;color:#6B5F80}',
+    '.res{margin-top:12px;border-top:1px solid #EDE6F6;padding-top:10px}',
     '.res .line{font-size:13.5px;margin:4px 0}',
     '.res .bar{margin:6px 0 10px}',
     '.scimp label.chk input{margin-right:2px}',
     '.toast{position:sticky;top:0;z-index:5;margin:4px 0 8px;padding:9px 12px;border-radius:8px;background:#e3f4ec;color:#147a5c;font-size:13.5px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.08)}',
     '.toast.bad{background:#fdecea;color:#b03a2e}',
+    '.lbl{display:block;font-weight:800;font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;color:#6B5F80;margin-bottom:6px}',
+    '.hblock{margin-top:14px}',
+    '.hsetup{margin-top:4px}',
+    '.hsetup .lbl{display:inline;margin:0}',
+    'textarea.hlinks{min-height:84px;background:#FBF9FE;border:2px solid #E4DCEF;border-radius:12px}',
+    '.seg{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}',
+    '.chipb{font:inherit;font-size:13px;font-weight:700;border:2px solid #E4DCEF;background:#fff;color:#1A0F2E;border-radius:999px;padding:5px 12px;cursor:pointer}',
+    '.chipb.on{background:#1A0F2E;border-color:#1A0F2E;color:#D4FF3A}',
+    'button.hgo{font:inherit;border:0;cursor:pointer;background:#D4FF3A;color:#1A0F2E;border-radius:14px;padding:12px 22px;box-shadow:4px 4px 0 #1A0F2E;text-align:left;display:grid;gap:2px}',
+    'button.hgo span{font-size:16px;font-weight:800}',
+    'button.hgo small{font-size:11.5px;font-weight:600;opacity:.8}',
+    'button.hgo:active{transform:translate(2px,2px);box-shadow:2px 2px 0 #1A0F2E}',
+    'button:focus-visible{outline:3px solid #FF3D8B;outline-offset:2px}',
+    '.steps{display:grid;gap:10px;margin-top:16px;padding-top:14px;border-top:1px dashed #E4DCEF}',
+    '.st{display:grid;grid-template-columns:24px 1fr auto;gap:10px;align-items:center}',
+    '.st .grow{min-width:0}',
+    '.st b{font-size:14px}',
+    '.dot{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff}',
+    '.d-ok{background:#1F8A5B}.d-run{background:#B7791F}.d-err{background:#C0392B}.d-next{background:#CFC6DD}',
+    '.hdrop{margin-top:16px;padding:14px}',
+    '.hfoot{justify-content:space-between}',
+    'button.lnk{font:inherit;font-size:13px;border:0;background:none;color:#7B2FF7;font-weight:700;cursor:pointer;padding:2px 0}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -933,6 +956,9 @@
   }
   function tplByPlat(pl) {
     var key = pl === 'web' ? 'web' : 'mobile';
+    /* языки из текущего сетапа (⚙), если заданы */
+    var own = scCfg && (key === 'web' ? scCfg.langWeb : scCfg.langMob);
+    if (own && String(own).trim()) return { name: key === 'web' ? 'Веб' : 'Android и iOS', bases: String(own).trim().toLowerCase().split(/[\s,;]+/), plat: key };
     return langTemplates().filter(function (t) { return t.plat === key; })[0];
   }
   /* в режиме «Авто» у каждого компонента свои языки: веб — по шаблону «Веб», android/ios — по «Android и iOS» */
@@ -1662,12 +1688,16 @@
     }
   }
 
-  var tabExp = el('button', { class: 'tab on', text: '⬇ Выгрузить', onclick: function () { tab('exp'); } });
+  var tabHome = el('button', { class: 'tab on', text: '🏠 Главная', onclick: function () { tab('home'); } });
+  var tabExp = el('button', { class: 'tab', text: '⬇ Выгрузка вручную', onclick: function () { tab('exp'); } });
   var tabSc = el('button', { class: 'tab', text: '🤖 Smartcat', onclick: function () { tab('sc'); } });
   var tabImp = el('button', { class: 'tab', text: '⬆ Загрузить обратно', onclick: function () { tab('imp'); } });
   function tab(t) {
+    tabHome.classList.toggle('on', t === 'home');
     tabExp.classList.toggle('on', t === 'exp'); tabSc.classList.toggle('on', t === 'sc'); tabImp.classList.toggle('on', t === 'imp');
+    homePane.classList.toggle('hide', t !== 'home');
     exportPane.classList.toggle('hide', t !== 'exp'); scPane.classList.toggle('hide', t !== 'sc'); importPane.classList.toggle('hide', t !== 'imp');
+    if (t === 'home') homeRefreshSc();
   }
 
 
@@ -1680,6 +1710,8 @@
   var scEnAndroid = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.android });
   var scEnIos = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.ios });
   var scEnWeb = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.web });
+  var scLangWeb = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg am az' });
+  var scLangMob = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg az' });
   /* папка для архивов */
   var dirInfo = el('span', { class: 'muted' });
   var dirDated = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
@@ -1743,7 +1775,16 @@
   var asgMsg = el('span', { class: 'muted' });
   /* переводчики (этап 1) и редакторы (этап 2) на английский; один человек может быть и там, и там */
   var asgSel = [], edSel = [];
-  function asgSave() { return scCall('sc-set-config', { config: { enAssign: asgSel, enEdit: edSel, enAssignOn: asgOn.checked } }).then(loadScConfig); }
+  function asgSave() { return patchSetup({ enAssign: asgSel, enEdit: edSel }, { enAssignOn: asgOn.checked }); }
+  /* записать поля в текущий сетап (и сразу в действующие настройки) */
+  function patchSetup(fields, extra) {
+    return loadScConfig().then(function (c) {
+      if (!c) return null;
+      var cur = activeSetup(c).name;
+      var list = setupsOf(c).map(function (x) { return x.name === cur ? Object.assign({}, x, fields) : x; });
+      return scCall('sc-set-config', { config: Object.assign({ setups: list, setup: cur }, fields, extra || {}) }).then(loadScConfig);
+    });
+  }
   function asgSummary() {
     return 'Перевод: ' + (asgSel.length ? asgSel.map(function (y) { return y.name; }).join(', ') : 'никто') +
       ' · Редактура: ' + (edSel.length ? edSel.map(function (y) { return y.name; }).join(', ') : 'никто');
@@ -1792,25 +1833,28 @@
     }, function () { return null; });
   }
   /* ----- сетапы: свой проект / английские проекты / коды языков; аккаунт и ключ общие ----- */
-  var SETUP_FIELDS = ['project', 'enAndroid', 'enIos', 'enWeb', 'langMap', 'extra'];
+  var SETUP_FIELDS = ['project', 'enAndroid', 'enIos', 'enWeb', 'langMap', 'extra', 'langWeb', 'langMob', 'enAssign', 'enEdit', 'links'];
   var scSetup = el('select', { class: 'presel' });
   function setupsOf(c) {
     var list = (c.setups || []).slice();
     if (!list.length) list.push({ name: 'Магазинка', project: c.project === SC_PROJECT_DEFAULT ? '' : c.project,
-      enAndroid: c.enAndroid, enIos: c.enIos, enWeb: c.enWeb, langMap: c.langMap, extra: c.extra });
+      enAndroid: c.enAndroid, enIos: c.enIos, enWeb: c.enWeb, langMap: c.langMap, extra: c.extra,
+      langWeb: c.langWeb || '', langMob: c.langMob || '', enAssign: c.enAssign || [], enEdit: c.enEdit || [], links: c.links || '' });
     return list;
   }
   function activeSetup(c) { var l = setupsOf(c); return l.filter(function (x) { return x.name === c.setup; })[0] || l[0]; }
   function fillSetupSelects(c) {
     var list = setupsOf(c), cur = activeSetup(c).name;
-    [scSetup, scSetupQuick].forEach(function (sel) {
+    [scSetup, scSetupQuick].concat(typeof homeSetup !== 'undefined' && homeSetup ? [homeSetup] : []).forEach(function (sel) {
       sel.textContent = '';
       list.forEach(function (x) { sel.appendChild(el('option', { value: x.name, text: x.name })); });
       sel.value = cur;
     });
+    if (typeof homeSetupFill === 'function' && typeof homeSetup !== 'undefined' && homeSetup) homeSetupFill(c);
   }
   function fieldsNow() {
-    return { project: scProject.value.trim(), enAndroid: scEnAndroid.value.trim(), enIos: scEnIos.value.trim(), enWeb: scEnWeb.value.trim(), langMap: scLangs.value, extra: scExtra.value.trim() };
+    return { project: scProject.value.trim(), enAndroid: scEnAndroid.value.trim(), enIos: scEnIos.value.trim(), enWeb: scEnWeb.value.trim(), langMap: scLangs.value, extra: scExtra.value.trim(),
+      langWeb: scLangWeb.value.trim(), langMob: scLangMob.value.trim() };
   }
   /* переключить сетап: его поля становятся текущими настройками */
   function switchSetup(name) {
@@ -1818,7 +1862,8 @@
       var list = setupsOf(c), x = list.filter(function (s) { return s.name === name; })[0];
       if (!x) return c;
       var cfg = { setups: list, setup: name };
-      SETUP_FIELDS.forEach(function (f) { cfg[f] = x[f] || ''; });
+      /* старые поля сетапа — как были; новые (языки, ссылки, люди) — только если они в сетапе заданы */
+      SETUP_FIELDS.forEach(function (f) { if (x[f] !== undefined) cfg[f] = x[f]; else if (SETUP_FIELDS.indexOf(f) < 6) cfg[f] = ''; });
       return scCall('sc-set-config', { config: cfg }).then(loadScConfig);
     }).then(function (c) { fillScSettings(); if (c) fillSetupSelects(c); return c; });
   }
@@ -1836,7 +1881,7 @@
       if (!name || !name.trim()) return;
       name = name.trim();
       var list = setupsOf(c).filter(function (x) { return x.name !== name; });
-      list.push(Object.assign({ name: name }, fieldsNow(), { project: '' }));
+      list.push(Object.assign({ name: name }, fieldsNow(), { project: '', enAndroid: '', enIos: '', enWeb: '', langWeb: '', langMob: '', enAssign: [], enEdit: [], links: '' }));
       scProject.value = '';
       return scCall('sc-set-config', { config: { setups: list } }).then(function () { return switchSetup(name); }).then(function () {
         scMsg.textContent = 'Сетап «' + name + '» создан — впиши проект и нажми «Сохранить»';
@@ -1863,6 +1908,7 @@
       scKey.value = ''; scKey.placeholder = c.hasKey ? 'ключ сохранён — впиши новый, чтобы заменить' : 'API-ключ';
       scLangs.value = c.langMap; scExtra.value = c.extra; scProject.value = c.project === SC_PROJECT_DEFAULT ? '' : c.project;
       scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos; scEnWeb.value = c.enWeb || '';
+      scLangWeb.value = c.langWeb || ''; scLangMob.value = c.langMob || '';
       asgSel = (c.enAssign || []).slice(); edSel = (c.enEdit || []).slice(); asgOn.checked = c.enAssignOn !== false;
       schOn.checked = !!c.schedOn; schText.value = c.sched || 'вт 14:00, пт 10:00'; schShowNext();
       dirShow();
@@ -1873,7 +1919,7 @@
     if (scExtra.value.trim()) { try { JSON.parse(scExtra.value); } catch (e) { return Promise.reject(new Error('«Доп. параметры» — не JSON')); } }
     return loadScConfig().then(function (c) {
       var list = c ? setupsOf(c) : [], cur = c ? activeSetup(c).name : 'Магазинка', now = fieldsNow();
-      list = list.map(function (x) { return x.name === cur ? Object.assign({ name: cur }, now) : x; });
+      list = list.map(function (x) { return x.name === cur ? Object.assign({}, x, { name: cur }, now) : x; });
       if (!list.length) list.push(Object.assign({ name: cur }, now));
       return scCall('sc-set-config', { config: Object.assign({ server: scServer.value, customUrl: scCustom.value.trim(), accountId: scAccount.value.trim(),
         apiKey: scKey.value.trim(), setups: list, setup: cur }, now) });
@@ -1927,6 +1973,8 @@
     el('label', {}, ['Английский дополнительно в проект (android) — пусто = стандартный', scEnAndroid]),
     el('label', {}, ['Английский дополнительно в проект (ios) — пусто = стандартный', scEnIos]),
     el('label', {}, ['Веб: английский → проект (остальные языки веба в Smartcat не уходят), папка «ДДММГГ web» — пусто = «' + SC_EN_DEFAULTS.web + '»', scEnWeb]),
+    el('label', {}, ['Языки веба (коды через пробел) — пусто = ' + LANG_TPL_DEFAULTS[0].bases.join(' '), scLangWeb]),
+    el('label', {}, ['Языки android и iOS — пусто = ' + LANG_TPL_DEFAULTS[1].bases.join(' '), scLangMob]),
     el('h3', { text: 'Папка для архивов' }),
     el('p', { class: 'muted', text: 'Куда сохранять zip для подрядчиков (например, «Подрядчики» на рабочем столе). Выбирается один раз; Chrome может иногда переспросить разрешение. Если папка недоступна — архив скачается в «Загрузки».' }),
     el('div', { class: 'row' }, [dirPick, dirForget, dirInfo]),
@@ -1971,6 +2019,187 @@
       ]),
       el('p', { class: 'muted', text: 'Файл без API-ключа. Настройки хранятся в расширении и не сбрасываются при обновлении.' })])
   ]);
+  /* ================= ГЛАВНАЯ (вариант A): ссылки → языки → одна кнопка → шаги ================= */
+  var homeSetup = el('select', { class: 'presel' });
+  var homeSetupNote = el('span', { class: 'muted' });
+  var homeLinks = el('textarea', { class: 'small hlinks', placeholder: 'Ссылки на компоненты, категории или целый проект — можно вставить сообщение из чата целиком' });
+  homeLinks.value = sget('wlx_home_links') || '';
+  var HOME_MODES = [['auto', 'Авто: веб и мобильные'], ['web', 'Только языки веба'], ['mob', 'Только языки android/iOS'], ['manual', 'Свои языки…']];
+  var homeMode = sget('wlx_home_tpl') || 'auto';
+  var homeSeg = el('div', { class: 'seg' });
+  var homeLangInfo = el('div', { class: 'muted' });
+  function homeRenderSeg() {
+    homeSeg.textContent = '';
+    HOME_MODES.forEach(function (m) {
+      homeSeg.appendChild(el('button', { class: 'chipb' + (homeMode === m[0] ? ' on' : ''), type: 'button', text: m[1], onclick: function () {
+        if (m[0] === 'manual') { homeToManual(); return; }
+        homeMode = m[0]; sset('wlx_home_tpl', homeMode); homeRenderSeg();
+      } }));
+    });
+    var w = tplByPlat('web'), mb = tplByPlat('android');
+    var up = function (t) { return t ? t.bases.join(' ').toUpperCase() : '—'; };
+    homeLangInfo.textContent = homeMode === 'web' ? 'Все компоненты: ' + up(w) : homeMode === 'mob' ? 'Все компоненты: ' + up(mb)
+      : 'веб: ' + up(w) + ' · android/iOS: ' + up(mb);
+  }
+  /* свои языки — та же выгрузка с галочками на вкладке «Выгрузка вручную» */
+  function homeToManual() {
+    links.value = homeLinks.value; tab('exp');
+    sset('wlx_langtpl_cur', TPL_MANUAL); tplRefresh();
+    if (parseLinks(links.value).length) loadLangs();
+  }
+  function homePickFor(x, codes) {
+    var t = homeMode === 'web' ? tplByPlat('web') : homeMode === 'mob' ? tplByPlat('android') : tplByPlat(scPlatform(x.p, x.c));
+    return t ? mtPick(codes, t.bases) : [];
+  }
+  /* шаги */
+  var homeSteps = [
+    { title: 'Архивы для подрядчиков' }, { title: 'Отправка в Smartcat' }, { title: 'Машинный перевод' }, { title: 'Загрузка в Weblate' }
+  ].map(function (s, i) {
+    s.dot = el('span', { class: 'dot d-next', text: String(i + 1) });
+    s.t = el('b', { text: s.title }); s.sub = el('div', { class: 'muted' }); s.act = el('span');
+    s.row = el('div', { class: 'st' }, [s.dot, el('div', { class: 'grow' }, [s.t, s.sub]), s.act]);
+    return s;
+  });
+  function homeStep(i, state, sub, act) {
+    var s = homeSteps[i];
+    s.dot.className = 'dot d-' + state;
+    s.dot.textContent = state === 'ok' ? '✓' : state === 'err' ? '!' : state === 'run' ? '…' : String(i + 1);
+    s.sub.textContent = sub || ''; s.sub.className = state === 'err' ? 'red' : 'muted';
+    s.act.textContent = ''; if (act) s.act.appendChild(act);
+  }
+  var homeBar = el('div'), homeProg = el('div', { class: 'bar hide' }, [homeBar]);
+  var homeOut = el('div');
+  var homeDetails = el('details', { class: 'hide' }, [el('summary', { text: 'Подробности' }), homeOut]);
+  var homeGo = el('button', { class: 'hgo', type: 'button', onclick: function () { homeRun(true); } },
+    [el('span', { text: 'Выгрузить и отправить' }), el('small', { text: 'архивы на компьютер · машперевод и английский в Smartcat' })]);
+  var homeZip = el('button', { class: 'b g s', type: 'button', text: 'Только архивы, без Smartcat', onclick: function () { homeRun(false); } });
+  if (!HAS_EXT) { homeGo.firstChild.textContent = 'Выгрузить'; homeGo.lastChild.textContent = 'архивы на компьютер'; homeZip.classList.add('hide'); }
+  function homeRun(send) {
+    var text = homeLinks.value.trim();
+    homeSteps.forEach(function (s, i) { homeStep(i, 'next', ''); });
+    if (!parseLinks(text).length) { homeStep(0, 'err', 'Вставь ссылки на компоненты Weblate (…/projects/<проект>/…)'); return; }
+    sset('wlx_home_links', text);
+    if (HAS_EXT) patchSetup({ links: text }).catch(function () {});
+    homeGo.disabled = homeZip.disabled = true;
+    homeOut.textContent = ''; homeDetails.classList.add('hide');
+    homeProg.classList.remove('hide'); homeBar.style.width = '0%';
+    homeStep(0, 'run', 'Ищу компоненты…');
+    var map = {}, union = [], hcomps = [];
+    resolveLinks(text).then(function (r) {
+      hcomps = r.comps;
+      if (r.missing.length) { homeOut.appendChild(el('div', { class: 'err', text: 'Не нашла компоненты по ссылкам:\n' + r.missing.join('\n') })); homeDetails.classList.remove('hide'); }
+      if (!hcomps.length) throw new Error('Не нашла ни одного компонента по ссылкам');
+      homeStep(0, 'run', 'Компонентов: ' + hcomps.length + ', смотрю языки…');
+      return pool(hcomps, 6, function (x) {
+        return translations(x.p, x.c).then(function (trs) {
+          var codes = trs.filter(function (t) { return !t.is_source; }).map(function (t) { return t.language.code; });
+          var pick = homePickFor(x, codes);
+          map[x.p + '/' + x.c] = pick;
+          pick.forEach(function (c) { if (union.indexOf(c) < 0) union.push(c); });
+        });
+      });
+    }).then(function () {
+      var total = hcomps.reduce(function (a, x) { return a + map[x.p + '/' + x.c].length; }, 0), done = 0;
+      if (!total) throw new Error('В компонентах нет языков из шаблона — проверь языки в ⚙ или выбери «Свои языки…»');
+      homeStep(0, 'run', 'Скачиваю непереведённое… 0 из ' + total);
+      return exportCore(hcomps, union, { q: fuzzy.checked ? QUERY_ALL : QUERY_EMPTY, wantJson: pluralsJson.checked,
+        langsFor: function (x) { return map[x.p + '/' + x.c]; } }, function () {
+        done++; homeBar.style.width = Math.round(100 * Math.min(done, total) / total) + '%';
+        homeStep(0, 'run', 'Скачиваю непереведённое… ' + Math.min(done, total) + ' из ' + total);
+      });
+    }).then(function (r) {
+      homeProg.classList.add('hide');
+      var res = r.res, errs = r.errs;
+      if (errs.length) {
+        var et = el('table');
+        errs.forEach(function (e) { et.appendChild(el('tr', {}, e.map(function (v) { return el('td', { text: v }); }))); });
+        homeOut.appendChild(el('div', {}, [el('b', { class: 'red', text: 'Проблемы: ' + errs.length }), et]));
+        homeDetails.classList.remove('hide'); homeDetails.open = true;
+      }
+      if (!res.length) { homeStep(0, 'ok', 'Непереведённого нет — всё переведено 🎉' + (errs.length ? ' (есть проблемы — ниже)' : '')); return; }
+      var strings = res.reduce(function (a, x) { return a + x.strings; }, 0);
+      var a = saveArchives(res);
+      homeStep(0, 'ok', strings + ' строк · ' + (a.zips.length ? 'сохранены ' + a.zips.map(function (z) { return z + '.zip'; }).join(', ') : 'только английский — архивов нет'),
+        el('button', { class: 'b g s', type: 'button', text: '⬇ ещё раз', onclick: function () { saveArchives(res); } }));
+      if (!send || !HAS_EXT) { homeStep(1, 'next', send ? '' : 'пропущено — выбрано «Только архивы»'); return; }
+      homeStep(1, 'run', 'Готовлю отправку…');
+      var box = el('div'); homeOut.appendChild(box);
+      return Promise.resolve(renderSmartcat(res, box)).then(function (btn) {
+        if (!btn) {
+          homeStep(1, 'err', scCfg && scCfg.accountId && scCfg.hasKey ? 'Отправлять в Smartcat нечего' : 'Smartcat не подключён — открой ⚙');
+          return;
+        }
+        homeDetails.classList.remove('hide');
+        homeStep(1, 'run', 'Отправляю в Smartcat…');
+        return new Promise(function (resolve) {
+          scAutoHook = function (x) {
+            var made = (x.made || []).join(', '), en = (x.en || []).join(', ');
+            if (x.error) homeStep(1, 'err', x.error + (made ? ' · отправлено: ' + made : ''));
+            else homeStep(1, 'ok', (made || 'отправлено') + (en ? ' · английский: ' + en : ''));
+            homeRefreshSc(); resolve();
+          };
+          btn.click();
+        });
+      });
+    }).catch(function (e) {
+      homeProg.classList.add('hide');
+      var cur = homeSteps.filter(function (s) { return /d-run/.test(s.dot.className); })[0];
+      homeStep(cur ? homeSteps.indexOf(cur) : 0, 'err', friendly(e));
+    }).then(function () { homeGo.disabled = homeZip.disabled = false; homeRefreshSc(); });
+  }
+  /* шаги 3–4: что сейчас ждёт перевода в Smartcat и что можно загрузить */
+  function homeRefreshSc() {
+    if (!HAS_EXT) { homeSteps[2].row.classList.add('hide'); homeSteps[3].row.classList.add('hide'); return; }
+    var pending = scProjects().filter(function (pr) { return !pr.uploaded; });
+    var ready = pending.filter(function (pr) { return scReady[pr.key || pr.id]; });
+    var check = el('button', { class: 'b g s', type: 'button', text: 'Проверить', onclick: function () {
+      check.disabled = true;
+      scCall('sc-watch-now').catch(function () {}).then(function () { return scCall('sc-ready-get'); }).then(function (r) { scReady = r || {}; renderScImport(); homeRefreshSc(); }, function () { check.disabled = false; });
+    } });
+    if (!pending.length) homeStep(2, 'next', 'Сейчас ничего не ждёт перевода');
+    else if (ready.length === pending.length) homeStep(2, 'ok', 'Готово: ' + ready.length + ' из ' + pending.length + ' отправок', check);
+    else homeStep(2, 'run', 'Переводится: готово ' + ready.length + ' из ' + pending.length + ' · придёт уведомление 🔔', check);
+    var upMsg = el('span', { class: 'muted' });
+    var upBtn = el('button', { class: 'b s', type: 'button', text: 'В Weblate (' + (ready.length || pending.length) + ')', onclick: function () {
+      renderScImport(); uploadAllReady(upBtn, upMsg, ready.length ? ready : null);
+    } });
+    if (!pending.length) homeStep(3, 'next', 'Когда перевод будет готов, загрузится только в непереведённые строки');
+    else homeStep(3, ready.length ? 'run' : 'next', ready.length ? 'Можно загружать — только в непереведённые строки' : 'Можно попробовать забрать то, что уже готово', el('span', {}, [upBtn, upMsg]));
+  }
+  /* файлы подрядчиков: бросить прямо на главную */
+  var homeFile = el('input', { type: 'file', multiple: '', accept: '.po,.json,.zip' });
+  homeFile.addEventListener('change', function () { if (homeFile.files.length) { addFiles(homeFile.files); tab('imp'); } homeFile.value = ''; });
+  var homeDrop = el('label', { class: 'drop hdrop' }, [homeFile, el('div', { text: '⬆ Файлы от подрядчиков (.po, .json, .zip) — перетащи сюда или нажми' })]);
+  ['dragover', 'dragenter'].forEach(function (ev) { homeDrop.addEventListener(ev, function (e) { e.preventDefault(); homeDrop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (ev) { homeDrop.addEventListener(ev, function () { homeDrop.classList.remove('over'); }); });
+  homeDrop.addEventListener('drop', function (e) { e.preventDefault(); if (e.dataTransfer.files.length) { addFiles(e.dataTransfer.files); tab('imp'); } });
+  homeSetup.addEventListener('change', function () {
+    switchSetup(homeSetup.value).then(function (c) {
+      homeSetupFill(c);
+      if (c && c.links) homeLinks.value = c.links;
+    });
+  });
+  function homeSetupFill(c) {
+    if (!c) { homeSetup.parentNode && homeSetup.parentNode.classList.add('hide'); homeRenderSeg(); return; }
+    homeSetupNote.textContent = 'Smartcat: ' + (c.project || SC_PROJECT_DEFAULT) + (c.enWeb ? ' · веб EN: ' + c.enWeb : '');
+    homeRenderSeg();
+  }
+  var homePane = el('div', {}, [
+    HAS_EXT ? el('div', { class: 'row hsetup' }, [el('span', { class: 'lbl', text: 'Проект' }), homeSetup,
+      el('button', { class: 'b g s', type: 'button', text: '＋', title: 'Новый сетап: свои ссылки, языки и проекты Smartcat', onclick: function () { showSettings(true); newSetup(); } }), homeSetupNote]) : null,
+    el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Что выгружаем' }), homeLinks]),
+    el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Языки' }), homeSeg, homeLangInfo]),
+    el('div', { class: 'row' }, [homeGo, homeZip]),
+    homeProg,
+    el('div', { class: 'steps' }, homeSteps.map(function (s) { return s.row; })),
+    homeDetails,
+    homeDrop,
+    el('div', { class: 'row hfoot' }, [
+      HAS_EXT ? el('button', { class: 'lnk', type: 'button', text: 'Все отправки в Smartcat ›', onclick: function () { tab('sc'); } }) : null,
+      el('button', { class: 'lnk', type: 'button', text: 'Выгрузка вручную ›', onclick: function () { tab('exp'); } })
+    ])
+  ]);
+  homeRenderSeg();
   var mainArea;
   function showSettings(on) {
     settingsPane.classList.toggle('hide', !on);
@@ -1981,7 +2210,7 @@
   var back = el('div', { class: 'back', onclick: function (e) { if (e.target === back) hide(); } }, [
     el('div', { class: 'box' }, [
       el('div', { class: 'top' }, [
-        el('h1', { text: 'Weblate: выгрузка и загрузка переводов' }),
+        el('h1', { text: 'Weblate ⇄ Smartcat' }),
         el('div', {}, [
           HAS_EXT ? el('button', { class: 'x', title: 'Настройки Smartcat', text: '⚙', onclick: function () { showSettings(settingsPane.classList.contains('hide')); } }) : null,
           el('button', { class: 'x', title: 'Закрыть', text: '×', onclick: hide })
@@ -1990,7 +2219,8 @@
       toastEl = el('div', { class: 'toast hide' }),
       settingsPane,
       mainArea = el('div', {}, [
-        el('div', { class: 'tabs' }, HAS_EXT ? [tabExp, tabSc, tabImp] : [tabExp, tabImp]),
+        el('div', { class: 'tabs' }, HAS_EXT ? [tabHome, tabExp, tabSc, tabImp] : [tabHome, tabExp, tabImp]),
+        homePane,
         exportPane,
         scPane,
         importPane
@@ -2196,6 +2426,31 @@
       : fileKey(r.component);
     return (folder ? folder + '/' : '') + poName(r);
   }
+  /* архивы для подрядчиков: отдельный zip на платформу, без английского, со своим summary.csv */
+  function saveArchives(res) {
+    var layout = currentLayout(), eng = englishApart.checked, byPlat = byPlatform.checked;
+    var files = res.filter(function (r) { return !(skipEnglish.checked && isEnglish(r.language)); }).map(function (r) { return { name: (byPlat ? platDir(r.p, r.component) + '/' : '') + archivePath(r, layout, eng), text: r.text }; });
+    files.sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+    var csv = '﻿компонент;язык;код;формат;строк;слов\n' + res.map(function (r) {
+      return [r.component, langName(r.language), r.language, r.ext || 'po', r.strings, r.words].join(';');
+    }).join('\n') + '\n';
+    if (!byPlat) files.push({ name: 'summary.csv', text: csv });
+    else {
+      /* summary — свой в каждой папке платформы */
+      var plats = {};
+      res.filter(function (r) { return !(skipEnglish.checked && isEnglish(r.language)); }).forEach(function (r) { (plats[platDir(r.p, r.component)] = plats[platDir(r.p, r.component)] || []).push(r); });
+      Object.keys(plats).forEach(function (d) {
+        files.push({ name: d + '/summary.csv', text: '\ufeffкомпонент;язык;код;формат;строк;слов\n' + plats[d].map(function (r) {
+          return [r.component, langName(r.language), r.language, r.ext || 'po', r.strings, r.words].join(';');
+        }).join('\n') + '\n' });
+      });
+    }
+    var real = files.filter(function (f) { return !/summary\.csv$/.test(f.name); });
+    if (real.length) saveFiles(files, 'weblate_all_' + today() + '.zip');
+    else toast('В архив класть нечего — только английский, он уходит в Smartcat');
+    var zips = real.map(function (f) { return f.name.split('/')[0]; }).filter(function (x, k, a) { return /^\d{6}_/.test(x) && a.indexOf(x) === k; }).sort();
+    return { files: real.length, zips: zips };
+  }
   function showResults(res, errs) {
     res.sort(function (a, b) { return (a.language + a.component).localeCompare(b.language + b.component); });
     results.textContent = '';
@@ -2240,27 +2495,7 @@
       englishApart.addEventListener('change', updateHint);
       byPlatform.addEventListener('change', updateHint);
       skipEnglish.addEventListener('change', updateHint);
-      function saveAll() {
-          var layout = currentLayout(), eng = englishApart.checked, byPlat = byPlatform.checked;
-          var files = res.filter(function (r) { return !(skipEnglish.checked && isEnglish(r.language)); }).map(function (r) { return { name: (byPlat ? platDir(r.p, r.component) + '/' : '') + archivePath(r, layout, eng), text: r.text }; });
-          files.sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
-          var csv = '﻿компонент;язык;код;формат;строк;слов\n' + res.map(function (r) {
-            return [r.component, langName(r.language), r.language, r.ext || 'po', r.strings, r.words].join(';');
-          }).join('\n') + '\n';
-          if (!byPlat) files.push({ name: 'summary.csv', text: csv });
-          else {
-            /* summary — свой в каждой папке платформы */
-            var plats = {};
-            res.filter(function (r) { return !(skipEnglish.checked && isEnglish(r.language)); }).forEach(function (r) { (plats[platDir(r.p, r.component)] = plats[platDir(r.p, r.component)] || []).push(r); });
-            Object.keys(plats).forEach(function (d) {
-              files.push({ name: d + '/summary.csv', text: '\ufeffкомпонент;язык;код;формат;строк;слов\n' + plats[d].map(function (r) {
-                return [r.component, langName(r.language), r.language, r.ext || 'po', r.strings, r.words].join(';');
-              }).join('\n') + '\n' });
-            });
-          }
-          if (files.some(function (f) { return !/summary\.csv$/.test(f.name); })) saveFiles(files, 'weblate_all_' + today() + '.zip');
-          else toast('В архив класть нечего — только английский, он уходит в Smartcat');
-      }
+      function saveAll() { saveArchives(res); }
       results.appendChild(el('div', { class: 'row' }, [
         el('button', { class: 'b', text: '⬇ Скачать архивы ещё раз', onclick: saveAll }),
         layoutHint
@@ -3323,6 +3558,17 @@
   }
 
   document.body.appendChild(host);
+  /* открываемся на главной; сетап, ссылки и состояние отправок подтягиваем из расширения */
+  tab('home');
+  if (HAS_EXT) {
+    loadScConfig().then(function (c) {
+      if (!c) return;
+      fillSetupSelects(c);
+      var st = activeSetup(c);
+      if (!homeLinks.value.trim() && st.links) homeLinks.value = st.links;
+    });
+    scCall('sc-ready-get').then(function (r) { scReady = r || {}; homeRefreshSc(); }, function () { homeRefreshSc(); });
+  } else homeRefreshSc();
   window.__wlExport = { show: show, autoSend: autoSend, openTab: function (t) {
     show(); tab(t);
     if (HAS_EXT) syncScProjects().then(function () { return scCall('sc-ready-get'); }).then(function (r) { scReady = r || {}; renderScImport(); }, function () {});
