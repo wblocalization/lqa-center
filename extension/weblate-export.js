@@ -2013,22 +2013,32 @@
       progText.textContent = 'Готово!';
       barFill.style.width = '100%';
       showResults(r.res, r.errs);
-      otherLangsHint(langs);
+      otherLangsHint(langs, r.res);
     });
   }
   /* непереведённое есть в языках, которые не отмечены (например, английский) — подсказать и дать выгрузить */
-  function otherLangsHint(langs) {
-    var left = {};
+  function otherLangsHint(langs, res) {
+    var left = {}, mine = {}, got = {};
+    (res || []).forEach(function (r) { got[r.language] = (got[r.language] || 0) + r.strings; });
     pool(comps, 4, function (x) {
       return translations(x.p, x.c).then(function (trs) {
         trs.forEach(function (t) {
           var code = t.language.code;
-          if (t.is_source || langs.indexOf(code) >= 0 || /generated/i.test(t.language.name || '') || t.total == null || t.translated == null) return;
+          if (t.is_source || /generated/i.test(t.language.name || '') || t.total == null || t.translated == null) return;
           var n = t.total - t.translated;
+          if (langs.indexOf(code) >= 0) { mine[code] = (mine[code] || 0) + n; return; }
           if (n > 0) left[code] = (left[code] || 0) + n;
         });
       }, function () {});
     }).then(function () {
+      /* сверка с Weblate по отмеченным языкам: что он считает непереведённым и что пришло в файлах */
+      var stat = Object.keys(mine).sort(function (a, b) { return langName(a).localeCompare(langName(b), 'ru'); });
+      var odd = stat.filter(function (c) { return mine[c] > 0 && !got[c]; });
+      if (odd.length) results.insertBefore(el('div', { class: 'err', text: 'Странно: по данным Weblate непереведённое есть (' +
+        odd.map(function (c) { return langName(c) + ' — ' + mine[c] + ' стр'; }).join(', ') +
+        '), а в выгрузке пусто. ' + (fuzzy.checked ? '' : 'Попробуй включить «включать строки «требует правки»». ') + 'Если не поможет — пришли мне скрин этого языка в Weblate.' }), results.firstChild);
+      else if (stat.length && !(res || []).length) results.insertBefore(el('p', { class: 'muted', text: 'По данным Weblate в отмеченных языках всё переведено: ' +
+        stat.map(function (c) { return langName(c) + ' — ' + mine[c]; }).join(', ') + ' непереведённых.' }), results.firstChild);
       var codes = Object.keys(left).sort(function (a, b) { return langName(a).localeCompare(langName(b), 'ru'); });
       if (!codes.length) return;
       var box = el('div', { class: 'hint' }, [
