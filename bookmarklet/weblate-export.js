@@ -1968,7 +1968,9 @@
   }
 
   /* выгрузка: компоненты × языки → { res, errs } */
+  var EXPORT_DEBUG = [];
   function exportCore(comps, langs, opts, onTick) {
+    EXPORT_DEBUG = [];
     var res = [], errs = [];
     return pool(comps, 4, function (x) {
       return translations(x.p, x.c).then(function (trs) {
@@ -1982,7 +1984,11 @@
             var expect = st && st.total != null && st.translated != null ? st.total - st.translated : 0;
             return downloadPo(x.p, x.c, code, opts.q).then(function (raw) {
               /* Weblate говорит, что непереведённое есть, а файл пустой — пробуем скачать как через интерфейс Weblate */
-              if (expect > 0 && !filterPo(raw, false).strings) return downloadPo(x.p, x.c, code, opts.q, true).catch(function () { return raw; });
+              if (expect > 0 && !filterPo(raw, false).strings) {
+                var dbg = { c: x.c, p: x.p, lang: code, q: opts.q, expect: expect, api: raw };
+                EXPORT_DEBUG.push(dbg);
+                return downloadPo(x.p, x.c, code, opts.q, true).then(function (t) { dbg.ui = t; return t; }, function (e) { dbg.ui = 'ОШИБКА: ' + e.message; return raw; });
+              }
               return raw;
             }).then(function (raw) {
               var r = filterPo(raw, false);
@@ -2045,7 +2051,20 @@
       var odd = stat.filter(function (c) { return mine[c] > 0 && !got[c]; });
       if (odd.length) results.insertBefore(el('div', { class: 'err', text: 'Странно: по данным Weblate непереведённое есть (' +
         odd.map(function (c) { return langName(c) + ' — ' + mine[c] + ' стр'; }).join(', ') +
-        '), а в выгрузке пусто. ' + (fuzzy.checked ? '' : 'Попробуй включить «включать строки «требует правки»». ') + 'Если не поможет — пришли мне скрин этого языка в Weblate.' }), results.firstChild);
+        '), а в выгрузке пусто. ' + (fuzzy.checked ? '' : 'Попробуй включить «включать строки «требует правки»». ') }, [
+          EXPORT_DEBUG.length ? el('button', { class: 'b g s', text: '⬇ Скачать ответ Weblate для разбора', onclick: function () {
+            var files = [];
+            EXPORT_DEBUG.forEach(function (d) {
+              var base = d.c + '-' + d.lang;
+              files.push({ name: base + '-api.po', text: d.api || '' });
+              files.push({ name: base + '-download.po', text: d.ui || '' });
+            });
+            files.push({ name: 'info.txt', text: 'версия ' + (HAS_EXT ? chrome.runtime.getManifest().version : 'закладка') + '\nзапрос q=' + (EXPORT_DEBUG[0] || {}).q + '\n' +
+              EXPORT_DEBUG.map(function (d) { return d.p + '/' + d.c + '/' + d.lang + ': Weblate говорит ' + d.expect + ', api ' + (d.api || '').length + ' байт, download ' + (d.ui || '').length + ' байт'; }).join('\n') + '\n' });
+            downloadBlob(makeZip(files), 'weblate_debug_' + today() + '.zip');
+          } }) : null,
+          el('span', { text: ' — пришли мне этот архив, разберусь.' })
+        ]), results.firstChild);
       else if (stat.length && !(res || []).length) results.insertBefore(el('p', { class: 'muted', text: 'По данным Weblate в отмеченных языках всё переведено: ' +
         stat.map(function (c) { return langName(c) + ' — ' + mine[c]; }).join(', ') + ' непереведённых.' }), results.firstChild);
       var codes = Object.keys(left).sort(function (a, b) { return langName(a).localeCompare(langName(b), 'ru'); });
