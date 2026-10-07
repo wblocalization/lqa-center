@@ -2013,6 +2013,32 @@
       progText.textContent = 'Готово!';
       barFill.style.width = '100%';
       showResults(r.res, r.errs);
+      otherLangsHint(langs);
+    });
+  }
+  /* непереведённое есть в языках, которые не отмечены (например, английский) — подсказать и дать выгрузить */
+  function otherLangsHint(langs) {
+    var left = {};
+    pool(comps, 4, function (x) {
+      return translations(x.p, x.c).then(function (trs) {
+        trs.forEach(function (t) {
+          var code = t.language.code;
+          if (t.is_source || langs.indexOf(code) >= 0 || /generated/i.test(t.language.name || '') || t.total == null || t.translated == null) return;
+          var n = t.total - t.translated;
+          if (n > 0) left[code] = (left[code] || 0) + n;
+        });
+      }, function () {});
+    }).then(function () {
+      var codes = Object.keys(left).sort(function (a, b) { return langName(a).localeCompare(langName(b), 'ru'); });
+      if (!codes.length) return;
+      var box = el('div', { class: 'hint' }, [
+        el('span', { text: 'Непереведённое есть ещё в неотмеченных языках: ' + codes.map(function (c) { return langName(c) + ' — ' + left[c] + ' стр'; }).join(', ') + '. ' }),
+        el('button', { class: 'b g s', text: 'Отметить и выгрузить', onclick: function () {
+          langsBox.querySelectorAll('input').forEach(function (i) { if (codes.indexOf(i.value) >= 0) i.checked = true; });
+          runExport();
+        } })
+      ]);
+      results.insertBefore(box, results.firstChild);
     });
   }
 
