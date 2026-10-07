@@ -248,7 +248,7 @@
       var f = {}, key = null;
       lines.forEach(function (l) {
         if (l[0] === '#') return;
-        var m = /^(msgctxt|msgid_plural|msgid|msgstr(?:\[\d+\])?)\s+(".*")\s*$/.exec(l);
+        var m = /^(msgctxt|msgid_plural|msgid|msgstr(?:\[\d+\])?)\s+("[^\n]*")\s*$/.exec(l);
         if (m) { key = m[1]; f[key] = unquote(m[2]); }
         else if (l.trim()[0] === '"' && key) { f[key] += unquote(l); }
       });
