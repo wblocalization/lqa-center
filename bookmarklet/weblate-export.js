@@ -345,10 +345,30 @@
      Weblate тогда отклоняет файл целиком («end-of-line within string»). Такие записи выкидываем, остальное оставляем.
      → null, если файл в порядке; иначе { text, dropped: [ключи] } */
   var PO_STR = /^\s*(?:#~\s*)?(?:(msgctxt|msgid_plural|msgid|msgstr(?:\[\d+\])?)\s+)?"((?:[^"\\]|\\.)*)"\s*$/;
+  function quoteCount(l) {
+    var n = 0;
+    for (var i = 0; i < l.length; i++) { if (l[i] === '\\') { i++; continue; } if (l[i] === '"') n++; }
+    return n;
+  }
+  /* Smartcat иногда пишет настоящий перенос строки внутри "…" вместо \n — склеиваем обратно через \n */
+  function joinBrokenStrings(lines) {
+    var out = [], joined = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i], t = l.trim();
+      if (t && t[0] !== '#' && t.indexOf('"') >= 0 && quoteCount(l) % 2) {
+        var buf = l, j = i;
+        while (quoteCount(buf) % 2 && j + 1 < lines.length && !/^\s*(msgctxt|msgid|msgstr|#)/.test(lines[j + 1])) { j++; buf += '\\n' + lines[j]; }
+        if (!(quoteCount(buf) % 2) && PO_STR.test(buf)) { out.push(buf); joined++; i = j; continue; }
+      }
+      out.push(l);
+    }
+    return { lines: out, joined: joined };
+  }
   function fixPo(text) {
-    var lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+    var jb = joinBrokenStrings(String(text).replace(/\r\n?/g, '\n').split('\n'));
+    var lines = jb.lines;
     var bad = lines.some(function (l) { return l.trim() && l.trim()[0] !== '#' && !PO_STR.test(l); });
-    if (!bad) return null;
+    if (!bad) return jb.joined ? { text: lines.join('\n'), dropped: [], joined: jb.joined } : null;
     var groups = [], g = null;
     lines.forEach(function (l) {
       var t = l.trim(), m = PO_STR.exec(l), key = m && m[1];
@@ -373,7 +393,7 @@
       if (dropped.indexOf(key) < 0) dropped.push(key);
       lastKey = key;
     });
-    return { text: out.join('\n\n') + '\n', dropped: dropped };
+    return { text: out.join('\n\n') + '\n', dropped: dropped, joined: jb.joined };
   }
   /* ---------- переменные: {{count}}, %s, %1$d, {name}, $t(key), теги ----------
      Ошибка (строку не грузим): переменная, которой нет в исходнике (опечатка), или сломанная скобка.
@@ -423,11 +443,22 @@
   }
   function varScan(u) {
     if (u.vars !== undefined) return u.vars;
-    if (u.error || !u.text || /\.json$/i.test(u.name)) return null;
+    if (u.error || !u.text) return null;
     var list = [];
+    if (/\.json$/i.test(u.name)) {
+      var obj = {}; try { obj = JSON.parse(u.text); } catch (e) { return null; }
+      Object.keys(obj).forEach(function (k) {
+        var probs = mtLeak('', String(obj[k] || ''), u.lang, true);
+        if (probs.length) list.push({ idx: k, ctx: k, src: '', tr: String(obj[k]), probs: probs, hard: true });
+      });
+      u.vars = list.length ? list : null;
+      return u.vars;
+    }
     poEntries(u.text).forEach(function (e, idx) {
       if (e.header || e.obsolete || !e.strs.some(Boolean)) return;
-      var probs = checkVars([poStr(e.msgid), poStr(e.plural)].filter(Boolean), e.strs.map(poStr), u.lang, !!e.plural);
+      var srcs = [poStr(e.msgid), poStr(e.plural)].filter(Boolean);
+      var probs = checkVars(srcs, e.strs.map(poStr), u.lang, !!e.plural)
+        .concat(mtLeak(srcs.join('\n'), e.strs.map(poStr).join('\n'), u.lang));
       if (probs.length) list.push({ idx: idx, ctx: poStr(e.ctx), src: poStr(e.msgid), tr: e.strs.map(poStr).join(' | '), probs: probs,
         hard: probs.some(function (x) { return x.hard; }) });
     });
@@ -439,10 +470,57 @@
   }
   function applyPoFix(u) {
     if (/\.json$/i.test(u.name) || !u.text) return;
-    var fx = fixPo(u.text);
-    if (!fx) return;
-    u.text = fx.text; u.fixedKeys = fx.dropped;
-    u.note = (u.note ? u.note + ' · ' : '') + 'смарткат испортил ' + fx.dropped.length + ' стр. — убрала, остальное загружу (' + fx.dropped.join(', ') + ')';
+    var fx = fixPo(u.text), notes = [];
+    if (fx) {
+      u.text = fx.text;
+      if (fx.joined) notes.push('склеила разорванные строки: ' + fx.joined);
+      if (fx.dropped.length) { u.fixedKeys = fx.dropped; notes.push('смарткат испортил ' + fx.dropped.length + ' стр. — убрала, остальное загружу (' + fx.dropped.join(', ') + ')'); }
+    }
+    var nl = fixNewlines(u.text);
+    if (nl.n) { u.text = nl.text; notes.push('убрала лишние переносы строк: ' + nl.n); }
+    if (notes.length) u.note = (u.note ? u.note + ' · ' : '') + notes.join(' · ');
+  }
+  /* заменить msgstr у записи (строки в экранированном виде, как в файле) */
+  function setPoStrs(e, strs) {
+    var out = [], cur = null;
+    e.lines.forEach(function (l) {
+      var m = PO_STR.exec(l);
+      if (m && m[1]) cur = m[1]; else if (!m) cur = null;
+      if (cur && cur.indexOf('msgstr') === 0) return;
+      out.push(l);
+    });
+    if (!e.plural && strs.length === 1) out.push('msgstr "' + strs[0] + '"');
+    else strs.forEach(function (x, i) { out.push('msgstr[' + i + '] "' + x + '"'); });
+    return out.join('\n');
+  }
+  /* в исходнике нет переносов, а машперевод разбил строку на несколько — склеиваем пробелом */
+  function fixNewlines(text) {
+    var n = 0;
+    var parts = poEntries(text).map(function (e) {
+      if (e.header || e.obsolete || !e.strs.some(Boolean)) return e.lines.join('\n');
+      var src = e.msgid + (e.plural || '');
+      if (/\\n/.test(src) || !e.strs.some(function (x) { return /\\n/.test(x); })) return e.lines.join('\n');
+      n++;
+      return setPoStrs(e, e.strs.map(function (x) { return x.replace(/(?:[ \t]|\\n)*\\n(?:[ \t]|\\n)*/g, ' ').replace(/^ | $/g, ''); }));
+    });
+    return n ? { text: parts.join('\n\n') + '\n', n: n } : { text: text, n: 0 };
+  }
+  /* «мусор» от машперевода: пояснения, контекст, варианты, разметка — такие строки не грузим */
+  var LEAK_WORDS = /(?:^|[\s(*\[«"—-])(context|note|notes|translation|translated|alternative(?:ly)?|usually|most natural|literally|explanation|meaning|here is|here's|option\s*\d|variant\s*\d)\b/i;
+  var LEAK_LABEL = /[(*\[]\s*\**\s*[\p{Lu}][\p{Lu} -]{3,}\s*:/u;
+  function mtLeak(src, tr, lang, noSrc) {
+    var probs = [];
+    if (!tr) return probs;
+    var en = baseLang(lang || '') === 'en';
+    function frag(m) { var i = Math.max(0, m.index - 10); return '«' + tr.slice(i, i + 50).replace(/\s+/g, ' ') + (tr.length > i + 50 ? '…' : '') + '»'; }
+    var w = !en && LEAK_WORDS.exec(tr);
+    if (w && (noSrc || src.toLowerCase().indexOf(w[1].toLowerCase()) < 0)) probs.push({ hard: true, text: 'похоже, смарткат дописал пояснение: ' + frag(w) });
+    var lb = LEAK_LABEL.exec(tr);
+    if (lb && (noSrc || !LEAK_LABEL.test(src))) probs.push({ hard: true, text: 'похоже, смарткат вставил примечание: ' + frag(lb) });
+    var md = /\*\*|\*\(|\)\*/.exec(tr);
+    if (md && (noSrc || !/\*/.test(src))) probs.push({ hard: true, text: 'в переводе разметка * — в исходнике её нет: ' + frag(md) });
+    if (!noSrc && src && tr.length > src.length * 3 + 60) probs.push({ hard: true, text: 'перевод в ' + Math.round(tr.length / src.length) + ' раз длиннее исходника — похоже, смарткат дописал лишнее' });
+    return probs;
   }
 
   /* ---------- ZIP (store, UTF-8 names) ---------- */
@@ -943,7 +1021,7 @@
     ]),
     el('p', { class: 'muted', text: 'Машинный перевод из Smartcat (вкладка «🤖 Smartcat») эти настройки не использует — он всегда загружается с «Добавить как перевод» и «Изменять только непереведённые строки».' }),
     el('p', { class: 'muted', text: '«Заменить существующий файл перевода» здесь нет специально: в файлах только часть строк, и замена стёрла бы остальные переводы.' }),
-    el('label', { class: 'muted blk' }, [varSkip, ' строки со сломанной или лишней переменной ({{cuont}}, {{count}…) не загружать — остальное загрузится']),
+    el('label', { class: 'muted blk' }, [varSkip, ' строки с ошибкой не загружать — сломанная или лишняя переменная ({{cuont}}, {{count}…) или мусор от машперевода (пояснения, «context:», «Usually…», примечания в скобках) — остальное загрузится']),
     el('div', { class: 'row' }, [upBtn]),
     upResults
   ]);
@@ -2603,7 +2681,7 @@
         (function () {
           var vr = varScan(u), hn = vr ? vr.filter(function (x) { return x.hard; }).length : 0;
           return el('td', {}, [el('div', { text: u.name }), vr ? el('div', { class: hn ? 'red' : 'muted',
-            text: '⚠ переменные: ' + vr.length + ' стр.' + (hn ? (varSkip.checked ? ' — с ошибкой не загружу: ' + hn : ', с ошибкой: ' + hn) : ' — проверь') }) : null]);
+            text: '⚠ проверка: ' + vr.length + ' стр.' + (hn ? (varSkip.checked ? ' — с ошибкой не загружу: ' + hn : ', с ошибкой: ' + hn) : ' — проверь') }) : null]);
         })(),
         u.lang ? el('td', { title: u.p + '/' + u.c + '/' + u.lang }, [el('div', { text: u.c }), langLabel(u.lang)]) : u.needComp ? compPicker(u) : el('td', { text: '—' }),
         el('td', { class: 'n', text: u.filled + ' из ' + u.total }),
@@ -2625,7 +2703,7 @@
         });
       });
       preview.appendChild(el('details', vh ? { open: '' } : {}, [el('summary', { class: vh ? 'red' : 'muted',
-        text: 'Переменные в переводах — строк: ' + vn + (vh ? ', с ошибкой: ' + vh : '') + ' (✗ — ошибка, ? — проверь глазами)' }), vt]));
+        text: 'Проверка переводов (переменные, мусор от машперевода) — строк: ' + vn + (vh ? ', с ошибкой: ' + vh : '') + ' (✗ — ошибка, ? — проверь глазами)' }), vt]));
     }
     preview.appendChild(el('div', { class: 'row' }, [
       el('span', { class: 'muted', text: 'Файлов: ' + uploads.length }),
@@ -2916,7 +2994,7 @@
     });
     var vsk = sent.filter(function (u) { return u.varSkipped; });
     if (vsk.length) {
-      out.push('Переменные — не загружено строк: ' + sum(vsk, 'varSkipped') + ' (сломанная или лишняя переменная):');
+      out.push('Не загружено строк с ошибкой: ' + sum(vsk, 'varSkipped') + ' (переменная или мусор от машперевода):');
       vsk.forEach(function (u) { u.vars.filter(function (x) { return x.hard; }).forEach(function (x) {
         out.push('  ' + u.c + ' · ' + langName(u.lang) + ' · ' + (x.ctx || x.src.slice(0, 40)) + ': ' + x.probs.filter(function (p) { return p.hard; })[0].text);
       }); });
@@ -3013,7 +3091,17 @@
         var sendU = u; u.varSkipped = 0;
         if (varSkip.checked && varScan(u)) {
           var hardV = u.vars.filter(function (x) { return x.hard; });
-          if (hardV.length) { sendU = Object.assign({}, u, { text: dropEntries(u.text, hardV.map(function (x) { return x.idx; })) }); u.varSkipped = hardV.length; }
+          if (hardV.length) {
+            var badIdx = hardV.map(function (x) { return x.idx; }), newText;
+            if (/\.json$/i.test(u.name)) {
+              /* плюралку не грузим наполовину: плохая одна форма — пропускаем все формы ключа */
+              var jo = JSON.parse(u.text), keep = {}, plBase = function (k) { return k.replace(/_(zero|one|two|few|many|other|plural|\d+)$/, ''); };
+              var badBase = badIdx.map(plBase);
+              Object.keys(jo).forEach(function (k) { if (badBase.indexOf(plBase(k)) < 0) keep[k] = jo[k]; });
+              newText = JSON.stringify(keep, null, 2) + '\n';
+            } else newText = dropEntries(u.text, badIdx);
+            sendU = Object.assign({}, u, { text: newText }); u.varSkipped = hardV.length;
+          }
         }
         return uploadPo(sendU, o, token).catch(function (e) {
           if (o.conflicts !== 'replace-approved' || !/Проверка перевода не включена|review/i.test(String(e.message || e))) throw e;
