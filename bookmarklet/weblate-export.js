@@ -515,7 +515,9 @@
     return n ? { text: parts.join('\n\n') + '\n', n: n } : { text: text, n: 0 };
   }
   /* «мусор» от машперевода: пояснения, контекст, варианты, разметка — такие строки не грузим */
-  var LEAK_WORDS = /(?:^|[\s(*\[«"—-])(context|note|notes|translation|translated|alternative(?:ly)?|usually|most natural|literally|explanation|meaning|here is|here's|option\s*\d|variant\s*\d)\b/i;
+  var LEAK_WORDS = /(?:^|[\s(*\[«"—-])(context|note|notes|translation|translated|alternative(?:ly)?|usually|most natural|literally|explanation|meaning|here is|here's|option\s*\d|variant\s*\d|wait|glossary|let's|let us|source:|rendering|strictly|i will|i'll|hmm)\b/i;
+  /* английские служебные слова — признак «рассуждений» ИИ внутри перевода */
+  var EN_STOP = ['the', 'and', 'is', 'are', 'with', 'this', 'that', 'should', 'would', 'which', 'keep', 'use', 'natural', 'literal', 'standard', 'exact', 'words', 'or', 'but', 'so'];
   var LEAK_LABEL = /[(*\[]\s*\**\s*[\p{Lu}][\p{Lu} -]{3,}\s*:/u;
   function mtLeak(src, tr, lang, noSrc) {
     var probs = [];
@@ -526,6 +528,12 @@
     if (w && (noSrc || src.toLowerCase().indexOf(w[1].toLowerCase()) < 0)) probs.push({ hard: true, text: 'похоже, смарткат дописал пояснение: ' + frag(w) });
     var lb = LEAK_LABEL.exec(tr);
     if (lb && (noSrc || !LEAK_LABEL.test(src))) probs.push({ hard: true, text: 'похоже, смарткат вставил примечание: ' + frag(lb) });
+    if (!en) {
+      var srcL = String(src || '').toLowerCase(), hits = EN_STOP.filter(function (w) {
+        return new RegExp('(^|[^a-z\']' + ')' + w + '(?![a-z])', 'i').test(tr) && !new RegExp('(^|[^a-z])' + w + '(?![a-z])').test(srcL);
+      });
+      if (hits.length >= 3) probs.push({ hard: true, text: 'в переводе английские рассуждения ИИ (' + hits.slice(0, 5).join(', ') + ')' });
+    }
     var md = /\*\*|\*\(|\)\*/.exec(tr);
     if (md && (noSrc || !/\*/.test(src))) probs.push({ hard: true, text: 'в переводе разметка * — в исходнике её нет: ' + frag(md) });
     if (!noSrc && src && tr.length > src.length * 3 + 60) probs.push({ hard: true, text: 'перевод в ' + Math.round(tr.length / src.length) + ' раз длиннее исходника — похоже, смарткат дописал лишнее' });
