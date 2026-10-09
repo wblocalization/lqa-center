@@ -927,6 +927,9 @@
     '.err{background:#FDECEA;border-radius:10px;padding:8px 10px}',
     '.err:empty{display:none}',
     '.homecard .row{margin-top:12px}',
+    'input.dl{display:block;width:100%;box-sizing:border-box;padding:8px 11px;border:1.5px solid #E4DCEF;border-radius:12px;background:#FBF9FE;font:inherit;color:#1A0F2E}',
+    '.msgblk{margin-top:14px}',
+    'textarea.msg{min-height:110px;font:13px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}',
     '.hide{display:none}'
   ].join('\n');
 
@@ -1777,7 +1780,12 @@
   var scLangMob = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg az' });
   /* сообщение в чат (Band): шаблон, вебхук, автоотправка — у каждого сетапа свои */
   var BAND_TPL_DEFAULT = 'Привет! Выгрузка {дата} · {проект}\n📦 Подрядчикам: {архивы}\n🤖 В Smartcat: {smartcat}\n🌍 Языки: {языки}\n🧩 Компоненты: {компоненты}\nСтрок: {строки}';
+  var BAND_TPL_WEB = 'Привет! {люди}\n\nзагрузила новые файлики для веба {ссылка_веб}\nдедлайн — {дедлайн} :bunny_rabbit_flower_thank_you:';
+  var BAND_TPL_APP = 'Привет! {люди}\nновые файлы на перевод для\nандроида {ссылка_android}\nи айоса {ссылка_ios}\nдедлайн — {дедлайн} :pepe_pray:';
   var bandTpl = el('textarea', { class: 'small', placeholder: BAND_TPL_DEFAULT });
+  var bandPeople = el('input', { type: 'text', placeholder: '@ник1 @ник2 @ник3' });
+  var bandTplWeb = el('textarea', { class: 'small', placeholder: BAND_TPL_WEB });
+  var bandTplApp = el('textarea', { class: 'small', placeholder: BAND_TPL_APP });
   var bandHook = el('input', { type: 'text', placeholder: 'https://… (вебхук чата; пусто — только «Скопировать»)' });
   var bandAuto = el('input', { type: 'checkbox' });
   /* папка для архивов */
@@ -1901,7 +1909,7 @@
     }, function () { return null; });
   }
   /* ----- сетапы: свой проект / английские проекты / коды языков; аккаунт и ключ общие ----- */
-  var SETUP_FIELDS = ['project', 'enAndroid', 'enIos', 'enWeb', 'langMap', 'extra', 'langWeb', 'langMob', 'enAssign', 'enEdit', 'links', 'bandTpl', 'bandHook', 'bandAuto'];
+  var SETUP_FIELDS = ['project', 'enAndroid', 'enIos', 'enWeb', 'langMap', 'extra', 'langWeb', 'langMob', 'enAssign', 'enEdit', 'links', 'bandTpl', 'bandHook', 'bandAuto', 'bandPeople', 'bandTplWeb', 'bandTplApp'];
   var scSetup = el('select', { class: 'presel' });
   function setupsOf(c) {
     var list = (c.setups || []).slice();
@@ -1923,7 +1931,8 @@
   function fieldsNow() {
     return { project: scProject.value.trim(), enAndroid: scEnAndroid.value.trim(), enIos: scEnIos.value.trim(), enWeb: scEnWeb.value.trim(), langMap: scLangs.value, extra: scExtra.value.trim(),
       langWeb: scLangWeb.value.trim(), langMob: scLangMob.value.trim(),
-      bandTpl: bandTpl.value, bandHook: bandHook.value.trim(), bandAuto: bandAuto.checked };
+      bandTpl: bandTpl.value, bandHook: bandHook.value.trim(), bandAuto: bandAuto.checked,
+      bandPeople: bandPeople.value.trim(), bandTplWeb: bandTplWeb.value, bandTplApp: bandTplApp.value };
   }
   /* переключить сетап: его поля становятся текущими настройками */
   function switchSetup(name) {
@@ -1980,6 +1989,7 @@
       scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos; scEnWeb.value = c.enWeb || '';
       scLangWeb.value = c.langWeb || ''; scLangMob.value = c.langMob || '';
       bandTpl.value = c.bandTpl || ''; bandHook.value = c.bandHook || ''; bandAuto.checked = !!c.bandAuto;
+      bandPeople.value = c.bandPeople || ''; bandTplWeb.value = c.bandTplWeb || ''; bandTplApp.value = c.bandTplApp || '';
       asgSel = (c.enAssign || []).slice(); edSel = (c.enEdit || []).slice(); asgOn.checked = c.enAssignOn !== false;
       schOn.checked = !!c.schedOn; schText.value = c.sched || 'вт 14:00, пт 10:00'; schShowNext();
       dirShow();
@@ -2053,11 +2063,16 @@
       el('div', { class: 'row' }, [asgLoad, asgMsg]),
       asgList]),
     connFold,
-    fold('Сообщение в чат (Band)', [
-      el('p', { class: 'muted', text: 'После «Выгрузить и отправить» на главной появится готовое сообщение — его можно скопировать или отправить в чат. Подстановки: {дата} {проект} {архивы} {smartcat} {языки} {компоненты} {строки}.' }),
-      el('label', {}, ['Шаблон — пусто = стандартный', bandTpl]),
-      el('label', {}, ['Вебхук чата (входящий вебхук Band / Mattermost / Slack)', bandHook]),
-      el('label', { class: 'blk', style: 'color:#1A0F2E' }, [bandAuto, 'отправлять в чат автоматически'])]),
+    fold('Сообщения в чат (Band)', [
+      el('p', { class: 'muted', text: 'После «Выгрузить и отправить» на главной появятся готовые сообщения для веба и для приложений — со ссылками на Smartcat. Вписываешь дедлайн, копируешь, вставляешь в Band.' }),
+      el('label', {}, ['Кого тегнуть ({люди})', bandPeople]),
+      el('label', {}, ['Сообщение для веба — пусто = стандартное', bandTplWeb]),
+      el('label', {}, ['Сообщение для приложений — пусто = стандартное', bandTplApp]),
+      el('p', { class: 'muted', text: 'Подстановки: {люди} {дедлайн} {дата} {ссылка_веб} {папка_веб} {ссылка_android} {ссылка_ios} {файл_android} {файл_ios} {архивы} {языки} {компоненты} {строки}.' }),
+      el('details', { class: 'more' }, [el('summary', { text: 'Сводка и автоотправка по вебхуку (не обязательно)' }),
+        el('label', {}, ['Сводка — пусто = стандартная', bandTpl]),
+        el('label', {}, ['Вебхук чата (Band / Mattermost / Slack)', bandHook]),
+        el('label', { class: 'blk', style: 'color:#1A0F2E' }, [bandAuto, 'отправлять сводку в чат автоматически'])])]),
     fold('Папка для архивов', [
       el('p', { class: 'muted', text: 'Куда сохранять zip для подрядчиков. Если папка недоступна — архив скачается в «Загрузки».' }),
       el('div', { class: 'row' }, [dirPick, dirForget, dirInfo]),
@@ -2220,7 +2235,7 @@
         return new Promise(function (resolve) {
           scAutoHook = function (x) {
             var made = (x.made || []).join(', '), en = (x.en || []).join(', ');
-            if (info) info.smartcat = x.error ? 'ошибка: ' + x.error : (made || '—') + (en ? '; английский: ' + en : '');
+            if (info) { info.smartcat = x.error ? 'ошибка: ' + x.error : (made || '—') + (en ? '; английский: ' + en : ''); info.links = x.links || {}; }
             if (x.error) homeStep(1, 'err', x.error + (made ? ' · отправлено: ' + made : ''));
             else homeStep(1, 'ok', (made || 'отправлено') + (en ? ' · английский: ' + en : ''));
             homeRefreshSc(); resolve();
@@ -2234,24 +2249,53 @@
       homeStep(cur ? homeSteps.indexOf(cur) : 0, 'err', friendly(e));
     }).then(function () { homeGo.disabled = homeZip.disabled = false; homeRefreshSc(); if (info) homeMessage(info); });
   }
-  /* готовое сообщение в чат (Band) по шаблону из ⚙ → «Сообщение в чат» */
-  var homeMsgText = el('textarea', { class: 'small' });
+  /* готовые сообщения в чат (Band): для веба и для приложений — по шаблонам из ⚙ → «Сообщения в чат» */
+  var homeMsgText = el('textarea', { class: 'small' });   // сводка (для вебхука)
   var homeMsgSt = el('span', { class: 'muted' });
-  var homeMsgSend = el('button', { class: 'b s', type: 'button', text: '💬 Отправить в чат', onclick: function () { homeSendMsg(); } });
-  var homeMsgCard = card('Сообщение в чат', [homeMsgText, el('div', { class: 'row' }, [
-    el('button', { class: 'b g s', type: 'button', text: 'Скопировать', onclick: function () {
-      var done = function () { homeMsgSt.className = 'ok'; homeMsgSt.textContent = '✓ Скопировано'; };
-      if (navigator.clipboard) navigator.clipboard.writeText(homeMsgText.value).then(done, function () { homeMsgText.select(); document.execCommand('copy'); done(); });
-      else { homeMsgText.select(); document.execCommand('copy'); done(); }
-    } }), homeMsgSend, homeMsgSt])], 'hide');
-  function homeMessage(info) {
-    var tpl = (scCfg && scCfg.bandTpl && scCfg.bandTpl.trim()) || BAND_TPL_DEFAULT;
-    homeMsgText.value = tpl.replace(/\{(дата|проект|архивы|smartcat|языки|компоненты|строки)\}/g, function (m, k) { return info[k] != null ? info[k] : m; });
-    homeMsgSt.textContent = '';
+  var homeMsgSend = el('button', { class: 'b s', type: 'button', text: '💬 Отправить сводку в чат', onclick: function () { homeSendMsg(); } });
+  var homeDeadline = el('input', { type: 'text', class: 'dl', placeholder: 'например: 15.10, 18:00' });
+  var homeMsgBox = el('div');
+  var homeMsgInfo = null;
+  function copyText(ta, st) {
+    var done = function () { st.className = 'ok'; st.textContent = '✓ Скопировано'; setTimeout(function () { st.textContent = ''; }, 2500); };
+    var fallback = function () { ta.select(); try { document.execCommand('copy'); } catch (e) {} done(); };
+    if (navigator.clipboard) navigator.clipboard.writeText(ta.value).then(done, fallback); else fallback();
+  }
+  var homeMsgCard = card('Сообщения в чат', [
+    el('label', { class: 'lbl', text: 'Дедлайн' }), homeDeadline,
+    homeMsgBox], 'hide');
+  homeDeadline.addEventListener('input', function () { if (homeMsgInfo) homeMessage(homeMsgInfo, true); });
+  function chatFill(tpl, info) {
+    var L = info.links || {}, md = function (t, x) { return x ? '[' + t + '](' + x.url + ')' : '—'; };
+    var v = {
+      'люди': (scCfg && scCfg.bandPeople) || '', 'дедлайн': homeDeadline.value.trim() || '[дедлайн]',
+      'ссылка_веб': L.web ? md(L.web.folder, L.web) : '—', 'папка_веб': L.web ? L.web.folder : '—',
+      'ссылка_android': L.android ? md(L.android.file, L.android) : '—', 'ссылка_ios': L.ios ? md(L.ios.file, L.ios) : '—',
+      'файл_android': L.android ? L.android.file : '—', 'файл_ios': L.ios ? L.ios.file : '—'
+    };
+    return tpl.replace(/\{([а-яёa-z_]+)\}/gi, function (m, k) { return v[k] != null ? v[k] : info[k] != null ? info[k] : m; });
+  }
+  function homeMessage(info, refill) {
+    homeMsgInfo = info;
+    var L = info.links || {}, blocks = [];
+    if (L.web) blocks.push(['Для веба', (scCfg && scCfg.bandTplWeb && scCfg.bandTplWeb.trim()) || BAND_TPL_WEB]);
+    if (L.android || L.ios) blocks.push(['Для приложений', (scCfg && scCfg.bandTplApp && scCfg.bandTplApp.trim()) || BAND_TPL_APP]);
+    homeMsgBox.textContent = '';
+    blocks.forEach(function (b) {
+      var ta = el('textarea', { class: 'small msg' }), st = el('span', { class: 'muted' });
+      ta.value = chatFill(b[1], info);
+      homeMsgBox.appendChild(el('div', { class: 'msgblk' }, [el('div', { class: 'lbl', text: b[0] }), ta,
+        el('div', { class: 'row' }, [el('button', { class: 'b s', type: 'button', text: '📋 Скопировать', onclick: function () { copyText(ta, st); } }), st])]));
+    });
+    if (!blocks.length) homeMsgBox.appendChild(el('p', { class: 'muted', text: 'Сообщения появятся, когда английский уйдёт в Smartcat (веб — в «МП Web», android/iOS — в английские проекты).' }));
+    /* сводка для вебхука — только если он настроен */
     var hook = scCfg && scCfg.bandHook;
-    homeMsgSend.classList.toggle('hide', !hook);
+    if (hook) {
+      homeMsgText.value = chatFill((scCfg.bandTpl && scCfg.bandTpl.trim()) || BAND_TPL_DEFAULT, info);
+      homeMsgBox.appendChild(el('details', { class: 'more' }, [el('summary', { text: 'Сводка в чат по вебхуку' }), homeMsgText, el('div', { class: 'row' }, [homeMsgSend, homeMsgSt])]));
+      if (scCfg.bandAuto && !refill) homeSendMsg();
+    }
     homeMsgCard.classList.remove('hide');
-    if (hook && scCfg.bandAuto) homeSendMsg();
   }
   function homeSendMsg() {
     var hook = scCfg && scCfg.bandHook;
@@ -2789,7 +2833,8 @@
               if (!code) throw new Error('в проекте «' + pr.name + '» нет английского (в нём: ' + pls.join(', ') + ')');
               return scCall('sc-add-docs', { projectId: pr.id, files: by[pl].map(function (f) {
                 return { name: ddmmyy() + '_' + f.name, text: scSendText(f.text), targetLanguages: [code] };
-              }) }).then(function (r) { acc.push({ ok: true, text: pl + ' → ' + pr.name + ' (' + r.documents.length + ' док.)', docIds: r.documents.map(function (d) { return d.id; }) }); return acc; });
+              }) }).then(function (r) { acc.push({ ok: true, text: pl + ' → ' + pr.name + ' (' + r.documents.length + ' док.)', docIds: r.documents.map(function (d) { return d.id; }),
+                pl: pl, projectId: pr.id, files: by[pl].map(function (f) { return ddmmyy() + '_' + f.name; }) }); return acc; });
             }).catch(function (e) { acc.push({ ok: false, text: pl + ': ' + e.message }); return acc; });
           });
         }, Promise.resolve([]));
@@ -2875,8 +2920,12 @@
           msg.appendChild(el('div', { text: '✗ ' + e.message }));
         }).then(function () {
           renderScImport();
+          /* ссылки для сообщения в чат: папка веба в «МП Web», файлы в английских проектах android/ios */
+          var chatLinks = {};
+          made.forEach(function (p) { if (p.enDocs) chatLinks.web = { url: c.base + '/projects/' + p.id, folder: String(p.name || '').split(' / ').pop() }; });
+          enRes.forEach(function (x) { if (x.ok && x.pl) chatLinks[x.pl] = { url: c.base + '/projects/' + x.projectId, file: (x.files || []).join(', ') }; });
           autoDone({ made: made.map(function (p) { return p.name + (p.docs != null ? ' (' + p.docs + ' док.)' : ''); }),
-            en: enRes.map(function (x) { return (x.ok ? '' : '✗ ') + x.text; }), error: msg.className === 'red' ? msg.textContent.slice(0, 200) : '' });
+            en: enRes.map(function (x) { return (x.ok ? '' : '✗ ') + x.text; }), error: msg.className === 'red' ? msg.textContent.slice(0, 200) : '', links: chatLinks });
           if (!made.length) return;
           if (msg.className !== 'red') msg.textContent = '';
           msg.insertBefore(el('div', {}, [document.createTextNode(c.project ? '✓ Файлы добавлены: ' : '✓ Созданы проекты: ')].concat(made.map(function (p, i) {
