@@ -39,9 +39,21 @@ async function scFetch(path, init = {}) {
   }
   return r;
 }
+/* тело файла: текст или двоичный файл в base64 (docx, xlsx…) */
+const fileBody = (f) => (f.b64 ? Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0)) : f.text);
+/* шрифт окна (Onest, OFL) — отдаём странице данными: так не нужны web_accessible_resources и не мешает CSP Weblate */
+const SC_FONTS = ['cyrillic', 'latin'].flatMap((s) => [400, 500, 600, 700].map((w) => ({ s, w })));
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 const SC_HANDLERS = {
+  async 'ui-fonts'() {
+    return Promise.all(SC_FONTS.map(async (f) => {
+      const buf = new Uint8Array(await (await fetch(chrome.runtime.getURL('fonts/onest-' + f.s + '-' + f.w + '-normal.woff2'))).arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+      return { s: f.s, w: f.w, b64: btoa(bin) };
+    }));
+  },
   async 'sc-get-config'() {
     const c = await scConfig();
     return { server: c.server || 'eu', customUrl: c.customUrl || '', accountId: c.accountId || '', hasKey: !!c.apiKey,
@@ -67,7 +79,7 @@ const SC_HANDLERS = {
     const parts = ['--' + boundary + '\r\nContent-Disposition: form-data; name="model"\r\nContent-Type: application/json\r\n\r\n' +
       JSON.stringify(m.model) + '\r\n'];
     m.files.forEach((f) => parts.push('--' + boundary + '\r\nContent-Disposition: form-data; name="file"; filename="' + q(f.name) +
-      '"\r\nContent-Type: application/octet-stream\r\n\r\n', f.text, '\r\n'));
+      '"\r\nContent-Type: application/octet-stream\r\n\r\n', fileBody(f), '\r\n'));
     parts.push('--' + boundary + '--\r\n');
     const r = await scFetch('/project/create', {
       method: 'POST', body: new Blob(parts), headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary }
@@ -113,7 +125,7 @@ const SC_HANDLERS = {
         JSON.stringify(models) + '\r\n');
     }
     m.files.forEach((f) => parts.push('--' + boundary + '\r\nContent-Disposition: form-data; name="file"; filename="' + q(f.name) +
-      '"\r\nContent-Type: application/octet-stream\r\n\r\n', f.text, '\r\n'));
+      '"\r\nContent-Type: application/octet-stream\r\n\r\n', fileBody(f), '\r\n'));
     parts.push('--' + boundary + '--\r\n');
     await scFetch('/project/document?projectId=' + encodeURIComponent(m.projectId), {
       method: 'POST', body: new Blob(parts), headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary }
