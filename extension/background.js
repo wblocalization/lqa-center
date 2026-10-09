@@ -46,7 +46,7 @@ const SC_HANDLERS = {
     const c = await scConfig();
     return { server: c.server || 'eu', customUrl: c.customUrl || '', accountId: c.accountId || '', hasKey: !!c.apiKey,
       langMap: c.langMap || '', extra: c.extra || '', project: c.project || '',
-      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', enAssign: c.enAssign || [], enEdit: c.enEdit || [], langWeb: c.langWeb || '', langMob: c.langMob || '', links: c.links || '', enAssignOn: c.enAssignOn !== false, schedOn: !!c.schedOn, sched: c.sched || SCHED_DEFAULT, base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
+      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', enAssign: c.enAssign || [], enEdit: c.enEdit || [], langWeb: c.langWeb || '', langMob: c.langMob || '', links: c.links || '', bandTpl: c.bandTpl || '', bandHook: c.bandHook || '', bandAuto: !!c.bandAuto, enAssignOn: c.enAssignOn !== false, schedOn: !!c.schedOn, sched: c.sched || SCHED_DEFAULT, base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
   },
   async 'sc-set-config'(m) {
     const c = await scConfig();
@@ -324,21 +324,40 @@ SC_HANDLERS['sc-team'] = async () => {
 };
 /* назначить людей из «Моей команды» на документы (этап 1 — перевод); документ после загрузки ещё разбирается — повторяем */
 SC_HANDLERS['sc-assign'] = async (m) => {
-  const body = (strategy) => JSON.stringify({ documentIds: m.documentIds, stageNumber: m.stage || 1, strategy, userIds: m.userIds });
-  let last;
-  for (let i = 0; i < 8; i++) {
-    for (const strategy of ['distributeAmongAll', 'DistributeAmongAll']) {
+  const stage = m.stage || 1;
+  const json = (o) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
+  /* 1) прямое назначение исполнителей с режимом «распределить между всеми, кто принял»;
+     2) запасной путь — приглашение из «Моей команды» (старый способ) */
+  const tries = [
+    ['assign', '/document/assign', { documentIds: m.documentIds, stageNumber: stage, executives: m.userIds.map((id) => ({ id })), minWordsCountForExecutive: 0, assignmentMode: 'distributeAmongAll' }],
+    ['assign', '/document/assign', { documentIds: m.documentIds, stageNumber: stage, executives: m.userIds.map((id) => ({ id, wordsCount: 0 })), minWordsCountForExecutive: 0, assignmentMode: 'DistributeAmongAll' }],
+    ['myTeam', '/document/assignFromMyTeam', { documentIds: m.documentIds, stageNumber: stage, strategy: 'distributeAmongAll', userIds: m.userIds }]
+  ];
+  const errs = [];
+  for (let round = 0; round < 6; round++) {
+    let notReady = false;
+    for (const [how, path, body] of tries) {
       try {
-        await scFetch('/document/assignFromMyTeam', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body(strategy) });
-        return { ok: true, tries: i + 1 };
+        await scFetch(path, json(body));
+        return { ok: true, how, tries: round + 1 };
       } catch (e) {
-        last = e;
-        if (!/strategy/i.test(String(e.message))) break;      // другое написание режима пробуем только при ошибке про режим
+        const t = String(e.message);
+        errs.push(how + ': ' + t.slice(0, 200));
+        if (/disassembl|not ready|processing|is being|not found.*document|документ/i.test(t)) notReady = true;
       }
     }
+    if (!notReady) break;           // ошибка не про «документ ещё разбирается» — ждать смысла нет
     await sleep(5000);
   }
-  throw last;
+  throw new Error(errs.slice(-3).join(' | '));
+};
+/* сообщение в рабочий чат по вебхуку (Band / Mattermost / Slack-совместимый: JSON {"text": …}).
+   «простой» запрос без предварительной проверки: ответ чата не читается, поэтому успех не гарантирован */
+SC_HANDLERS['band-send'] = async (m) => {
+  const url = String(m.url || '').trim();
+  if (!/^https:\/\//i.test(url)) throw new Error('ссылка вебхука должна начинаться с https://');
+  await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ text: String(m.text || '') }) });
+  return { sent: true };
 };
 SC_HANDLERS['sc-ready-get'] = async () => (await chrome.storage.local.get('scReady')).scReady || {};
 SC_HANDLERS['sc-watch-now'] = () => checkSmartcatReady();

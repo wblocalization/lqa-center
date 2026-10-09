@@ -1775,6 +1775,11 @@
   var scEnWeb = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.web });
   var scLangWeb = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg am az' });
   var scLangMob = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg az' });
+  /* сообщение в чат (Band): шаблон, вебхук, автоотправка — у каждого сетапа свои */
+  var BAND_TPL_DEFAULT = 'Привет! Выгрузка {дата} · {проект}\n📦 Подрядчикам: {архивы}\n🤖 В Smartcat: {smartcat}\n🌍 Языки: {языки}\n🧩 Компоненты: {компоненты}\nСтрок: {строки}';
+  var bandTpl = el('textarea', { class: 'small', placeholder: BAND_TPL_DEFAULT });
+  var bandHook = el('input', { type: 'text', placeholder: 'https://… (вебхук чата; пусто — только «Скопировать»)' });
+  var bandAuto = el('input', { type: 'checkbox' });
   /* папка для архивов */
   var dirInfo = el('span', { class: 'muted' });
   var dirDated = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
@@ -1896,7 +1901,7 @@
     }, function () { return null; });
   }
   /* ----- сетапы: свой проект / английские проекты / коды языков; аккаунт и ключ общие ----- */
-  var SETUP_FIELDS = ['project', 'enAndroid', 'enIos', 'enWeb', 'langMap', 'extra', 'langWeb', 'langMob', 'enAssign', 'enEdit', 'links'];
+  var SETUP_FIELDS = ['project', 'enAndroid', 'enIos', 'enWeb', 'langMap', 'extra', 'langWeb', 'langMob', 'enAssign', 'enEdit', 'links', 'bandTpl', 'bandHook', 'bandAuto'];
   var scSetup = el('select', { class: 'presel' });
   function setupsOf(c) {
     var list = (c.setups || []).slice();
@@ -1917,7 +1922,8 @@
   }
   function fieldsNow() {
     return { project: scProject.value.trim(), enAndroid: scEnAndroid.value.trim(), enIos: scEnIos.value.trim(), enWeb: scEnWeb.value.trim(), langMap: scLangs.value, extra: scExtra.value.trim(),
-      langWeb: scLangWeb.value.trim(), langMob: scLangMob.value.trim() };
+      langWeb: scLangWeb.value.trim(), langMob: scLangMob.value.trim(),
+      bandTpl: bandTpl.value, bandHook: bandHook.value.trim(), bandAuto: bandAuto.checked };
   }
   /* переключить сетап: его поля становятся текущими настройками */
   function switchSetup(name) {
@@ -1973,6 +1979,7 @@
       scLangs.value = c.langMap; scExtra.value = c.extra; scProject.value = c.project === SC_PROJECT_DEFAULT ? '' : c.project;
       scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos; scEnWeb.value = c.enWeb || '';
       scLangWeb.value = c.langWeb || ''; scLangMob.value = c.langMob || '';
+      bandTpl.value = c.bandTpl || ''; bandHook.value = c.bandHook || ''; bandAuto.checked = !!c.bandAuto;
       asgSel = (c.enAssign || []).slice(); edSel = (c.enEdit || []).slice(); asgOn.checked = c.enAssignOn !== false;
       schOn.checked = !!c.schedOn; schText.value = c.sched || 'вт 14:00, пт 10:00'; schShowNext();
       dirShow();
@@ -2046,6 +2053,11 @@
       el('div', { class: 'row' }, [asgLoad, asgMsg]),
       asgList]),
     connFold,
+    fold('Сообщение в чат (Band)', [
+      el('p', { class: 'muted', text: 'После «Выгрузить и отправить» на главной появится готовое сообщение — его можно скопировать или отправить в чат. Подстановки: {дата} {проект} {архивы} {smartcat} {языки} {компоненты} {строки}.' }),
+      el('label', {}, ['Шаблон — пусто = стандартный', bandTpl]),
+      el('label', {}, ['Вебхук чата (входящий вебхук Band / Mattermost / Slack)', bandHook]),
+      el('label', { class: 'blk', style: 'color:#1A0F2E' }, [bandAuto, 'отправлять в чат автоматически'])]),
     fold('Папка для архивов', [
       el('p', { class: 'muted', text: 'Куда сохранять zip для подрядчиков. Если папка недоступна — архив скачается в «Загрузки».' }),
       el('div', { class: 'row' }, [dirPick, dirForget, dirInfo]),
@@ -2143,6 +2155,7 @@
   function homeRun(send) {
     var text = homeLinks.value.trim();
     homeSteps.forEach(function (s, i) { homeStep(i, 'next', ''); });
+    homeAssignOn = false;
     if (!parseLinks(text).length) { homeStep(0, 'err', 'Вставь ссылки на компоненты Weblate (…/projects/<проект>/…)'); return; }
     sset('wlx_home_links', text);
     if (HAS_EXT) patchSetup({ links: text }).catch(function () {});
@@ -2150,7 +2163,8 @@
     homeOut.textContent = ''; homeDetails.classList.add('hide');
     homeProg.classList.remove('hide'); homeBar.style.width = '0%';
     homeStep(0, 'run', 'Ищу компоненты…');
-    var map = {}, union = [], hcomps = [];
+    var map = {}, union = [], hcomps = [], info = null;
+    homeMsgCard.classList.add('hide');
     resolveLinks(text).then(function (r) {
       hcomps = r.comps;
       if (r.missing.length) { homeOut.appendChild(el('div', { class: 'err', text: 'Не нашла компоненты по ссылкам:\n' + r.missing.join('\n') })); homeDetails.classList.remove('hide'); }
@@ -2185,6 +2199,10 @@
       if (!res.length) { homeStep(0, 'ok', 'Непереведённого нет — всё переведено 🎉' + (errs.length ? ' (есть проблемы — ниже)' : '')); return; }
       var strings = res.reduce(function (a, x) { return a + x.strings; }, 0);
       var a = saveArchives(res);
+      var uniq = function (l) { return l.filter(function (x, i, arr) { return arr.indexOf(x) === i; }); };
+      info = { 'дата': ddmmyy(), 'проект': scCfg ? activeSetup(scCfg).name : '', 'архивы': a.zips.length ? a.zips.map(function (z) { return z + '.zip'; }).join(', ') : '—',
+        'smartcat': send && HAS_EXT ? '…' : 'не отправляли', 'языки': uniq(res.map(function (x) { return langName(x.language); })).join(', '),
+        'компоненты': uniq(res.map(function (x) { return x.component; })).join(', '), 'строки': String(strings) };
       homeStep(0, 'ok', strings + ' строк · ' + (a.zips.length ? 'сохранены ' + a.zips.map(function (z) { return z + '.zip'; }).join(', ') : 'только английский — архивов нет'),
         el('button', { class: 'b g s', type: 'button', text: '⬇ ещё раз', onclick: function () { saveArchives(res); } }));
       if (!send || !HAS_EXT) { homeStep(1, 'next', send ? '' : 'пропущено — выбрано «Только архивы»'); return; }
@@ -2192,14 +2210,17 @@
       var box = el('div'); homeOut.appendChild(box);
       return Promise.resolve(renderSmartcat(res, box)).then(function (btn) {
         if (!btn) {
+          if (info) info.smartcat = 'не отправляли';
           homeStep(1, 'err', scCfg && scCfg.accountId && scCfg.hasKey ? 'Отправлять в Smartcat нечего' : 'Smartcat не подключён — открой ⚙');
           return;
         }
         homeDetails.classList.remove('hide');
         homeStep(1, 'run', 'Отправляю в Smartcat…');
+        homeAssignOn = true;
         return new Promise(function (resolve) {
           scAutoHook = function (x) {
             var made = (x.made || []).join(', '), en = (x.en || []).join(', ');
+            if (info) info.smartcat = x.error ? 'ошибка: ' + x.error : (made || '—') + (en ? '; английский: ' + en : '');
             if (x.error) homeStep(1, 'err', x.error + (made ? ' · отправлено: ' + made : ''));
             else homeStep(1, 'ok', (made || 'отправлено') + (en ? ' · английский: ' + en : ''));
             homeRefreshSc(); resolve();
@@ -2211,7 +2232,42 @@
       homeProg.classList.add('hide');
       var cur = homeSteps.filter(function (s) { return /d-run/.test(s.dot.className); })[0];
       homeStep(cur ? homeSteps.indexOf(cur) : 0, 'err', friendly(e));
-    }).then(function () { homeGo.disabled = homeZip.disabled = false; homeRefreshSc(); });
+    }).then(function () { homeGo.disabled = homeZip.disabled = false; homeRefreshSc(); if (info) homeMessage(info); });
+  }
+  /* готовое сообщение в чат (Band) по шаблону из ⚙ → «Сообщение в чат» */
+  var homeMsgText = el('textarea', { class: 'small' });
+  var homeMsgSt = el('span', { class: 'muted' });
+  var homeMsgSend = el('button', { class: 'b s', type: 'button', text: '💬 Отправить в чат', onclick: function () { homeSendMsg(); } });
+  var homeMsgCard = card('Сообщение в чат', [homeMsgText, el('div', { class: 'row' }, [
+    el('button', { class: 'b g s', type: 'button', text: 'Скопировать', onclick: function () {
+      var done = function () { homeMsgSt.className = 'ok'; homeMsgSt.textContent = '✓ Скопировано'; };
+      if (navigator.clipboard) navigator.clipboard.writeText(homeMsgText.value).then(done, function () { homeMsgText.select(); document.execCommand('copy'); done(); });
+      else { homeMsgText.select(); document.execCommand('copy'); done(); }
+    } }), homeMsgSend, homeMsgSt])], 'hide');
+  function homeMessage(info) {
+    var tpl = (scCfg && scCfg.bandTpl && scCfg.bandTpl.trim()) || BAND_TPL_DEFAULT;
+    homeMsgText.value = tpl.replace(/\{(дата|проект|архивы|smartcat|языки|компоненты|строки)\}/g, function (m, k) { return info[k] != null ? info[k] : m; });
+    homeMsgSt.textContent = '';
+    var hook = scCfg && scCfg.bandHook;
+    homeMsgSend.classList.toggle('hide', !hook);
+    homeMsgCard.classList.remove('hide');
+    if (hook && scCfg.bandAuto) homeSendMsg();
+  }
+  function homeSendMsg() {
+    var hook = scCfg && scCfg.bandHook;
+    if (!hook) return;
+    homeMsgSend.disabled = true; homeMsgSt.className = 'muted'; homeMsgSt.textContent = 'Отправляю…';
+    scCall('band-send', { url: hook, text: homeMsgText.value }).then(function () {
+      homeMsgSt.className = 'ok'; homeMsgSt.textContent = '✓ Отправлено в чат (проверь, что сообщение пришло)';
+    }, function (e) { homeMsgSt.className = 'red'; homeMsgSt.textContent = '✗ ' + e.message; }).then(function () { homeMsgSend.disabled = false; });
+  }
+  /* итог назначения людей на английский — дописываем во 2-й шаг главной */
+  var homeAssignOn = false;
+  function homeAssignNote(text, ok) {
+    if (!homeAssignOn) return;
+    var st = homeSteps[1];
+    st.sub.textContent += (st.sub.textContent ? ' · ' : '') + text;
+    if (!ok) { st.sub.className = 'red'; homeDetails.classList.remove('hide'); }
   }
   /* шаги 3–4: что сейчас ждёт перевода в Smartcat и что можно загрузить */
   function homeRefreshSc() {
@@ -2259,6 +2315,7 @@
     el('div', { class: 'row' }, [homeGo, homeZip]),
     homeProg], 'homecard'),
     card('Что дальше', [el('div', { class: 'steps', style: 'margin-top:0;padding-top:0;border-top:0' }, homeSteps.map(function (s) { return s.row; })), homeDetails]),
+    homeMsgCard,
     homeDrop,
     el('div', { class: 'row hfoot' }, [
       HAS_EXT ? el('button', { class: 'lnk', type: 'button', text: 'Все отправки в Smartcat ›', onclick: function () { tab('sc'); } }) : null,
@@ -2840,9 +2897,13 @@
               var am = el('div', { class: 'muted', text: 'Назначаю на английский (' + ro.label + '): ' + ro.list.map(function (x) { return x.name; }).join(', ') + '…' });
               msg.appendChild(am);
               return chain.then(function () {
-                return scCall('sc-assign', { documentIds: enDocIds, stage: ro.stage, userIds: ro.list.map(function (x) { return x.id; }) }).then(function () {
-                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + ' (все, кто примет)';
-                }, function (e) { am.className = 'red'; am.textContent = '✗ Не получилось назначить (' + ro.label + ', этап ' + ro.stage + '): ' + e.message + ' — назначь в Smartcat вручную'; });
+                return scCall('sc-assign', { documentIds: enDocIds, stage: ro.stage, userIds: ro.list.map(function (x) { return x.id; }) }).then(function (res) {
+                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + ' (все, кто примет' + (res && res.how === 'myTeam' ? '; через приглашение «Моей команды»' : '') + ')';
+                  homeAssignNote('✓ ' + ro.label + ': ' + ro.list.length + ' чел.', true);
+                }, function (e) {
+                  am.className = 'red'; am.textContent = '✗ Не получилось назначить (' + ro.label + ', этап ' + ro.stage + '): ' + e.message + ' — назначь в Smartcat вручную';
+                  homeAssignNote('✗ ' + ro.label + ' не назначена — текст ошибки в «Подробностях»', false);
+                });
               });
             }, Promise.resolve());
           } else if (enDocIds.length && !who.length && !eds.length) {
