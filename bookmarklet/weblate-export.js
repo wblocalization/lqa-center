@@ -478,26 +478,30 @@
   }
   function poEsc(t) { return String(t).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\t/g, '\\t'); }
   /* файл только с вытащенными из «мусора» переводами — грузится отдельно, со статусом «На правку» */
-  function salvageText(u, items) {
+  /* строки с ошибкой — отдельным файлом «На правку»: вытащенный из мусора перевод (it.use) или как есть (raw) */
+  function salvageText(u, items, raw) {
+    var salv = 0, kept = 0;
     if (/\.json$/i.test(u.name)) {
       var jo = JSON.parse(u.text), plBase = function (k) { return k.replace(/_(zero|one|two|few|many|other|plural|\d+)$/, ''); };
-      var bad = (u.vars || []).filter(function (x) { return x.hard; }), out = {}, n = 0;
+      var bad = (u.vars || []).filter(function (x) { return x.hard; }), out = {};
       var bases = items.map(function (x) { return plBase(x.idx); }).filter(function (b, i, a) { return a.indexOf(b) === i; });
       bases.forEach(function (b) {
         var badHere = bad.filter(function (x) { return plBase(x.idx) === b; });
-        if (!badHere.every(function (x) { return x.salvage; })) return;        // плюралку — только целиком
-        Object.keys(jo).forEach(function (k) { if (plBase(k) === b) { var fix = badHere.filter(function (x) { return x.idx === k; })[0]; out[k] = fix ? fix.salvage : jo[k]; } });
-        n += badHere.length;
+        if (!raw && !badHere.every(function (x) { return x.use; })) return;        // плюралку — только целиком
+        Object.keys(jo).forEach(function (k) { if (plBase(k) === b) { var fix = badHere.filter(function (x) { return x.idx === k; })[0]; out[k] = fix && fix.use ? fix.use : jo[k]; } });
+        badHere.forEach(function (x) { if (x.use) { x.upState = 'salv'; salv++; } else { x.upState = 'raw'; kept++; } });
       });
-      return n ? { text: JSON.stringify(out, null, 2) + '\n', n: n } : null;
+      return salv + kept ? { text: JSON.stringify(out, null, 2) + '\n', salv: salv, raw: kept } : null;
     }
-    var es = poEntries(u.text), parts = [], cnt = 0;
+    var es = poEntries(u.text), parts = [];
     es.forEach(function (e, i) {
       if (e.header) { parts.push(e.lines.join('\n')); return; }
       var it = items.filter(function (x) { return x.idx === i; })[0];
-      if (it) { parts.push(setPoStrs(e, [poEsc(it.salvage)])); cnt++; }
+      if (!it) return;
+      if (it.use) { parts.push(setPoStrs(e, [poEsc(it.use)])); it.upState = 'salv'; salv++; }
+      else if (raw) { parts.push(e.lines.join('\n')); it.upState = 'raw'; kept++; }
     });
-    return cnt ? { text: parts.join('\n\n') + '\n', n: cnt } : null;
+    return salv + kept ? { text: parts.join('\n\n') + '\n', salv: salv, raw: kept } : null;
   }
   function dropEntries(text, idxs) {
     return poEntries(text).filter(function (e, i) { return idxs.indexOf(i) < 0; }).map(function (e) { return e.lines.join('\n'); }).join('\n\n') + '\n';
@@ -1282,6 +1286,9 @@
   var salvageOn = el('input', { type: 'checkbox' });
   salvageOn.checked = sget('wlx_salvage') !== '0';
   salvageOn.addEventListener('change', function () { sset('wlx_salvage', salvageOn.checked ? '1' : '0'); });
+  var brokenUp = el('input', { type: 'checkbox' });
+  brokenUp.checked = sget('wlx_brokenup') !== '0';
+  brokenUp.addEventListener('change', function () { sset('wlx_brokenup', brokenUp.checked ? '1' : '0'); renderPreview(); });
   var varSkip = el('input', { type: 'checkbox' });
   varSkip.checked = sget('wlx_varskip') !== '0';
   varSkip.addEventListener('change', function () { sset('wlx_varskip', varSkip.checked ? '1' : '0'); renderPreview(); });
@@ -1294,8 +1301,9 @@
   [optMethod, optFuzzy, optConf].forEach(function (x) { x.addEventListener('change', modeSumUpd); });
   modeSumUpd();
   var upSec = card('Загрузка', [
-    el('label', { class: 'muted blk' }, [varSkip, ' строки с ошибкой не загружать (сломанная переменная, мусор от машперевода) — остальное загрузится']),
+    el('label', { class: 'muted blk' }, [varSkip, ' строки с ошибкой (сломанная переменная, мусор от машперевода) не грузить как готовый перевод — остальное загрузится как обычно']),
     el('label', { class: 'muted blk' }, [salvageOn, ' из «рассуждений» ИИ вытаскивать сам перевод и загружать его «На правку» — чтобы осталось только проверить']),
+    el('label', { class: 'muted blk' }, [brokenUp, ' остальные строки с ошибкой загружать «На правку» как есть — после загрузки будет список со ссылками прямо на них']),
     el('details', { class: 'more' }, [modeSum,
       el('div', { class: 'opts' }, [
         el('label', {}, ['Режим загрузки файла', optMethod]),
@@ -1650,14 +1658,12 @@
           });
           box.appendChild(ln);
         }
-        var vs = sent.filter(function (u) { return u.varSkipped; });
-        if (vs.length) box.appendChild(el('div', { class: 'line red', text: '✗ Переменные: не загружено строк ' + vs.reduce(function (a, u) { return a + u.varSkipped; }, 0) +
-          ' (сломанная или лишняя переменная) — список на вкладке «Загрузить обратно»' }));
+        checkList(sent, box);
         var der = sent.filter(function (u) { return u.derived; });
         if (der.length) box.appendChild(el('div', { class: 'line', text: 'ℹ Плюралки вынесла в .json: ' +
           der.map(function (u) { return u.c; }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', ') + ' (' + der.length + ' файл.)' }));
         var prob = sent.filter(function (u) { return u.upSkipped || u.notFound; });
-        if (prob.length) { var pd = el('details', {}, [el('summary', { text: 'Какие строки не легли — файлов: ' + prob.length })]); box.appendChild(pd); explainAll(prob, pd); }
+        if (prob.length) { var pd = el('details', { open: '' }, [el('summary', { text: 'Какие строки не легли — файлов: ' + prob.length })]); box.appendChild(pd); explainAll(prob, pd); }
         if (todo.length) {
           var ft = el('table', {}, [el('tr', {}, [el('th', { text: 'Файл' }), el('th', { text: 'Куда' }), el('th', { text: 'Статус' })])]);
           todo.forEach(function (u) { ft.appendChild(el('tr', {}, [el('td', { text: u.name.split('/').pop() }), el('td', { text: where(u) }), el('td', { class: u.sent ? 'ok' : 'red', text: u.status || '' })])); });
@@ -2119,7 +2125,7 @@
   }
   /* копия настроек в файл (без API-ключа) — для нового компьютера или коллеги */
   var BACKUP_KEYS = ['wlx_links', 'wlx_langs', 'wlx_langtpl', 'wlx_langtpl_cur', 'wlx_layout', 'wlx_en', 'wlx_pj', 'wlx_mt_links', 'wlx_sc_split', 'wlx_m', 'wlx_f', 'wlx_c', 'wlx_presets_exp', 'wlx_presets_sc',
-    'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip', 'wlx_salvage', 'wlx_dir_dated', 'wlx_dir_unzip', 'wlx_byplat', 'wlx_noen'];
+    'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip', 'wlx_salvage', 'wlx_brokenup', 'wlx_dir_dated', 'wlx_dir_unzip', 'wlx_byplat', 'wlx_noen'];
   var restoreInput = el('input', { type: 'file', accept: '.json', class: 'hide' });
   function backupSettings() {
     loadScConfig().then(function (c) {
@@ -3637,6 +3643,30 @@
     });
     return el('td', {}, [el('div', { class: 'row', style: 'margin:0;gap:6px;flex-wrap:nowrap' }, [inp, ok])]);
   }
+  function strHref(u, x) { return '/translate/' + u.p + '/' + u.c + '/' + u.lang + '/?q=' + encodeURIComponent(x.ctx ? 'context:"' + x.ctx + '"' : 'source:"' + x.src.slice(0, 60) + '"'); }
+  /* после загрузки: все строки с ошибкой или «проверь глазами» — со ссылкой прямо на строку в Weblate */
+  function checkList(todo, into) {
+    var rows = [], txt = [];
+    var ST = { salv: ['ok', 'вытащила перевод → «На правку»'], raw: ['ok', 'загружено «На правку» как есть — поправь'], skip: ['red', 'не загружено'],
+      sent: ['muted', 'загружено'], soft: ['muted', 'загружено — проверь глазами'] };
+    todo.forEach(function (u) {
+      if (!u.sent || !u.vars || !u.vars.length) return;
+      u.vars.forEach(function (x) {
+        var st = ST[x.upState || (x.hard ? 'skip' : 'soft')];
+        var why = x.probs.map(function (pr) { return pr.text; }).join('; ');
+        txt.push(u.c + ' · ' + langName(u.lang) + ' · ' + (x.ctx || x.src.slice(0, 50)) + ' — ' + st[1] + ' (' + why + ') ' + location.origin + strHref(u, x));
+        rows.push(el('tr', {}, [el('td', { text: u.c + ' · ' + langName(u.lang) }),
+          el('td', {}, [el('a', { href: strHref(u, x), target: '_blank', text: (x.ctx || x.src.slice(0, 50)) + ' ↗' })]),
+          el('td', { class: 'brtr' }, [el('div', { class: st[0], text: st[1] + (x.upState === 'salv' ? ': «' + x.use + '»' : '') }), el('div', { class: 'muted', text: why })])]));
+      });
+    });
+    if (!rows.length) return;
+    var note = el('span', { class: 'muted' }), cta = el('textarea', { class: 'hide' });
+    cta.value = 'Проверь в Weblate:\n' + txt.join('\n');
+    into.appendChild(el('details', { open: '', class: 'chk-list' }, [el('summary', { text: 'Проверь в Weblate — строк: ' + rows.length + ' (клик по ключу — сразу к строке)' }),
+      el('div', { class: 'ftable' }, [el('table', {}, [el('tr', {}, [el('th', { text: 'Где' }), el('th', { text: 'Ключ' }), el('th', { text: 'Что с ней' })])].concat(rows))]),
+      el('div', { class: 'row' }, [el('button', { class: 'b g s', text: '📋 Скопировать список', onclick: function () { copyText(cta, note); } }), note, cta])]));
+  }
   function renderPreview() {
     preview.textContent = ''; upResults.textContent = '';
     if (!uploads.length) { upSec.classList.add('hide'); return; }
@@ -3649,7 +3679,7 @@
         (function () {
           var vr = varScan(u), hn = vr ? vr.filter(function (x) { return x.hard; }).length : 0;
           return el('td', {}, [el('div', { text: u.name }), vr ? el('div', { class: hn ? 'red' : 'muted',
-            text: '⚠ проверка: ' + vr.length + ' стр.' + (hn ? (varSkip.checked ? ' — с ошибкой не загружу: ' + hn : ', с ошибкой: ' + hn) : ' — проверь') }) : null]);
+            text: '⚠ проверка: ' + vr.length + ' стр.' + (hn ? (varSkip.checked ? (brokenUp.checked ? ' — с ошибкой загружу «На правку»: ' : ' — с ошибкой не загружу: ') + hn : ', с ошибкой: ' + hn) : ' — проверь') }) : null]);
         })(),
         u.lang ? el('td', { title: u.p + '/' + u.c + '/' + u.lang }, [el('div', { text: u.c }), langLabel(u.lang)]) : u.needComp ? compPicker(u) : el('td', { text: '—' }),
         el('td', { class: 'n', text: u.filled + ' из ' + u.total }),
@@ -3665,10 +3695,11 @@
         u.vars.forEach(function (x) {
           vn++; if (x.hard) vh++;
           vt.appendChild(el('tr', {}, [el('td', { text: u.c + ' · ' + langName(u.lang) }),
-            el('td', {}, [el('a', { href: '/translate/' + u.p + '/' + u.c + '/' + u.lang + '/?q=' + encodeURIComponent(x.ctx ? 'context:"' + x.ctx + '"' : 'source:"' + x.src.slice(0, 60) + '"'), target: '_blank', text: x.ctx || x.src.slice(0, 50) })]),
+            el('td', {}, [el('a', { href: strHref(u, x), target: '_blank', text: x.ctx || x.src.slice(0, 50) })]),
             el('td', { class: 'brtr', text: x.tr }),
             el('td', {}, x.probs.map(function (p) { return el('div', { class: p.hard ? 'red' : 'muted', text: (p.hard ? '✗ ' : '? ') + p.text }); })
-              .concat(x.salvage ? [el('div', { class: 'ok', text: '→ вытащу и загружу «На правку»: «' + x.salvage + '»' })] : []))]));
+              .concat(x.hard && varSkip.checked && salvageOn.checked && x.salvage ? [el('div', { class: 'ok', text: '→ вытащу и загружу «На правку»: «' + x.salvage + '»' })]
+                : x.hard && varSkip.checked && brokenUp.checked ? [el('div', { class: 'ok', text: '→ загружу «На правку» как есть — после загрузки будет ссылка' })] : []))]));
         });
       });
       preview.appendChild(el('details', vh ? { open: '' } : {}, [el('summary', { class: vh ? 'red' : 'muted',
@@ -4134,12 +4165,17 @@
           return uploadPo(sendU, u.usedOpts, token);
         }).then(function (r) {
           /* мусор от ИИ, из которого удалось вытащить перевод — отдельной загрузкой «На правку» */
-          u.salvaged = 0;
-          var items = salvageOn.checked && u.varSkipped ? (u.vars || []).filter(function (x) { return x.hard && x.salvage; }) : [];
-          var sv = items.length ? salvageText(u, items) : null;
+          u.salvaged = 0; u.rawUp = 0;
+          (u.vars || []).forEach(function (x) { x.use = salvageOn.checked && x.salvage ? x.salvage : null; x.upState = x.hard ? (u.varSkipped ? 'skip' : 'sent') : 'soft'; });
+          var items = u.varSkipped ? (u.vars || []).filter(function (x) { return x.hard && (x.use || brokenUp.checked); }) : [];
+          var sv = items.length ? salvageText(u, items, brokenUp.checked) : null;
           if (!sv) return r;
           return uploadPo(Object.assign({}, u, { text: sv.text }), { method: 'fuzzy', fuzzy: 'process', conflicts: u.usedOpts.conflicts }, token)
-            .then(function () { u.salvaged = sv.n; return r; }, function (e) { u.salvageErr = friendly(e).split('\n')[0]; return r; });
+            .then(function () { u.salvaged = sv.salv; u.rawUp = sv.raw; return r; }, function (e) {
+              u.salvageErr = friendly(e).split('\n')[0];
+              (u.vars || []).forEach(function (x) { if (x.upState === 'salv' || x.upState === 'raw') x.upState = 'skip'; });
+              return r;
+            });
         }).then(function (r) {
           clearInterval(rowTimer);
           u.sent = true; ok++;
@@ -4149,8 +4185,10 @@
               (r.skipped ? ', пропущено ' + r.skipped : '') + (r.not_found ? ', не найдено ' + r.not_found : '') +
               (r.skipped || r.not_found ? ' (какие — ниже)' : '') +
               (u.fellBack ? ' · в компоненте выключена проверка — залито с «Изменять переведённые строки»' : '') +
-              (u.varSkipped ? ' · с ошибкой не загружено: ' + (u.varSkipped - (u.salvaged || 0)) : '') +
+              (u.varSkipped - (u.salvaged || 0) - (u.rawUp || 0) > 0 ? ' · с ошибкой не загружено: ' + (u.varSkipped - (u.salvaged || 0) - (u.rawUp || 0)) : '') +
               (u.salvaged ? ' · из мусора ИИ вытащено и загружено «На правку»: ' + u.salvaged : '') +
+              (u.rawUp ? ' · с ошибкой загружено «На правку» как есть: ' + u.rawUp : '') +
+              (u.varSkipped ? ' (ссылки — ниже)' : '') +
               (u.salvageErr ? ' · «На правку» не загрузилось: ' + u.salvageErr : ''));
         }).catch(function (e) {
           clearInterval(rowTimer);
@@ -4165,6 +4203,8 @@
       upResults.textContent = 'Готово: загружено ' + ok + (bad ? ', с ошибкой ' + bad + ' (наведи на ошибку, чтобы увидеть подробности)' : '') + ' · ' + secs(t0);
       markScUploaded(todo);
       markScDone(todo);
+      checkList(todo, upResults);
+      try { upResults.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {}
       upResults.appendChild(uploadReport(todo, opts, secs(t0)));
       explainAll(todo.filter(function (u) { return u.sent && (u.upSkipped || u.notFound); }));
       if (hooks.done) hooks.done(todo, opts, secs(t0));
