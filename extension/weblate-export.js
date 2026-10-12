@@ -1925,6 +1925,7 @@
   var scEnWeb = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.web });
   var scLangWeb = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg am az' });
   var scLangMob = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg az' });
+  var scLinksMob = el('textarea', { class: 'small', placeholder: SC_DEFAULT_LINKS });
   /* сообщение в чат (Band): шаблон, вебхук, автоотправка — у каждого сетапа свои */
   var BAND_TPL_DEFAULT = 'Привет! Выгрузка {дата} · {проект}\n📦 Подрядчикам: {архивы}\n🤖 В Smartcat: {smartcat}\n🌍 Языки: {языки}\n🧩 Компоненты: {компоненты}\nСтрок: {строки}';
   var BAND_TPL_WEB = 'Привет! {люди}\n\nзагрузила новые файлики для веба {ссылка_веб}\nдедлайн — {дедлайн} :bunny_rabbit_flower_thank_you:';
@@ -2056,7 +2057,7 @@
     }, function () { return null; });
   }
   /* ----- сетапы: свой проект / английские проекты / коды языков; аккаунт и ключ общие ----- */
-  var SETUP_FIELDS = ['project', 'enAndroid', 'enIos', 'enWeb', 'langMap', 'extra', 'langWeb', 'langMob', 'enAssign', 'enEdit', 'links', 'bandTpl', 'bandHook', 'bandAuto', 'bandPeople', 'bandTplWeb', 'bandTplApp'];
+  var SETUP_FIELDS = ['project', 'enAndroid', 'enIos', 'enWeb', 'langMap', 'extra', 'langWeb', 'langMob', 'enAssign', 'enEdit', 'links', 'bandTpl', 'bandHook', 'bandAuto', 'bandPeople', 'bandTplWeb', 'bandTplApp', 'linksMob'];
   var scSetup = el('select', { class: 'presel' });
   function setupsOf(c) {
     var list = (c.setups || []).slice();
@@ -2077,7 +2078,7 @@
   }
   function fieldsNow() {
     return { project: scProject.value.trim(), enAndroid: scEnAndroid.value.trim(), enIos: scEnIos.value.trim(), enWeb: scEnWeb.value.trim(), langMap: scLangs.value, extra: scExtra.value.trim(),
-      langWeb: scLangWeb.value.trim(), langMob: scLangMob.value.trim(),
+      langWeb: scLangWeb.value.trim(), langMob: scLangMob.value.trim(), linksMob: scLinksMob.value.trim(),
       bandTpl: bandTpl.value, bandHook: bandHook.value.trim(), bandAuto: bandAuto.checked,
       bandPeople: bandPeople.value.trim(), bandTplWeb: bandTplWeb.value, bandTplApp: bandTplApp.value };
   }
@@ -2134,7 +2135,7 @@
       if (!c.hasKey || !c.accountId) connFold.open = true;
       scLangs.value = c.langMap; scExtra.value = c.extra; scProject.value = c.project === SC_PROJECT_DEFAULT ? '' : c.project;
       scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos; scEnWeb.value = c.enWeb || '';
-      scLangWeb.value = c.langWeb || ''; scLangMob.value = c.langMob || '';
+      scLangWeb.value = c.langWeb || ''; scLangMob.value = c.langMob || ''; scLinksMob.value = c.linksMob || '';
       bandTpl.value = c.bandTpl || ''; bandHook.value = c.bandHook || ''; bandAuto.checked = !!c.bandAuto;
       bandPeople.value = c.bandPeople || ''; bandTplWeb.value = c.bandTplWeb || ''; bandTplApp.value = c.bandTplApp || '';
       asgSel = (c.enAssign || []).slice(); edSel = (c.enEdit || []).slice(); asgOn.checked = c.enAssignOn !== false;
@@ -2198,6 +2199,7 @@
         el('button', { class: 'b g s', text: 'Удалить', onclick: deleteSetup })]),
       el('label', {}, ['Языки веба (коды через пробел) — пусто = ' + LANG_TPL_DEFAULTS[0].bases.join(' '), scLangWeb]),
       el('label', {}, ['Языки android и iOS — пусто = ' + LANG_TPL_DEFAULTS[1].bases.join(' '), scLangMob]),
+      el('label', {}, ['Ссылки шаблона «Android и iOS» — пусто = android + ios_new', scLinksMob]),
       el('label', {}, ['Машперевод: проект в Smartcat (ссылка или название) — пусто = «' + SC_PROJECT_DEFAULT + '»', scProject]),
       el('label', {}, ['Английский android → проект — пусто = стандартный', scEnAndroid]),
       el('label', {}, ['Английский iOS → проект — пусто = стандартный', scEnIos]),
@@ -2261,9 +2263,16 @@
   var homeSetup = el('select', { class: 'presel' });
   var homeSetupNote = el('span', { class: 'muted' });
   var homeLinks = el('textarea', { class: 'small hlinks', placeholder: 'Ссылки на компоненты, категории или целый проект — можно вставить сообщение из чата целиком' });
-  homeLinks.value = sget('wlx_home_links') || '';
-  var HOME_MODES = [['auto', 'Авто: веб и мобильные'], ['web', 'Только языки веба'], ['mob', 'Только языки android/iOS'], ['manual', 'Свои языки…']];
-  var homeMode = sget('wlx_home_tpl') || 'auto';
+  /* шаблоны: «Веб» — свои ссылки + языки веба; «Android и iOS» — ссылки и языки подставляются сами (⚙ → Проект) */
+  var HOME_MODES = [['web', 'Веб'], ['mob', 'Android и iOS'], ['manual', 'Свои языки…']];
+  var homeMode = sget('wlx_home_tpl') === 'mob' ? 'mob' : 'web';
+  function mobLinks() { return (scCfg && String(scCfg.linksMob || '').trim()) || SC_DEFAULT_LINKS; }
+  var homeWebLinks = sget('wlx_home_links') || '';
+  function homeLoadLinks() {
+    homeLinks.value = homeMode === 'mob' ? (sget('wlx_home_links_mob') || mobLinks()) : homeWebLinks;
+    homeLinks.placeholder = homeMode === 'mob' ? 'Ссылки на android и iOS' : 'Ссылки на компоненты веба, категории или целый проект — можно вставить сообщение из чата целиком';
+  }
+  homeLoadLinks();
   var homeSeg = el('div', { class: 'seg' });
   var homeLangInfo = el('div', { class: 'muted' });
   function homeRenderSeg() {
@@ -2271,13 +2280,13 @@
     HOME_MODES.forEach(function (m) {
       homeSeg.appendChild(el('button', { class: 'chipb' + (homeMode === m[0] ? ' on' : ''), type: 'button', text: m[1], onclick: function () {
         if (m[0] === 'manual') { homeToManual(); return; }
-        homeMode = m[0]; sset('wlx_home_tpl', homeMode); homeRenderSeg();
+        if (homeMode === 'web') homeWebLinks = homeLinks.value;
+        homeMode = m[0]; sset('wlx_home_tpl', homeMode); homeLoadLinks(); homeRenderSeg();
       } }));
     });
     var w = tplByPlat('web'), mb = tplByPlat('android');
     var up = function (t) { return t ? t.bases.join(' ').toUpperCase() : '—'; };
-    homeLangInfo.textContent = homeMode === 'web' ? 'Все компоненты: ' + up(w) : homeMode === 'mob' ? 'Все компоненты: ' + up(mb)
-      : 'веб: ' + up(w) + ' · android/iOS: ' + up(mb);
+    homeLangInfo.textContent = 'Языки: ' + (homeMode === 'mob' ? up(mb) : up(w)) + ' · меняются в Настройках → Проект';
   }
   /* свои языки — та же выгрузка с галочками на вкладке «Выгрузка вручную» */
   function homeToManual() {
@@ -2286,7 +2295,7 @@
     if (parseLinks(links.value).length) loadLangs();
   }
   function homePickFor(x, codes) {
-    var t = homeMode === 'web' ? tplByPlat('web') : homeMode === 'mob' ? tplByPlat('android') : tplByPlat(scPlatform(x.p, x.c));
+    var t = tplByPlat(scPlatform(x.p, x.c));      /* языки — по компоненту: веб по шаблону веба, android/iOS по своему */
     return t ? mtPick(codes, t.bases) : [];
   }
   /* шаги */
@@ -2317,8 +2326,8 @@
     homeSteps.forEach(function (s, i) { homeStep(i, 'next', ''); });
     homeAssignOn = false;
     if (!parseLinks(text).length) { homeStep(0, 'err', 'Вставь ссылки на компоненты Weblate (…/projects/<проект>/…)'); return; }
-    sset('wlx_home_links', text);
-    if (HAS_EXT) patchSetup({ links: text }).catch(function () {});
+    if (homeMode === 'mob') { if (text !== mobLinks()) sset('wlx_home_links_mob', text); else sset('wlx_home_links_mob', ''); }
+    else { homeWebLinks = text; sset('wlx_home_links', text); if (HAS_EXT) patchSetup({ links: text }).catch(function () {}); }
     homeGo.disabled = homeZip.disabled = true;
     homeOut.textContent = ''; homeDetails.classList.add('hide');
     homeProg.classList.remove('hide'); homeBar.style.width = '0%';
@@ -2490,7 +2499,7 @@
   homeSetup.addEventListener('change', function () {
     switchSetup(homeSetup.value).then(function (c) {
       homeSetupFill(c);
-      if (c && c.links) homeLinks.value = c.links;
+      if (c) { homeWebLinks = c.links || ''; sset('wlx_home_links_mob', ''); homeLoadLinks(); }
     });
   });
   function homeSetupFill(c) {
@@ -2753,8 +2762,8 @@
     card(null, [
     HAS_EXT ? el('div', { class: 'row hsetup', style: 'margin-top:0' }, [el('span', { class: 'lbl', text: 'Проект' }), homeSetup,
       el('button', { class: 'b g s', type: 'button', text: '＋', title: 'Новый сетап: свои ссылки, языки и проекты Smartcat', onclick: function () { showSettings(true); newSetup(); } }), homeSetupNote]) : null,
+    el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Шаблон' }), homeSeg, homeLangInfo]),
     el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Что выгружаем' }), homeLinks]),
-    el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Языки' }), homeSeg, homeLangInfo]),
     el('div', { class: 'row' }, [homeGo, homeZip]),
     homeProg], 'homecard'),
     card('Что дальше', [el('div', { class: 'steps', style: 'margin-top:0;padding-top:0;border-top:0' }, homeSteps.map(function (s) { return s.row; })), homeDetails]),
@@ -4276,7 +4285,8 @@
       if (!c) return;
       fillSetupSelects(c);
       var st = activeSetup(c);
-      if (!homeLinks.value.trim() && st.links) homeLinks.value = st.links;
+      if (!homeWebLinks.trim() && st.links) homeWebLinks = st.links;
+      homeLoadLinks(); homeRenderSeg();
     });
     scCall('sc-ready-get').then(function (r) { scReady = r || {}; homeRefreshSc(); }, function () { homeRefreshSc(); });
   } else homeRefreshSc();
