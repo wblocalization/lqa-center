@@ -162,7 +162,19 @@ const SC_HANDLERS = {
 /* ---------- Уведомление «перевод готов» ----------
    Раз в пару минут смотрим отправки из списка: когда Smartcat перевёл все их документы — показываем уведомление.
    Загружать в Weblate всё равно нажимает человек. */
-const WATCH_DAYS = 3;
+const WATCH_DAYS = 3, WATCH_DAYS_HUMAN = 14;
+/* машперевод (проект из сетапа / AI translation…) или переводчики (МП…) — как в окне */
+function scKind(pr, sc) {
+  if (pr.kind) return pr.kind;
+  const proj = String(pr.name || '').split(' / ')[0], ref = String(sc.project || 'AI translation 4 MP');
+  const idm = /([0-9a-f]{8}-[0-9a-f-]{27,})/i.exec(ref);
+  return (idm ? pr.id === idm[1] : proj === ref) || /ai translation|машперевод|machine/i.test(proj) ? 'mt' : 'human';
+}
+function humanDone(d) {
+  if (String(d.status || '').toLowerCase() === 'completed') return true;
+  const st = d.workflowStages || [];
+  return st.length > 0 && st.every((x) => (x.progress || 0) >= 100);
+}
 
 async function checkSmartcatReady() {
   const { scProjects = [], scReady = {}, sc = {} } = await chrome.storage.local.get(['scProjects', 'scReady', 'sc']);
@@ -171,19 +183,20 @@ async function checkSmartcatReady() {
   for (const pr of scProjects) {
     const key = pr.key || pr.id;
     if (pr.uploaded || scReady[key] || !pr.docs || !Object.keys(pr.docs).length) continue;
-    if (pr.created && Date.now() - Date.parse(pr.created) > WATCH_DAYS * 864e5) continue;
+    const human = scKind(pr, sc) === 'human';
+    if (pr.created && Date.now() - Date.parse(pr.created) > (human ? WATCH_DAYS_HUMAN : WATCH_DAYS) * 864e5) continue;
     let proj;
     try { proj = await (await scFetch('/project/' + encodeURIComponent(pr.id))).json(); } catch (e) { continue; }
     const docs = (proj.documents || []).filter((d) => pr.docs[d.id]);
     if (!docs.length) continue;
-    const ready = docs.every((d) => (!d.documentDisassemblingStatus || d.documentDisassemblingStatus === 'success') &&
+    const ready = docs.every((d) => human ? humanDone(d) : (!d.documentDisassemblingStatus || d.documentDisassemblingStatus === 'success') &&
       d.pretranslateCompleted !== false);
     if (!ready) continue;
     scReady[key] = new Date().toISOString();
     changed = true;
     try {
       await chrome.notifications.create('sc-ready|' + key, {
-        type: 'basic', iconUrl: 'icons/icon128.png', title: 'Smartcat: перевод готов',
+        type: 'basic', iconUrl: 'icons/icon128.png', title: human ? 'Smartcat: переводчики закончили' : 'Smartcat: машперевод готов',
         message: (pr.name || 'Отправка') + ' — ' + docs.length + ' файл(ов). Нажми, чтобы открыть и загрузить в Weblate.',
         priority: 2
       });

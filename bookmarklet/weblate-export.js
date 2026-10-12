@@ -1037,6 +1037,9 @@
     '@media (max-width:820px){.side{width:62px;padding:10px 6px}.navt,.navsec{display:none}.nav{justify-content:center;padding:10px}.navn{position:absolute;top:2px;right:2px;min-width:16px;height:16px;font-size:10px}}',
     '.star{display:inline-block;cursor:pointer;color:var(--ink-soft);font-size:16px;line-height:1;margin-right:8px;vertical-align:-1px}',
     '.star:hover{color:#F59E0B}.star.on{color:#F59E0B}.star.pin{cursor:default;font-size:14px}',
+    '.legend{display:grid;gap:5px;margin:8px 0 4px;padding:10px 12px;border-radius:12px;background:var(--soft);font-size:12.5px}',
+    '.k-mt{background:color-mix(in srgb,var(--accent) 14%,var(--card));color:var(--accent)}.k-hu{background:color-mix(in srgb,#F59E0B 18%,var(--card));color:#B45309}',
+    '.srt{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
     '.hide{display:none!important}'
   ].join('\n');
 
@@ -3259,7 +3262,7 @@
       var enFiles = files.filter(function (f) { return isEnglish(f.lang) && enTargets[scPlatform(f.p, f.c)]; });
       if (enFiles.length) info4.appendChild(el('p', { class: 'muted', text: 'Английский (' + enFiles.length + ' файл.) также уйдёт без папки в проекты для английского (' +
         enFiles.map(function (f) { return scPlatform(f.p, f.c); }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', ') +
-        ') с именем ' + ddmmyy() + '_' + enFiles[0].name + ' — обратно оттуда не забираю.' }));
+        ') с именем ' + ddmmyy() + '_' + enFiles[0].name + ' — когда переводчики закончат, будет в «В работе».' }));
       function sendEnglish() {
         var by = {};
         enFiles.forEach(function (f) { var pl = scPlatform(f.p, f.c); (by[pl] = by[pl] || []).push(f); });
@@ -3272,7 +3275,18 @@
               if (!code) throw new Error('в проекте «' + pr.name + '» нет английского (в нём: ' + pls.join(', ') + ')');
               return scCall('sc-add-docs', { projectId: pr.id, files: by[pl].map(function (f) {
                 return { name: ddmmyy() + '_' + f.name, text: scSendText(f.text), targetLanguages: [code] };
-              }) }).then(function (r) { acc.push({ ok: true, text: pl + ' → ' + pr.name + ' (' + r.documents.length + ' док.)', docIds: r.documents.map(function (d) { return d.id; }),
+              }) }).then(function (r) {
+                /* английский тоже следим в «В работе»: переводчики → в Weblate с заменой переведённых */
+                var byKey = {}, docs = {};
+                by[pl].forEach(function (f) { byKey[ddmmyy() + '_' + f.key] = f; });
+                r.documents.forEach(function (d) { var f = byKey[scDocKey(d.name)] || byKey[scDocKey(d.fullPath)]; if (f) docs[d.id] = { p: f.p, c: f.c, lang: f.lang, json: !!f.json }; });
+                if (Object.keys(docs).length) {
+                  var key = pr.id + '#' + ddmmyy() + '_' + pl;
+                  var list = scProjects().filter(function (x) { return (x.key || x.id) !== key; });
+                  list.unshift({ key: key, id: pr.id, name: pr.name + ' / ' + ddmmyy() + '_' + pl, created: new Date().toISOString(), docs: docs, files: {}, langs: {}, kind: 'human' });
+                  saveScProjects(list);
+                }
+                acc.push({ ok: true, text: pl + ' → ' + pr.name + ' (' + r.documents.length + ' док.)', docIds: r.documents.map(function (d) { return d.id; }),
                 pl: pl, projectId: pr.id, files: by[pl].map(function (f) { return ddmmyy() + '_' + f.name; }) }); return acc; });
             }).catch(function (e) { acc.push({ ok: false, text: pl + ': ' + e.message }); return acc; });
           });
@@ -3773,6 +3787,19 @@
   /* ----- «Из Smartcat»: забрать машинный перевод и подготовить к загрузке ----- */
   /* список отправок в Smartcat: на вкладке загрузки — «Забрать переводы» (проверить и загрузить вручную),
      на вкладке Smartcat — «Забрать и загрузить в Weblate» одной кнопкой */
+  /* тип отправки: «mt» — машперевод (проект машперевода из сетапа, AI translation…): грузим только в пустые строки;
+     «human» — переводчики (МП web / android / iOS): грузим с заменой переведённых и одобренных */
+  function scKind(pr) {
+    if (pr.kind) return pr.kind;
+    var proj = String(pr.name || '').split(' / ')[0], ref = String((scCfg && scCfg.project) || SC_PROJECT_DEFAULT);
+    var idm = /([0-9a-f]{8}-[0-9a-f-]{27,})/i.exec(ref);
+    return (idm ? pr.id === idm[1] : proj === ref) || /ai translation|машперевод|machine/i.test(proj) ? 'mt' : 'human';
+  }
+  var HUMAN_OPTS = { method: 'translate', fuzzy: 'approve', conflicts: 'replace-approved' };
+  function scPlat(pr) {
+    var n = String(pr.name || '').toLowerCase();
+    return /ios/.test(n) ? 'iOS' : /android/.test(n) ? 'Android' : /web|веб/.test(n) ? 'Веб' : 'Файлы';
+  }
   /* дата отправки: из имени папки (ДДММГГ…) или из даты создания */
   function scDay(pr) {
     var m = /(?:^|\/\s*)(\d{2})(\d{2})(\d{2})(?=[ _\-]|$)/.exec(String(pr.name || '').split(' / ').pop());
@@ -3844,8 +3871,11 @@
       list.forEach(function (pr) { if (selAll.checked) scSel[keyOf(pr)] = 1; else delete scSel[keyOf(pr)]; boxes[keyOf(pr)].checked = selAll.checked; });
       updSel();
     });
-    box.appendChild(el('div', { class: 'head' }, [el('h3', { text: 'Перевод готов → в Weblate' }), findBtn]));
-    box.appendChild(el('p', { class: 'hint', text: 'Когда Smartcat переведёт, придёт уведомление 🔔. Загрузка идёт только в непереведённые строки.' }));
+    box.appendChild(el('div', { class: 'head' }, [el('h3', { text: 'Отправки в Smartcat' }), findBtn]));
+    box.appendChild(el('div', { class: 'legend' }, [
+      el('div', {}, [el('span', { class: 'pill k-mt', text: '🤖 ИИ-перевод' }), ' AI translation — готово через пару минут, в Weblate грузится только в пустые строки']),
+      el('div', {}, [el('span', { class: 'pill k-hu', text: '👤 Переводчики' }), ' МП веб / android / iOS — готово, когда люди закончат; в Weblate заменяет переведённые и одобренные']),
+      el('div', { class: 'muted', text: 'Когда готово — придёт уведомление 🔔 и появится «готово». Жми «В Weblate».' })]));
     box.appendChild(el('div', { class: 'row listbar' }, [rangeSeg, findMsg]));
     if (list.length) box.appendChild(el('div', { class: 'row' }, [el('label', { class: 'chk' }, [selAll, 'все']), allBtn, selBtn, selDel, allMsg]));
     else box.appendChild(el('p', { class: 'empty', text: all.length ? (scRange === '7' ? 'За неделю отправок нет' : 'За 2 дня отправок нет') : 'Отправок пока нет. Если они были, но пропали — «Найти отправки».' }));
@@ -3867,10 +3897,13 @@
         el('span', { class: 'muted', text: plural(g.items.length, 'отправка', 'отправки', 'отправок') }),
         el('span', { class: 'pill ' + (up === g.items.length ? 'p-ok' : rd ? 'p-ready' : 'p-wait'),
           text: up === g.items.length ? '✓ загружено' : rd ? '🔔 готово ' + rd : up ? 'загружено ' + up + ' из ' + g.items.length : 'в работе' })]));
+      var PO = { 'Веб': 0, 'Android': 1, 'iOS': 2 };
+      g.items.sort(function (a, b) { return (PO[scPlat(a)] != null ? PO[scPlat(a)] : 3) - (PO[scPlat(b)] != null ? PO[scPlat(b)] : 3) || scKind(a).localeCompare(scKind(b)); });
       g.items.forEach(function (pr) {
+        var kind = scKind(pr);
         var st = el('span', { class: pr.uploaded ? 'ok' : 'muted',
           text: pr.uploaded ? '✓ в Weblate ' + fmtDate(pr.uploaded) : (scReady[keyOf(pr)] ? '🔔 перевод готов' : '') });
-        var get = el('button', { class: 'b s', text: 'В Weblate', title: 'Забрать готовые переводы из Smartcat и загрузить в Weblate («только непереведённые строки»)',
+        var get = el('button', { class: 'b s', text: 'В Weblate', title: kind === 'mt' ? 'Забрать машперевод и загрузить в Weblate — только в пустые строки' : 'Забрать перевод переводчиков и загрузить в Weblate — с заменой переведённых и одобренных строк',
           onclick: function () { fetchSc(pr, st, get, auto); } });
         var zip = el('button', { class: 'b g s', text: 'ZIP', title: 'Скачать готовые переводы из Smartcat архивом (в Weblate ничего не загружается)',
           onclick: function () { zipSc(pr, st, zip); } });
@@ -3882,8 +3915,11 @@
         cb.checked = !!scSel[keyOf(pr)]; boxes[keyOf(pr)] = cb;
         cb.addEventListener('change', function () { if (cb.checked) scSel[keyOf(pr)] = 1; else delete scSel[keyOf(pr)]; updSel(); });
         det.appendChild(el('div', { class: 'scrow' }, [cb,
-          el('div', { class: 'grow' }, [el('b', { text: String(pr.name || '').split(' / ').pop() }),
-            el('div', { class: 'muted' }, [String(pr.name || '').split(' / ').slice(0, -1).join(' / ') + (pr.created ? ' · ' + fmtDate(pr.created) + ' ' : ' '), st])]),
+          el('div', { class: 'grow' }, [
+            el('div', { class: 'srt' }, [el('b', { text: scPlat(pr) }),
+              el('span', { class: 'pill ' + (kind === 'mt' ? 'k-mt' : 'k-hu'), text: kind === 'mt' ? '🤖 ИИ-перевод' : '👤 Переводчики' }), st]),
+            el('div', { class: 'muted' }, [String(pr.name || '').split(' / ').join(' › ') + (pr.created ? ' · ' + fmtDate(pr.created) : '') +
+              ' · в Weblate: ' + (kind === 'mt' ? 'только пустые строки' : 'заменит переведённые и одобренные')])]),
           get, zip, del]));
       });
       box.appendChild(det);
@@ -3993,17 +4029,18 @@
     return scCall('sc-project', { id: pr.id }).then(function (proj) {
       var docs = (proj.documents || []).filter(function (d) { return !pr.docs || pr.docs[d.id]; });
       if (pr.docs && !docs.length) { st.className = 'red'; st.textContent = 'В проекте больше нет этих документов'; return; }
+      var human = scKind(pr) === 'human';
       var ready = docs.filter(function (d) {
-        return (!d.documentDisassemblingStatus || d.documentDisassemblingStatus === 'success') && d.pretranslateCompleted !== false;
+        return human ? docReady(d) : (!d.documentDisassemblingStatus || d.documentDisassemblingStatus === 'success') && d.pretranslateCompleted !== false;
       });
-      if (!ready.length) { st.textContent = 'Smartcat ещё переводит (готово 0 из ' + docs.length + ') — попробуй позже'; return; }
+      if (!ready.length) { st.textContent = (human ? 'Переводчики ещё работают' : 'Smartcat ещё переводит') + ' (готово 0 из ' + docs.length + ') — попробуй позже'; return; }
       var n = 0;
       st.textContent = 'Скачиваю ' + ready.length + ' из ' + docs.length + '…';
       return pool(ready, 3, function (d) {
         var key = scDocKey(d.name), comp = pr.docs ? pr.docs[d.id] : pr.files[key];
         var lang = (pr.docs && pr.docs[d.id].lang) || pr.langs[String(d.targetLanguage || '').toLowerCase()] ||
           Object.keys(pr.langs).map(function (k) { return pr.langs[k]; }).filter(function (l) { return baseLang(l) === baseLang(d.targetLanguage || ''); })[0];
-        var u = { name: 'Smartcat/' + key + '.po', text: '', filled: 0, total: 0, fromSc: true, scKey: prKey };
+        var u = { name: 'Smartcat/' + key + '.po', text: '', filled: 0, total: 0, fromSc: true, scKey: prKey, opts: human ? HUMAN_OPTS : undefined };
         if (!comp || !lang) { u.error = 'не понимаю, куда это: документ «' + d.name + '», язык ' + d.targetLanguage; uploads.push(u); return Promise.resolve(); }
         u.p = comp.p; u.c = comp.c; u.lang = lang;
         return scCall('sc-export', { documentId: d.id }).then(function (r) {
