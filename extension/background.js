@@ -338,30 +338,40 @@ SC_HANDLERS['sc-team'] = async () => {
 SC_HANDLERS['sc-assign'] = async (m) => {
   const stage = m.stage || 1;
   const json = (o) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
-  /* 1) прямое назначение исполнителей с режимом «распределить между всеми, кто принял»;
-     2) запасной путь — приглашение из «Моей команды» (старый способ) */
-  const tries = [
-    ['assign', '/document/assign', { documentIds: m.documentIds, stageNumber: stage, executives: m.userIds.map((id) => ({ id })), minWordsCountForExecutive: 0, assignmentMode: 'distributeAmongAll' }],
-    ['assign', '/document/assign', { documentIds: m.documentIds, stageNumber: stage, executives: m.userIds.map((id) => ({ id, wordsCount: 0 })), minWordsCountForExecutive: 0, assignmentMode: 'DistributeAmongAll' }],
-    ['myTeam', '/document/assignFromMyTeam', { documentIds: m.documentIds, stageNumber: stage, strategy: 'distributeAmongAll', userIds: m.userIds }]
-  ];
-  const errs = [];
-  for (let round = 0; round < 6; round++) {
-    let notReady = false;
-    for (const [how, path, body] of tries) {
+  /* Smartcat: POST /document/assign?documentId=…&stageNumber=… — по одному документу,
+     в теле исполнители и режим «распределить между всеми, кто принял»; запасной путь — «Моя команда» */
+  const assignOne = async (docId) => {
+    const q = '/document/assign?documentId=' + encodeURIComponent(docId) + '&stageNumber=' + stage;
+    const errs = [];
+    for (const mode of ['distributeAmongAll', 'DistributeAmongAll']) {
       try {
-        await scFetch(path, json(body));
-        return { ok: true, how, tries: round + 1 };
-      } catch (e) {
-        const t = String(e.message);
-        errs.push(how + ': ' + t.slice(0, 200));
+        await scFetch(q, json({ executives: m.userIds.map((id) => ({ id, wordsCount: 0 })), minWordsCountForExecutive: 0, assignmentMode: mode }));
+        return 'assign';
+      } catch (e) { errs.push('assign: ' + String(e.message).slice(0, 200)); if (!/mode/i.test(String(e.message))) break; }
+    }
+    try {
+      await scFetch('/document/assignFromMyTeam', json({ documentIds: [docId], stageNumber: stage, strategy: 'distributeAmongAll', userIds: m.userIds }));
+      return 'myTeam';
+    } catch (e) { errs.push('myTeam: ' + String(e.message).slice(0, 200)); }
+    throw new Error(errs.join(' | '));
+  };
+  const left = new Set(m.documentIds), done = [], errs = {};
+  for (let round = 0; round < 6 && left.size; round++) {
+    let notReady = false;
+    for (const id of [...left]) {
+      try { await assignOne(id); left.delete(id); done.push(id); } catch (e) {
+        const t = String(e.message); errs[id] = t;
         if (/disassembl|not ready|processing|is being|not found.*document|документ/i.test(t)) notReady = true;
       }
     }
-    if (!notReady) break;           // ошибка не про «документ ещё разбирается» — ждать смысла нет
+    if (!left.size || !notReady) break;   // ошибка не про «документ ещё разбирается» — ждать смысла нет
     await sleep(5000);
   }
-  throw new Error(errs.slice(-3).join(' | '));
+  if (left.size) {
+    const first = errs[[...left][0]] || '';
+    throw new Error((done.length ? 'назначено ' + done.length + ' из ' + m.documentIds.length + ', не получилось: ' : '') + first);
+  }
+  return { ok: true, docs: done.length };
 };
 /* сообщение в рабочий чат по вебхуку (Band / Mattermost / Slack-совместимый: JSON {"text": …}).
    «простой» запрос без предварительной проверки: ответ чата не читается, поэтому успех не гарантирован */
