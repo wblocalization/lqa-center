@@ -1035,6 +1035,8 @@
     '.upinline .sheetbody{overflow:visible;padding-top:2px}',
     '.upinline .sheetfoot{position:sticky;bottom:-28px;border-radius:0 0 18px 18px}',
     '@media (max-width:820px){.side{width:62px;padding:10px 6px}.navt,.navsec{display:none}.nav{justify-content:center;padding:10px}.navn{position:absolute;top:2px;right:2px;min-width:16px;height:16px;font-size:10px}}',
+    '.star{display:inline-block;cursor:pointer;color:var(--ink-soft);font-size:16px;line-height:1;margin-right:8px;vertical-align:-1px}',
+    '.star:hover{color:#F59E0B}.star.on{color:#F59E0B}.star.pin{cursor:default;font-size:14px}',
     '.hide{display:none!important}'
   ].join('\n');
 
@@ -1435,6 +1437,18 @@
     }).catch(function (e) { scImpMsg.className = 'red'; scImpMsg.textContent = '✗ ' + e.message; })
       .then(function () { scImpBtn.disabled = false; });
   }
+  /* избранные проекты Smartcat — звёздочкой, показываются сверху (после проекта из сетапа) */
+  function scFavs() { try { return JSON.parse(sget('wlx_sc_favs') || '[]'); } catch (e) { return []; } }
+  function isFav(id) { return scFavs().indexOf(id) >= 0; }
+  function toggleFav(id) { var f = scFavs(), i = f.indexOf(id); if (i >= 0) f.splice(i, 1); else f.unshift(id); sset('wlx_sc_favs', JSON.stringify(f)); }
+  function favSort(list, isPin) {
+    return list.filter(isPin).concat(list.filter(function (p) { return !isPin(p) && isFav(p.id); }), list.filter(function (p) { return !isPin(p) && !isFav(p.id); }));
+  }
+  function starBtn(p, redraw) {
+    var on = isFav(p.id);
+    return el('span', { class: 'star' + (on ? ' on' : ''), role: 'button', title: on ? 'Убрать из избранного' : 'В избранное — будет сверху', text: on ? '★' : '☆',
+      onclick: function (e) { e.stopPropagation(); e.preventDefault(); toggleFav(p.id); redraw(); } });
+  }
   function renderScProjects(list, pin) {
     scImpList.textContent = '';
     scImpMsg.className = 'muted'; scImpMsg.textContent = 'Проектов: ' + list.length;
@@ -1450,13 +1464,13 @@
         tbody.appendChild(tr0);
       }
       var shown = 0;
-      list.forEach(function (p) {
+      favSort(list, function (p) { return p === pin; }).forEach(function (p) {
         if (q.length && !idm && !q.every(function (w) { return String(p.name).toLowerCase().indexOf(w) >= 0; })) return;
         if (idm && p.id !== idm[1]) return;
         if (++shown > 300) return;
         var d = Date.parse(p.modified || p.created || '');
         var tr = el('tr', { class: 'folder', title: 'Открыть проект' }, [
-          el('td', {}, [el('b', { text: (p === pin ? '⭐ ' : '📁 ') + p.name })]),
+          el('td', {}, [p === pin ? el('span', { class: 'star pin', title: 'Проект из сетапа', text: '⭐' }) : starBtn(p, draw), el('b', { text: p.name })]),
           el('td', { class: 'muted', text: (p.targetLanguages || []).length ? p.targetLanguages.length + ' яз.' : '' }),
           el('td', { class: 'muted', text: d ? new Date(d).toLocaleDateString('ru-RU') : '' }),
           el('td', { class: String(p.status).toLowerCase() === 'completed' ? 'ok' : 'muted', text: projStatus(p.status) })]);
@@ -2141,7 +2155,7 @@
   }
   /* копия настроек в файл (без API-ключа) — для нового компьютера или коллеги */
   var BACKUP_KEYS = ['wlx_links', 'wlx_langs', 'wlx_langtpl', 'wlx_langtpl_cur', 'wlx_layout', 'wlx_en', 'wlx_pj', 'wlx_mt_links', 'wlx_sc_split', 'wlx_m', 'wlx_f', 'wlx_c', 'wlx_presets_exp', 'wlx_presets_sc',
-    'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip', 'wlx_salvage', 'wlx_brokenup', 'wlx_dir_dated', 'wlx_dir_unzip', 'wlx_byplat', 'wlx_noen'];
+    'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip', 'wlx_salvage', 'wlx_brokenup', 'wlx_sc_favs', 'wlx_dir_dated', 'wlx_dir_unzip', 'wlx_byplat', 'wlx_noen'];
   var restoreInput = el('input', { type: 'file', accept: '.json', class: 'hide' });
   function backupSettings() {
     loadScConfig().then(function (c) {
@@ -2552,7 +2566,7 @@
     if (upSc.prs) return;
     upScProjList.textContent = ''; upScProjList.appendChild(el('div', { class: 'muted', text: 'Загружаю проекты…' }));
     scGuard().then(function (c) {
-      return scProjCache || scCall('sc-projects').then(function (l) { scProjCache = l; return l; }).then(function (l) {
+      return (scProjCache ? Promise.resolve(scProjCache) : scCall('sc-projects').then(function (l) { scProjCache = l; return l; })).then(function (l) {
         var ref = String(c.project || SC_PROJECT_DEFAULT), idm = /([0-9a-f]{8}-[0-9a-f-]{27,})/i.exec(ref);
         l.forEach(function (p) { p.pin = idm ? p.id === idm[1] : p.name === ref; });
         return l;
@@ -2618,13 +2632,13 @@
     var raw = upSc.q.trim(), q = raw.toLowerCase().split(/\s+/).filter(Boolean);
     var idm = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(raw);
     var list = upSc.prs.filter(function (p) { return idm ? p.id === idm[1] : q.every(function (w) { return String(p.name).toLowerCase().indexOf(w) >= 0; }); });
-    list = list.filter(function (p) { return p.pin; }).concat(list.filter(function (p) { return !p.pin; }));
+    list = favSort(list, function (p) { return p.pin; });
     if (upSc.pr && list.indexOf(upSc.pr) < 0 && !q.length) list.unshift(upSc.pr);
     if (idm && !list.length) list = [{ id: idm[1], name: 'Проект по ссылке', targetLanguages: [] }];
     list.slice(0, q.length ? 30 : 6).forEach(function (p) {
       var d = Date.parse(p.modified || p.created || '');
       upScProjList.appendChild(el('button', { class: 'pitem' + (upSc.pr && upSc.pr.id === p.id ? ' on' : ''), type: 'button', onclick: function () { upScPick(p); } }, [
-        el('span', { class: 'pname', text: (p.pin ? '⭐ ' : '') + p.name }),
+        el('span', { class: 'pname' }, [p.pin ? el('span', { class: 'star pin', title: 'Проект из сетапа', text: '⭐' }) : starBtn(p, upScDrawProjects), p.name]),
         el('span', { class: 'muted', text: [(p.targetLanguages || []).length ? p.targetLanguages.length + ' яз.' : '', d ? new Date(d).toLocaleDateString('ru-RU') : ''].filter(Boolean).join(' · ') })]));
     });
     if (!list.length) upScProjList.appendChild(el('div', { class: 'muted', text: 'Ничего не нашлось — можно создать новый проект' }));
