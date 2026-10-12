@@ -4049,9 +4049,12 @@
     });
     var vsk = sent.filter(function (u) { return u.varSkipped; });
     if (vsk.length) {
-      out.push('Не загружено строк с ошибкой: ' + sum(vsk, 'varSkipped') + ' (переменная или мусор от машперевода):');
+      var ST = { salv: 'вытащен перевод → «На правку»', raw: '«На правку» как есть', skip: 'не загружено' };
+      out.push('Строки с ошибкой (переменная или мусор от машперевода): ' + sum(vsk, 'varSkipped') +
+        ' — «На правку»: ' + vsk.reduce(function (a, u) { return a + (u.salvaged || 0) + (u.rawUp || 0); }, 0) + ', не загружено: ' +
+        vsk.reduce(function (a, u) { return a + u.varSkipped - (u.salvaged || 0) - (u.rawUp || 0); }, 0));
       vsk.forEach(function (u) { u.vars.filter(function (x) { return x.hard; }).forEach(function (x) {
-        out.push('  ' + u.c + ' · ' + langName(u.lang) + ' · ' + (x.ctx || x.src.slice(0, 40)) + ': ' + x.probs.filter(function (p) { return p.hard; })[0].text);
+        out.push('  ' + u.c + ' · ' + langName(u.lang) + ' · ' + (x.ctx || x.src.slice(0, 40)) + ' — ' + (ST[x.upState] || 'не загружено') + ': ' + x.probs.filter(function (p) { return p.hard; })[0].text);
       }); });
     }
     failed.forEach(function (u) { out.push('✗ ' + (u.c || u.name) + ' · ' + (u.lang ? langName(u.lang) : '') + ': ' + (u.upError || 'не загружено')); });
