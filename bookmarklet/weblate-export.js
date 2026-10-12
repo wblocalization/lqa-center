@@ -1016,6 +1016,25 @@
     '.where{font-size:13px;color:var(--ink-soft)}',
     '.where b{color:var(--ink)}',
     'label>input[type=text],label>input[type=password],label>input[type=time],label>select,label>textarea{font-weight:400;color:var(--ink)}',
+    '.main{flex:1;display:flex;min-height:0}',
+    '.top .icons{margin-left:auto}',
+    '.side{width:212px;flex:none;background:var(--card);border-right:1px solid var(--line);padding:10px 10px 16px;overflow:auto}',
+    '.navsec{font-size:11px;font-weight:700;color:var(--ink-soft);opacity:.75;text-transform:uppercase;letter-spacing:.06em;margin:14px 10px 6px}',
+    '.navsec:first-child{margin-top:6px}',
+    '.nav{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;margin-bottom:2px;border:0;border-radius:12px;background:transparent;font:inherit;font-weight:600;font-size:13.5px;color:var(--ink-soft);cursor:pointer;text-align:left;position:relative}',
+    '.nav svg{width:18px;height:18px;flex:none}',
+    '.nav:hover{background:var(--soft);color:var(--ink)}',
+    '.nav.on{background:var(--soft);color:var(--accent)}',
+    '.navt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.navn{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--accent-2);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}',
+    '.nav.dot::after{content:"";position:absolute;right:12px;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;background:var(--accent-2)}',
+    '.ptitle{font-size:20px;font-weight:700;margin:0 0 14px}',
+    '.ptitle+div>.sec:first-child,.ptitle+div>.card:first-child,.ptitle+div>div>.card:first-child,.ptitle+div>div>.sec:first-child,.ptitle+.settings>details:first-child{margin-top:0}',
+    '.upinline .sheetwin{width:100%;max-height:none;box-shadow:var(--shadow);border:1px solid var(--line);border-radius:18px;overflow:visible}',
+    '.upinline .sheethead{display:none}',
+    '.upinline .sheetbody{overflow:visible;padding-top:2px}',
+    '.upinline .sheetfoot{position:sticky;bottom:-28px;border-radius:0 0 18px 18px}',
+    '@media (max-width:820px){.side{width:62px;padding:10px 6px}.navt,.navsec{display:none}.nav{justify-content:center;padding:10px}.navn{position:absolute;top:2px;right:2px;min-width:16px;height:16px;font-size:10px}}',
     '.hide{display:none!important}'
   ].join('\n');
 
@@ -1368,11 +1387,10 @@
   scImpProject.style.flex = '1'; scImpProject.style.minWidth = '240px'; scImpProject.style.margin = '0';
   scRun.textContent = HAS_EXT ? 'Только скачать ZIP' : 'Выгрузить непереведённое';
   scRun.className = HAS_EXT ? 'b g' : 'b big';
-  var scPane = el('div', { class: 'hide' }, [
-    HAS_EXT ? el('div', { class: 'setrow' }, ['Сетап:', scSetupQuick, scSetupNote]) : null,
-    HAS_EXT ? upScTile('Свои файлы в проект и папку — можно создать новые') : null,
+  var scPane = el('div', {}, [
     el('div', { class: 'card' }, [
-      el('h3', { text: 'На машинный перевод' }),
+      HAS_EXT ? el('div', { class: 'setrow' }, ['Сетап:', scSetupQuick, scSetupNote]) : null,
+      el('h3', { text: 'Только android + iOS на машперевод' }),
       el('p', { class: 'hint', text: 'Непереведённое из android и iOS по языкам проекта (⚙ → Проект) → ZIP и Smartcat.' }),
       el('div', { class: 'row' }, HAS_EXT ? [scRunSend, scRun] : [scRun]),
       el('details', {}, [el('summary', { text: 'Компоненты и наборы' }),
@@ -1381,9 +1399,7 @@
         el('div', { class: 'row' }, [el('button', { class: 'b g s', text: 'Вернуть стандартные', onclick: function () { scLinks.value = SC_DEFAULT_LINKS; sset('wlx_mt_links', ''); } })])]),
       el('div', { class: 'hide', id: 'wlx-sc-prog' }, [scProg, el('div', { class: 'bar' }, [scBar])]),
       scOut
-    ]),
-    scBack,
-    HAS_EXT ? scImpBox : null
+    ])
   ]);
   function docReady(d) {
     if (d.documentDisassemblingStatus && d.documentDisassemblingStatus !== 'success') return false;
@@ -1817,7 +1833,7 @@
   function autoSend(slot) {
     return new Promise(function (resolve) {
       scAutoHook = function (r) { r.slot = slot; scCall('sc-auto-done', r).catch(function () {}); resolve(r); };
-      tab('sc'); runScPreset(true);
+      nav('manual'); runScPreset(true);
       setTimeout(function () { autoDone({ error: 'не дождалась конца отправки за 15 минут — проверь вкладку Smartcat' }); }, 15 * 60000);
     });
   }
@@ -1867,22 +1883,22 @@
     }
   }
 
-  var tabHome = el('button', { class: 'tab on', 'data-t': 'home', text: 'Главная', onclick: function () { tab('home'); } });
-  var tabExp = el('button', { class: 'tab', 'data-t': 'exp', text: 'Выгрузка вручную', onclick: function () { tab('exp'); } });
-  var tabSc = el('button', { class: 'tab', 'data-t': 'sc', text: 'Smartcat', onclick: function () { tab('sc'); } });
-  var tabImp = el('button', { class: 'tab', 'data-t': 'imp', text: 'Загрузить обратно', onclick: function () { tab('imp'); } });
-  var curTab = 'home';
-  function tab(t) {
-    curTab = t;
-    if (!settingsPane.classList.contains('hide')) showSettings(false);
-    else if (scroller) scroller.scrollTop = 0;
-    tabHome.classList.toggle('on', t === 'home');
-    tabExp.classList.toggle('on', t === 'exp'); tabSc.classList.toggle('on', t === 'sc'); tabImp.classList.toggle('on', t === 'imp');
-    homePane.classList.toggle('hide', t !== 'home');
-    exportPane.classList.toggle('hide', t !== 'exp'); scPane.classList.toggle('hide', t !== 'sc'); importPane.classList.toggle('hide', t !== 'imp');
-    if (t === 'home') homeRefreshSc();
+  /* меню слева: каждый пункт — один экран; старые имена вкладок ведут на новые экраны */
+  var NAV_OLD = { home: 'send', exp: 'manual', sc: 'work', imp: 'accept' };
+  var curNav = 'send', navPrev = 'send', navBtns = {}, navPanes = {};
+  function tab(t) { nav(NAV_OLD[t] || t); }
+  function nav(k) {
+    if (!navPanes[k]) k = 'send';
+    if (k !== 'settings') navPrev = k;
+    curNav = k;
+    Object.keys(navPanes).forEach(function (x) { navPanes[x].classList.toggle('hide', x !== k); if (navBtns[x]) navBtns[x].classList.toggle('on', x === k); });
+    if (scroller) scroller.scrollTop = 0;
+    if (k === 'send') homeRefreshSc();
+    if (k === 'settings') fillScSettings();
+    if (k === 'msg' && navBtns.msg) navBtns.msg.classList.remove('dot');
+    if (k === 'up') upScOpen();
+    if (k === 'projects') { if (scImpBody.classList.contains('hide')) scImpOpen.click(); scImpOpen.classList.add('hide'); }
   }
-
 
   /* ----- настройки Smartcat (только в расширении) ----- */
   var scServer = select([['eu', 'smartcat.com'], ['us', 'us.smartcat.com'], ['ea', 'ea.smartcat.com'], ['custom', 'свой адрес']], 'eu');
@@ -2161,8 +2177,6 @@
     el('label', {}, ['Account ID', scAccount]),
     el('label', {}, ['API-ключ', scKey])]);
   var settingsPane = el('div', { class: 'settings hide' }, [
-    el('div', { class: 'row', style: 'margin-top:0' }, [el('button', { class: 'b g s back2', text: '← Назад', onclick: function () { showSettings(false); } }),
-      el('span', { class: 'sub', style: 'margin:0', text: 'Настройки сохраняются в расширении' })]),
     fold('Проект (сетап)', [
       el('p', { class: 'muted', text: 'У каждого проекта или команды — свои ссылки, языки и проекты Smartcat. Аккаунт и ключ общие.' }),
       el('div', { class: 'row' }, [scSetup,
@@ -2296,7 +2310,7 @@
     homeProg.classList.remove('hide'); homeBar.style.width = '0%';
     homeStep(0, 'run', 'Ищу компоненты…');
     var map = {}, union = [], hcomps = [], info = null;
-    homeMsgCard.classList.add('hide');
+    homeMsgCard.classList.add('hide'); homeMsgNote.classList.add('hide'); msgEmpty.classList.remove('hide');
     resolveLinks(text).then(function (r) {
       hcomps = r.comps;
       if (r.missing.length) { homeOut.appendChild(el('div', { class: 'err', text: 'Не нашла компоненты по ссылкам:\n' + r.missing.join('\n') })); homeDetails.classList.remove('hide'); }
@@ -2378,6 +2392,7 @@
     var fallback = function () { ta.select(); try { document.execCommand('copy'); } catch (e) {} done(); };
     if (navigator.clipboard) navigator.clipboard.writeText(ta.value).then(done, fallback); else fallback();
   }
+  var msgEmpty = el('p', { class: 'empty', text: 'Сообщения появятся после «Выгрузить и отправить» на экране «Отправить».' });
   var homeMsgCard = card('Сообщения в чат', [
     el('label', { class: 'lbl', text: 'Дедлайн' }), homeDeadline,
     homeMsgBox], 'hide');
@@ -2412,7 +2427,7 @@
       homeMsgBox.appendChild(el('details', { class: 'more' }, [el('summary', { text: 'Сводка в чат по вебхуку' }), homeMsgText, el('div', { class: 'row' }, [homeMsgSend, homeMsgSt])]));
       if (scCfg.bandAuto && !refill) homeSendMsg();
     }
-    homeMsgCard.classList.remove('hide');
+    homeMsgCard.classList.remove('hide'); homeMsgNote.classList.remove('hide'); msgEmpty.classList.add('hide'); if (navBtns.msg && curNav !== 'msg') navBtns.msg.classList.add('dot');
   }
   function homeSendMsg() {
     var hook = scCfg && scCfg.bandHook;
@@ -2436,6 +2451,7 @@
     var wk = new Date(); wk.setHours(0, 0, 0, 0); wk.setDate(wk.getDate() - 6);
     var pending = scProjects().filter(function (pr) { return !pr.uploaded && scDay(pr) >= wk; });
     var ready = pending.filter(function (pr) { return scReady[pr.key || pr.id]; });
+    navCount('work', ready.length);
     var check = el('button', { class: 'b g s', type: 'button', text: 'Проверить', onclick: function () {
       check.disabled = true;
       scCall('sc-watch-now').catch(function () {}).then(function () { return scCall('sc-ready-get'); }).then(function (r) { scReady = r || {}; renderScImport(); homeRefreshSc(); }, function () { check.disabled = false; });
@@ -2519,10 +2535,10 @@
     ])
   ]);
   function upScOpen() {
-    upSheet.classList.remove('hide');
+    if (curNav !== 'up') return nav('up');
     upScMsg.textContent = ''; upScMsg.className = 'muted';
     if (!upScNewName.value) upScNewName.value = ddmmyy() + ' ';
-    var tb = upSheet.querySelector('#wlx-upsc-tpl'); tb.textContent = '';
+    var tb = upScNewBox.querySelector('#wlx-upsc-tpl'); tb.textContent = '';
     [['web', 'Языки веба'], ['mob', 'Языки android и iOS']].forEach(function (t) {
       var tp = tplByPlat(t[0]);
       if (!tp) return;
@@ -2545,7 +2561,7 @@
       upScProjList.textContent = ''; upScProjList.appendChild(el('div', { class: 'red', text: '✗ ' + e.message }));
     });
   }
-  function upScClose() { upSheet.classList.add('hide'); }
+  function upScClose() { nav(navPrev === 'up' ? 'send' : navPrev); }
   function upScAdd(list) {
     Array.prototype.slice.call(list || []).forEach(function (f) {
       upSc.files = upSc.files.filter(function (x) { return x.file.name !== f.name; });
@@ -2717,6 +2733,8 @@
       upScPick(x.pr); upSc.folder = path;
     }).catch(function (e) { upScMsg.className = 'red'; upScMsg.textContent = '✗ ' + e.message; upScGo.disabled = false; });
   }
+  var homeMsgNote = el('div', { class: 'qa hide' }, [el('button', { class: 'qitem', type: 'button', onclick: function () { nav('msg'); } }, [
+    el('span', { class: 'qic', text: '💬' }), el('span', {}, [el('b', { text: 'Сообщения для чата готовы' }), el('span', { class: 'muted', text: 'впиши дедлайн и скопируй' })])])]);
   var homePane = el('div', {}, [
     card(null, [
     HAS_EXT ? el('div', { class: 'row hsetup', style: 'margin-top:0' }, [el('span', { class: 'lbl', text: 'Проект' }), homeSetup,
@@ -2726,24 +2744,10 @@
     el('div', { class: 'row' }, [homeGo, homeZip]),
     homeProg], 'homecard'),
     card('Что дальше', [el('div', { class: 'steps', style: 'margin-top:0;padding-top:0;border-top:0' }, homeSteps.map(function (s) { return s.row; })), homeDetails]),
-    homeMsgCard,
-    HAS_EXT ? upScTile('Выбрать проект и папку, создать новые') : null,
-    homeDrop,
-    el('div', { class: 'row hfoot' }, [
-      HAS_EXT ? el('button', { class: 'lnk', type: 'button', text: 'Все отправки в Smartcat ›', onclick: function () { tab('sc'); } }) : null,
-      el('button', { class: 'lnk', type: 'button', text: 'Выгрузка вручную ›', onclick: function () { tab('exp'); } })
-    ])
+    homeMsgNote
   ]);
   homeRenderSeg();
-  var mainArea, tabsBar;
-  function showSettings(on) {
-    settingsPane.classList.toggle('hide', !on);
-    if (mainArea) mainArea.classList.toggle('hide', on);
-    if (gearBtn) gearBtn.classList.toggle('on', on);
-    if (tabsBar) tabsBar.querySelectorAll('.tab').forEach(function (b) { b.classList.toggle('on', !on && b.dataset.t === curTab); });
-    if (scroller) scroller.scrollTop = 0;
-    if (on) fillScSettings();
-  }
+  function showSettings(on) { nav(on ? 'settings' : navPrev); }
 
   /* тема: как в системе или кнопкой ☾/☀ в шапке */
   var THEME_ICONS = { moon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
@@ -2757,21 +2761,53 @@
   function themeIcon() { themeBtn.textContent = ''; themeBtn.appendChild(svgEl(isDark() ? THEME_ICONS.sun : THEME_ICONS.moon)); }
   if (sget('wlx_theme')) host.setAttribute('data-theme', sget('wlx_theme'));
   themeIcon();
-  var gearBtn = HAS_EXT ? el('button', { class: 'x', type: 'button', title: 'Настройки Smartcat', onclick: function () { showSettings(settingsPane.classList.contains('hide')); } }, [svgEl(THEME_ICONS.gear)]) : null;
   var scroller;
+  var NAV_IC = {
+    send: '<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>',
+    work: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    accept: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
+    up: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
+    projects: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+    msg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    manual: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>' };
+  var upPane = el('div', { class: 'upinline' }, [upSheet.firstChild]);
+  var msgPane = el('div', {}, [msgEmpty, homeMsgCard]);
+  var NAV = [
+    ['Работа'],
+    ['send', 'Отправить', homePane, 'Отправить на перевод'],
+    HAS_EXT ? ['work', 'В работе', el('div', {}, [scBack]), 'В работе'] : null,
+    ['accept', 'Принять файлы', importPane, 'Принять файлы'],
+    HAS_EXT ? ['Smartcat'] : null,
+    HAS_EXT ? ['up', 'Загрузить файлы', upPane, 'Загрузить файлы в Smartcat'] : null,
+    HAS_EXT ? ['projects', 'Все проекты', el('div', {}, [scImpBox]), 'Все проекты'] : null,
+    ['Ещё'],
+    HAS_EXT ? ['msg', 'Сообщения в чат', msgPane, 'Сообщения в чат'] : null,
+    ['manual', 'Ручная выгрузка', el('div', {}, [exportPane, scPane]), 'Ручная выгрузка'],
+    HAS_EXT ? ['settings', 'Настройки', settingsPane, 'Настройки'] : null
+  ].filter(Boolean);
+  var side = el('nav', { class: 'side' });
+  var panesBox = el('div', {});
+  NAV.forEach(function (n) {
+    if (n.length === 1) { side.appendChild(el('div', { class: 'navsec', text: n[0] })); return; }
+    var b = el('button', { class: 'nav', type: 'button', title: n[1], onclick: function () { nav(n[0]); } }, [
+      svgEl('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + NAV_IC[n[0]] + '</svg>'),
+      el('span', { class: 'navt', text: n[1] }), el('span', { class: 'navn hide' })]);
+    navBtns[n[0]] = b; side.appendChild(b);
+    n[2].classList.remove('hide');
+    navPanes[n[0]] = el('div', { class: 'hide' }, [el('div', { class: 'ptitle', text: n[3] }), n[2]]);
+    panesBox.appendChild(navPanes[n[0]]);
+  });
+  /* число на пункте меню (например, сколько отправок уже готово) */
+  function navCount(k, n) { var b = navBtns[k]; if (!b) return; var c = b.querySelector('.navn'); c.textContent = n || ''; c.classList.toggle('hide', !n); }
   var back = el('div', { class: 'back', onclick: function (e) { if (e.target === back) hide(); } }, [
     el('div', { class: 'box' }, [
       el('div', { class: 'top' }, [
         el('div', { class: 'brand' }, [el('div', { class: 'logo', text: '⇄' }), el('h1', { text: 'Weblate ⇄ Smartcat' })]),
-        tabsBar = el('div', { class: 'tabs' }, HAS_EXT ? [tabHome, tabExp, tabSc, tabImp] : [tabHome, tabExp, tabImp]),
-        el('div', { class: 'icons' }, [themeBtn, gearBtn, el('button', { class: 'x', type: 'button', title: 'Закрыть', text: '×', onclick: hide })])
+        el('div', { class: 'icons' }, [themeBtn, el('button', { class: 'x', type: 'button', title: 'Закрыть', text: '×', onclick: hide })])
       ]),
-      scroller = el('div', { class: 'scroll' }, [
-        toastEl = el('div', { class: 'toast hide' }),
-        settingsPane,
-        mainArea = el('div', {}, [homePane, exportPane, scPane, importPane])
-      ]),
-      upSheet
+      el('div', { class: 'main' }, [side,
+        scroller = el('div', { class: 'scroll' }, [toastEl = el('div', { class: 'toast hide' }), panesBox])])
     ])
   ]);
   root.appendChild(back);
@@ -4220,7 +4256,7 @@
 
   document.body.appendChild(host);
   /* открываемся на главной; сетап, ссылки и состояние отправок подтягиваем из расширения */
-  tab('home');
+  nav('send');
   if (HAS_EXT) {
     loadScConfig().then(function (c) {
       if (!c) return;

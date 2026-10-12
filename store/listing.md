@@ -35,7 +35,7 @@ Smartcat
 
 ## Картинки
 - Значок 128×128: `icon-128.png`
-- Скриншоты 1280×800: `screenshots/1-home.png` … `screenshots/5-dark.png`
+- Скриншоты 1280×800: `screenshots/1-send.png` … `screenshots/5-dark.png`
 - Маленькая промо-плитка 440×280 (обязательна): `promo-440x280.png`
 - Большая промо-плитка 1400×560 (по желанию): `marquee-1400x560.png`
 
