@@ -1919,7 +1919,7 @@
     if (k === 'send') homeRefreshSc();
     if (k === 'settings') fillScSettings();
     if (k === 'msg' && navBtns.msg) navBtns.msg.classList.remove('dot');
-    if (k === 'msg' && !homeMsgInfo) loadScConfig().then(function () { if (!homeMsgInfo) homeMessage({ links: {} }, true, true); }, function () { homeMessage({ links: {} }, true, true); });
+    if (k === 'msg' && !homeMsgInfo) loadScConfig().then(function () { if (!homeMsgInfo) homeMessage(msgRestore(), true, true); }, function () { homeMessage(msgRestore(), true, true); });
     if (k === 'up') upScOpen();
     if (k === 'projects') { if (scImpBody.classList.contains('hide')) scImpOpen.click(); scImpOpen.classList.add('hide'); }
   }
@@ -2512,9 +2512,24 @@
       .replace(/\[([^\]\n]*)\]\(—\)/g, '$1');          /* ссылки нет (например, не было iOS) — остаётся просто слово */
   }
   /* quiet: просто шаблоны (ещё ничего не отправляли) — без точки в меню и без автоотправки */
+  /* что показать в «Сообщениях», если в этой вкладке ещё ничего не отправляли: последние ссылки (за неделю),
+     иначе — английский, отслеживаемый в «В работе»; иначе пустые шаблоны */
+  function msgRestore() {
+    var s = null; try { s = JSON.parse(sget('wlx_msg_links') || 'null'); } catch (e) {}
+    if (s && s.links && Date.now() - s.t < 7 * 864e5) return { links: s.links, restored: new Date(s.t).toLocaleDateString('ru-RU') };
+    var base = (scCfg && scCfg.base) || 'https://smartcat.com', links = {}, last = 0;
+    scProjects().filter(function (pr) { return scKind(pr) === 'human' && Date.now() - Date.parse(pr.created) < 7 * 864e5; }).forEach(function (pr) {
+      var pl = { 'Веб': 'web', 'Android': 'android', 'iOS': 'ios' }[scPlat(pr)], tail = String(pr.name || '').split(' / ').pop();
+      if (!pl || links[pl]) return;
+      links[pl] = pl === 'web' ? { url: base + '/projects/' + pr.id, folder: tail } : { url: base + '/projects/' + pr.id, file: tail };
+      last = Math.max(last, Date.parse(pr.created));
+    });
+    return last ? { links: links, restored: new Date(last).toLocaleDateString('ru-RU') } : { links: {} };
+  }
   function homeMessage(info, refill, quiet) {
     homeMsgInfo = info;
     var L = info.links || {}, blocks = [], none = !L.web && !L.android && !L.ios;
+    if (!none && !info.restored) sset('wlx_msg_links', JSON.stringify({ t: Date.now(), links: L }));
     if (L.web || none) blocks.push(['Для веба', (scCfg && scCfg.bandTplWeb && scCfg.bandTplWeb.trim()) || BAND_TPL_WEB]);
     if (L.android || L.ios || none) blocks.push(['Для приложений', (scCfg && scCfg.bandTplApp && scCfg.bandTplApp.trim()) || BAND_TPL_APP]);
     homeMsgBox.textContent = '';
@@ -2524,6 +2539,7 @@
       homeMsgBox.appendChild(el('div', { class: 'msgblk' }, [el('div', { class: 'lbl', text: b[0] }), ta,
         el('div', { class: 'row' }, [el('button', { class: 'b s', type: 'button', text: '📋 Скопировать', onclick: function () { copyText(ta, st); } }), st])]));
     });
+    if (info.restored) homeMsgBox.insertBefore(el('p', { class: 'muted', text: 'Ссылки — с последней отправки английского (' + info.restored + '). Отправишь новое — обновятся сами.' }), homeMsgBox.firstChild);
     if (none) homeMsgBox.insertBefore(el('p', { class: 'muted', text: 'Пока это просто шаблоны. Ссылки на Smartcat подставятся сами, когда английский уйдёт через «Отправить» или «Загрузить файлы».' }), homeMsgBox.firstChild);
     /* сводка для вебхука — только если он настроен */
     var hook = scCfg && scCfg.bandHook;
@@ -2659,8 +2675,8 @@
     else if (has(c.enIos, SC_EN_DEFAULTS.ios)) add.ios = { url: url, file: names };
     else if (has(c.enWeb, SC_EN_DEFAULTS.web)) add.web = { url: url, folder: String(path || '').split('/').pop() || pr.name };
     else return;
-    var prev = homeMsgInfo && homeMsgInfo.links || {};
-    homeMessage(Object.assign({}, homeMsgInfo, { links: Object.assign({}, prev, add) }), true);
+    var prev = homeMsgInfo && (!homeMsgInfo.restored || homeMsgInfo.restored === new Date().toLocaleDateString('ru-RU')) && homeMsgInfo.links || {};
+    homeMessage(Object.assign({}, homeMsgInfo, { links: Object.assign({}, prev, add), restored: '' }), true);
     upScMsg.appendChild(el('div', {}, [el('button', { class: 'b g s', type: 'button', text: '💬 Сообщение в чат готово →', onclick: function () { nav('msg'); } })]));
   }
   function upScOpen() {
