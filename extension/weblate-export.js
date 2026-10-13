@@ -2222,7 +2222,7 @@
   }
   /* копия настроек в файл (без API-ключа) — для нового компьютера или коллеги */
   var BACKUP_KEYS = ['wlx_links', 'wlx_langs', 'wlx_langtpl', 'wlx_langtpl_cur', 'wlx_layout', 'wlx_en', 'wlx_pj', 'wlx_mt_links', 'wlx_sc_split', 'wlx_m', 'wlx_f', 'wlx_c', 'wlx_presets_exp', 'wlx_presets_sc',
-    'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip', 'wlx_salvage', 'wlx_brokenup', 'wlx_sc_favs', 'wlx_dir_dated', 'wlx_dir_unzip', 'wlx_byplat', 'wlx_noen'];
+    'wlx_scdone', 'wlx_scimp_hide', 'wlx_scimp_mode', 'wlx_varskip', 'wlx_salvage', 'wlx_brokenup', 'wlx_sc_favs', 'wlx_upsc_asg', 'wlx_dir_dated', 'wlx_dir_unzip', 'wlx_byplat', 'wlx_noen'];
   var restoreInput = el('input', { type: 'file', accept: '.json', class: 'hide' });
   function backupSettings() {
     loadScConfig().then(function (c) {
@@ -2592,6 +2592,15 @@
   var upScNewFolder = el('input', { type: 'text', placeholder: 'новая папка — например ' + ddmmyy() });
   var upScLangBox = el('div', { class: 'chipsw' });
   var upScByName = el('input', { type: 'checkbox' }); upScByName.checked = sget('wlx_upsc_byname') !== '0';
+  /* назначить людей из «Люди на английский» (перевод — этап 1, редактура — этап 2) на загруженные документы */
+  var upScAsg = el('input', { type: 'checkbox' }); upScAsg.checked = sget('wlx_upsc_asg') === '1';
+  var upScAsgTxt = el('span', { text: 'назначить людей (Настройки → «Люди на английский»)' });
+  upScAsg.addEventListener('change', function () { sset('wlx_upsc_asg', upScAsg.checked ? '1' : '0'); });
+  function upScAsgLabel() {
+    var a = (scCfg && scCfg.enAssign) || [], e = (scCfg && scCfg.enEdit) || [];
+    upScAsgTxt.textContent = 'назначить людей: перевод — ' + (a.length ? a.map(function (x) { return x.name; }).join(', ') : 'никого') +
+      '; редактура — ' + (e.length ? e.map(function (x) { return x.name; }).join(', ') : 'никого') + ' (все, кто примет; меняется в Настройках → «Люди на английский»)';
+  }
   var upScWhere = el('div', { class: 'where' });
   var upScGo = el('button', { class: 'b big', type: 'button', onclick: function () { upScRun(); } });
   var upScMsg = el('div', { class: 'muted' });
@@ -2622,13 +2631,15 @@
           el('div', { class: 'seg' }, [upScSegOld, upScSegNew]), upScOldBox, upScNewBox])]),
         el('div', { class: 'step' }, [el('div', { class: 'stepn', text: '3' }), el('div', { class: 'stepb' }, [el('div', { class: 'stept', text: 'Папка' }), upScFolders, upScNewFolder])]),
         el('div', { class: 'step' }, [el('div', { class: 'stepn', text: '4' }), el('div', { class: 'stepb' }, [el('div', { class: 'stept', text: 'Языки' }), upScLangBox,
-          el('label', { class: 'chk' }, [upScByName, 'если язык есть в имени файла (…_kk.po) — только на этот язык'])])])
+          el('label', { class: 'chk' }, [upScByName, 'если язык есть в имени файла (…_kk.po) — только на этот язык']),
+          el('label', { class: 'chk' }, [upScAsg, upScAsgTxt])])])
       ]),
       el('div', { class: 'sheetfoot' }, [upScWhere, el('div', { class: 'row' }, [upScGo, upScMsg])])
     ])
   ]);
   function upScOpen() {
     if (curNav !== 'up') return nav('up');
+    loadScConfig().then(upScAsgLabel);
     upScMsg.textContent = ''; upScMsg.className = 'muted';
     if (!upScNewName.value) upScNewName.value = ddmmyy() + ' ';
     var tb = upScNewBox.querySelector('#wlx-upsc-tpl'); tb.textContent = '';
@@ -2821,6 +2832,21 @@
       upScMsg.appendChild(document.createTextNode('✓ Загружено документов: ' + (x.r.documents || []).length + ' · '));
       upScMsg.appendChild(el('a', { href: (scCfg && scCfg.base || 'https://smartcat.com') + '/projects/' + x.pr.id, target: '_blank', text: 'открыть в Smartcat ↗' }));
       if (tracked) upScMsg.appendChild(document.createTextNode(' · появится в «Перевод готов → в Weblate»'));
+      var ids = (x.r.documents || []).map(function (d) { return d.id; });
+      var roles = [{ stage: 1, label: 'перевод', list: (scCfg && scCfg.enAssign) || [] }, { stage: 2, label: 'редактура', list: (scCfg && scCfg.enEdit) || [] }]
+        .filter(function (r) { return r.list.length; });
+      if (upScAsg.checked && ids.length) {
+        if (!roles.length) upScMsg.appendChild(el('div', { class: 'red', text: '✗ Назначать некого: отметь людей в Настройках → «Люди на английский»' }));
+        roles.reduce(function (chain, ro) {
+          var line = el('div', { class: 'muted', text: 'Назначаю (' + ro.label + ', этап ' + ro.stage + '): ' + ro.list.map(function (p) { return p.name; }).join(', ') + '…' });
+          upScMsg.appendChild(line);
+          return chain.then(function () {
+            return scCall('sc-assign', { documentIds: ids, stage: ro.stage, userIds: ro.list.map(function (p) { return p.id; }) }).then(function () {
+              line.className = 'ok'; line.textContent = '✓ ' + ro.label + ' (этап ' + ro.stage + ', ' + ids.length + ' док.): ' + ro.list.map(function (p) { return p.name; }).join(', ');
+            }, function (e) { line.className = 'red'; line.textContent = '✗ ' + ro.label + ' (этап ' + ro.stage + '): ' + e.message; });
+          });
+        }, Promise.resolve());
+      }
       upSc.files = []; upScNewFolder.value = '';
       if (upSc.mode === 'new') upSc.mode = 'old';
       upScPick(x.pr); upSc.folder = path;
