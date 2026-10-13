@@ -387,29 +387,19 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
       for (let tryN = 0; ; tryN++) {
         try {
           /* режим «Все, кто примет»: в задаче поле может называться по-разному — шлём все варианты, лишние Smartcat игнорирует */
-          /* режим «Все, кто примет» — поле invitationStrategyType, и только в первом запросе (потом Smartcat отвечает 409).
-             Значение пробуем по очереди: неверное Smartcat отклоняет (400) — берём следующее; найденное запоминаем */
-          /* одно и то же «crowd» — и в адресе, и в теле под разными именами: что лишнее, Smartcat пропускает */
-          const S = 'crowd';
-          const variants = [
-            ['crowd в адресе и теле', { userIds, invitationStrategyType: S, invitationStrategy: S, strategyType: S, strategy: S, assignmentStrategy: S, invitationType: S },
-              '?invitationStrategyType=' + S + '&strategyType=' + S + '&strategy=' + S],
-            ['crowd в теле', { userIds, invitationStrategyType: S }],
-            ['без режима', { userIds }]].concat(userIds.length === 1 ? [['userId без режима', { userId: userIds[0] }]] : []);
+          /* в API назначения на задачу режима нет (только userIds) — Smartcat ставит «Первый, кто принял»;
+             «Все, кто примет» выбирается в самом Smartcat у задачи */
+          const variants = [['userIds', { userIds }]].concat(userIds.length === 1 ? [['userId', { userId: userIds[0] }]] : []);
           const vErr = [];
           let ok = null;
-          for (const [name, body, q] of variants) {
-            try { await scFetch(path + (q || ''), json(body)); ok = name; break; } catch (e) {
+          for (const [name, body] of variants) {
+            try { await scFetch(path, json(body)); ok = name; break; } catch (e) {
               if (/zero volume/i.test(String(e.message))) throw e;
               vErr.push(name + ': ' + String(e.message).replace(/Error processing request\.|Correlation id: [\w-]+,?|Trace id: \w+/g, '').trim().slice(0, 140));
             }
           }
           if (!ok) throw new Error(vErr.join(' | '));
-          diag.push('этап ' + stage + ': прошёл «' + ok + '»' + (vErr.length ? ' (до этого: ' + vErr.join(' | ').slice(0, 700) + ')' : ''));
-          await sleep(2500);                                 // режим Smartcat может проставить не сразу
-          const now = await readTask(pid, tid).catch(() => null);
-          const curMode = now ? String(now.invitationStrategyType || '') : '';
-          if (/rocket/i.test(curMode)) diag.push('Smartcat принял «' + ok + '», но оставил rocket');
+          if (vErr.length) diag.push('этап ' + stage + ': прошёл «' + ok + '» (до этого: ' + vErr.join(' | ').slice(0, 400) + ')');
           break;
         } catch (e) {
           if (!/zero volume/i.test(String(e.message)) || tryN >= 12) throw e;
@@ -434,15 +424,8 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
   if (!done.size) throw new Error('в проекте с задачами не нашла задач этапа ' + stage + ' для этих документов. ' + info.join(' | '));
   return { n: done.size, mode: [...modes].join(', '), diag: diag.slice(0, 2).join('; ') };
 }
-async function readTask(pid, tid) {
-  let l = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list?currency=USD')).json();
-  l = Array.isArray(l) ? l : (l && (l.items || l.tasks || l.result || l.data)) || [];
-  return l.filter((x) => (x.id || x.taskId || x.projectTaskId) === tid)[0] || null;
-}
 /* «Все, кто примет»: в задаче это invitationStrategyType (по умолчанию rocket — «первый, кто принял»).
    Точное значение неизвестно — пробуем по очереди, пока Smartcat не перестанет показывать rocket; найденное запоминаем */
-/* «Все, кто примет» у задач Smartcat = crowd (проверено); остальное — запасные варианты */
-const ALL_STRATEGIES = ['crowd', 'Crowd', 'distributeAmongAll', 'sendToAll', 'all'];
 /* режим назначения задачи — поле с mode / strategy / distribution в названии (на 1–2 уровня вглубь) */
 function taskMode(t, depth = 0) {
   for (const k of Object.keys(t || {})) {
