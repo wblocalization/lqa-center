@@ -389,8 +389,7 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
           /* режим «Все, кто примет»: в задаче поле может называться по-разному — шлём все варианты, лишние Smartcat игнорирует */
           /* режим «Все, кто примет» — поле invitationStrategyType, и только в первом запросе (потом Smartcat отвечает 409).
              Значение пробуем по очереди: неверное Smartcat отклоняет (400) — берём следующее; найденное запоминаем */
-          const { scStrategy } = await chrome.storage.local.get('scStrategy');
-          const vals = scStrategy ? [scStrategy].concat(ALL_STRATEGIES.filter((v) => v !== scStrategy)) : ALL_STRATEGIES;
+          const vals = ALL_STRATEGIES;
           const variants = vals.map((v) => ['invitationStrategyType=' + v, { userIds, invitationStrategyType: v }])
             .concat([['без режима', { userIds }]]).concat(userIds.length === 1 ? [['userId без режима', { userId: userIds[0] }]] : []);
           const vErr = [];
@@ -405,7 +404,7 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
           diag.push('этап ' + stage + ': прошёл «' + ok + '»' + (vErr.length ? ' (до этого: ' + vErr.join(' | ').slice(0, 700) + ')' : ''));
           const now = await readTask(pid, tid).catch(() => null);
           const curMode = now ? String(now.invitationStrategyType || '') : '';
-          if (/^invitationStrategyType=/.test(ok) && curMode && !/rocket/i.test(curMode)) await chrome.storage.local.set({ scStrategy: ok.split('=')[1] });
+          if (/rocket/i.test(curMode)) diag.push('Smartcat принял «' + ok + '», но оставил rocket');
           break;
         } catch (e) {
           if (!/zero volume/i.test(String(e.message)) || tryN >= 12) throw e;
@@ -437,7 +436,8 @@ async function readTask(pid, tid) {
 }
 /* «Все, кто примет»: в задаче это invitationStrategyType (по умолчанию rocket — «первый, кто принял»).
    Точное значение неизвестно — пробуем по очереди, пока Smartcat не перестанет показывать rocket; найденное запоминаем */
-const ALL_STRATEGIES = ['distributeAmongAll', 'sendToAll', 'all', 'everyone', 'allAccepted', 'parallel', 'broadcast', 'DistributeAmongAll'];
+/* «Все, кто примет» у задач Smartcat = crowd (проверено); остальное — запасные варианты */
+const ALL_STRATEGIES = ['crowd', 'Crowd', 'distributeAmongAll', 'sendToAll', 'all'];
 /* режим назначения задачи — поле с mode / strategy / distribution в названии (на 1–2 уровня вглубь) */
 function taskMode(t, depth = 0) {
   for (const k of Object.keys(t || {})) {

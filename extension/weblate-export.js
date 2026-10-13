@@ -2641,7 +2641,7 @@
   function modeLabel(m) {
     if (!m) return '';
     var v = String(m).split('=').pop();
-    return /rocket|first|перв/i.test(v) ? 'первый, кто принял ⚠' : /among|all|все|every|parallel/i.test(v) ? 'все, кто примет' : /invite/i.test(v) ? 'только приглашение' : v;
+    return /rocket|first|перв/i.test(v) ? 'первый, кто принял ⚠' : /crowd|among|all|все|every|parallel/i.test(v) ? 'все, кто примет' : /invite/i.test(v) ? 'только приглашение' : v;
   }
   function upScOpen() {
     if (curNav !== 'up') return nav('up');
