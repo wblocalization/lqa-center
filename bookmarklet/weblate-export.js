@@ -1045,6 +1045,7 @@
     '.mdprev{padding:10px 12px;border-radius:12px;background:var(--soft);font-size:13px;line-height:1.5;word-break:break-word}',
     '.mdprev strong{font-weight:700}.chipb.tb{font-weight:800;color:var(--ink);border-style:solid}',
     '.mdprev a{color:#2389D7;text-decoration:none}.mdprev .mention{color:#2389D7;font-weight:600}',
+    '.tlinks{margin-top:6px;font-size:13px;line-height:1.6}.tlinks a{font-weight:600}.tlinkbox{margin-top:8px;padding:10px 12px;border-radius:12px;background:var(--soft)}',
     '.hide{display:none!important}'
   ].join('\n');
 
@@ -2637,6 +2638,17 @@
       el('div', { class: 'sheetfoot' }, [upScWhere, el('div', { class: 'row' }, [upScGo, upScMsg])])
     ])
   ]);
+  /* прямые ссылки на вкладку назначения задач документа в Smartcat: /projects/<проект>/tasks?documentIds=<документ без _язык> */
+  function scDocBase(id) { id = String(id); var i = id.lastIndexOf('_'); return i > 0 ? id.slice(0, i) : id; }
+  function taskLinks(projectId, docs, label) {
+    var base = (scCfg && scCfg.base) || 'https://smartcat.com', seen = {}, kids = [document.createTextNode(label || '✏ Назначение в Smartcat (переключить на «Все, кто примет»): ')];
+    docs.forEach(function (d) {
+      var b = scDocBase(d.id); if (seen[b]) return; seen[b] = 1;
+      if (kids.length > 1) kids.push(document.createTextNode(' · '));
+      kids.push(el('a', { href: base + '/projects/' + projectId + '/tasks?documentIds=' + encodeURIComponent(b), target: '_blank', text: (d.name || 'документ') + ' ↗' }));
+    });
+    return el('div', { class: 'tlinks' }, kids);
+  }
   /* режим назначения из ответа Smartcat — по-человечески */
   function modeLabel(m) {
     if (!m) return '';
@@ -2843,16 +2855,17 @@
         .filter(function (r) { return r.list.length; });
       if (upScAsg.checked && ids.length) {
         if (!roles.length) upScMsg.appendChild(el('div', { class: 'red', text: '✗ Назначать некого: отметь людей в Настройках → «Люди на английский»' }));
+        var docsForLinks = (x.r.documents || []).map(function (d) { return { id: d.id, name: d.name }; });
         roles.reduce(function (chain, ro) {
           var line = el('div', { class: 'muted', text: 'Назначаю (' + ro.label + ', этап ' + ro.stage + '): ' + ro.list.map(function (p) { return p.name; }).join(', ') + '… (может занять пару минут — Smartcat считает слова)' });
           upScMsg.appendChild(line);
           return chain.then(function () {
             return scCall('sc-assign', { documentIds: ids, projectIds: [x.pr.id], stage: ro.stage, userIds: ro.list.map(function (p) { return p.id; }) }).then(function (res) {
               line.className = 'ok'; line.textContent = '✓ ' + ro.label + ' (этап ' + ro.stage + ', ' + ids.length + ' док.' + (res && res.how === 'tasks' ? ', на задачи проекта' : '') + (res && res.mode ? ', режим в Smartcat: ' + modeLabel(res.mode) : '') + '): ' + ro.list.map(function (p) { return p.name; }).join(', ') +
-                (res && res.mode && /rocket/i.test(res.mode) ? ' · «Все, кто примет» через API не ставится — переключи у задачи в Smartcat (список справа от «Ждем исполнителей»)' : '');
+                (res && res.mode && /rocket/i.test(res.mode) ? ' · режим переключи по ссылке ниже' : '');
             }, function (e) { line.className = 'red'; line.textContent = '✗ ' + ro.label + ' (этап ' + ro.stage + '): ' + e.message; });
           });
-        }, Promise.resolve());
+        }, Promise.resolve()).then(function () { upScMsg.appendChild(taskLinks(x.pr.id, docsForLinks)); });
       }
       upSc.files = []; upScNewFolder.value = '';
       if (upSc.mode === 'new') upSc.mode = 'old';
@@ -3502,14 +3515,24 @@
               msg.appendChild(am);
               return chain.then(function () {
                 return scCall('sc-assign', { documentIds: enDocIds, projectIds: enProjIds, stage: ro.stage, userIds: ro.list.map(function (x) { return x.id; }) }).then(function (res) {
-                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + (res && res.how === 'tasks' ? ' (на задачи проекта' + (res.mode ? ', режим в Smartcat: ' + modeLabel(res.mode) : '') + (res.mode && /rocket/i.test(res.mode) ? '; «Все, кто примет» через API не ставится — переключи у задачи в Smartcat' : '') + ')' : ' (все, кто примет' + (res && res.how === 'myTeam' ? '; через приглашение «Моей команды»' : '') + ')');
+                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + (res && res.how === 'tasks' ? ' (на задачи проекта' + (res.mode ? ', режим в Smartcat: ' + modeLabel(res.mode) : '') + (res.mode && /rocket/i.test(res.mode) ? '; режим переключи по ссылкам ниже' : '') + ')' : ' (все, кто примет' + (res && res.how === 'myTeam' ? '; через приглашение «Моей команды»' : '') + ')');
                   homeAssignNote('✓ ' + ro.label + ': ' + ro.list.length + ' чел.', true);
                 }, function (e) {
                   am.className = 'red'; am.textContent = '✗ Не получилось назначить (' + ro.label + ', этап ' + ro.stage + '): ' + e.message + ' — назначь в Smartcat вручную';
                   homeAssignNote('✗ ' + ro.label + ' не назначена — текст ошибки в «Подробностях»', false);
                 });
               });
-            }, Promise.resolve());
+            }, Promise.resolve()).then(function () {
+              /* ссылки на вкладку назначения — переключить режим на «Все, кто примет» */
+              var groups = enRes.filter(function (x) { return x.ok && x.projectId && x.docIds; }).map(function (x) {
+                return { pid: x.projectId, label: x.pl === 'ios' ? 'iOS' : x.pl === 'android' ? 'Android' : x.pl, docs: x.docIds.map(function (id, i) { return { id: id, name: (x.files || [])[i] || x.pl }; }) };
+              }).concat(made.filter(function (p) { return p.enDocs && p.docIds; }).map(function (p) {
+                return { pid: p.id, label: 'Веб', docs: p.docIds.map(function (id) { return { id: id, name: String(p.name || '').split(' / ').pop() }; }) };
+              }));
+              if (groups.length) msg.appendChild(el('div', { class: 'tlinkbox' }, [el('b', { text: '✏ Назначение в Smartcat — переключи режим на «Все, кто примет»:' })].concat(groups.map(function (g) {
+                return taskLinks(g.pid, g.docs, g.label + ': ');
+              }))));
+            });
           } else if (enDocIds.length && !who.length && !eds.length) {
             msg.appendChild(el('div', { class: 'muted', text: 'Переводчики на английский не назначены — выбрать их можно в ⚙ → «Назначать на английский».' }));
           }
