@@ -1045,7 +1045,6 @@
     '.mdprev{padding:10px 12px;border-radius:12px;background:var(--soft);font-size:13px;line-height:1.5;word-break:break-word}',
     '.mdprev strong{font-weight:700}.chipb.tb{font-weight:800;color:var(--ink);border-style:solid}',
     '.mdprev a{color:#2389D7;text-decoration:none}.mdprev .mention{color:#2389D7;font-weight:600}',
-    '.tlinks{margin-top:6px;font-size:13px;line-height:1.6}.tlinks a{font-weight:600}.tlinkbox{margin-top:8px;padding:10px 12px;border-radius:12px;background:var(--soft)}',
     '.clamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;cursor:help}',
     '.hide{display:none!important}'
   ].join('\n');
@@ -1920,6 +1919,7 @@
     if (k === 'send') homeRefreshSc();
     if (k === 'settings') fillScSettings();
     if (k === 'msg' && navBtns.msg) navBtns.msg.classList.remove('dot');
+    if (k === 'msg' && !homeMsgInfo) loadScConfig().then(function () { if (!homeMsgInfo) homeMessage({ links: {} }, true, true); }, function () { homeMessage({ links: {} }, true, true); });
     if (k === 'up') upScOpen();
     if (k === 'projects') { if (scImpBody.classList.contains('hide')) scImpOpen.click(); scImpOpen.classList.add('hide'); }
   }
@@ -2498,7 +2498,7 @@
   var homeMsgCard = card('Сообщения в чат', [
     el('label', { class: 'lbl', text: 'Дедлайн' }), homeDeadline,
     homeMsgBox], 'hide');
-  homeDeadline.addEventListener('input', function () { if (homeMsgInfo) homeMessage(homeMsgInfo, true); });
+  homeDeadline.addEventListener('input', function () { if (homeMsgInfo) homeMessage(homeMsgInfo, true, true); });
   function chatFill(tpl, info) {
     var L = info.links || {}, md = function (t, x) { return x ? '[' + t + '](' + x.url + ')' : '—'; };
     var v = {
@@ -2511,11 +2511,12 @@
     return tpl.replace(/\{([а-яёa-z_]+)\}/gi, function (m, k) { return v[k] != null ? v[k] : info[k] != null ? info[k] : m; })
       .replace(/\[([^\]\n]*)\]\(—\)/g, '$1');          /* ссылки нет (например, не было iOS) — остаётся просто слово */
   }
-  function homeMessage(info, refill) {
+  /* quiet: просто шаблоны (ещё ничего не отправляли) — без точки в меню и без автоотправки */
+  function homeMessage(info, refill, quiet) {
     homeMsgInfo = info;
-    var L = info.links || {}, blocks = [];
-    if (L.web) blocks.push(['Для веба', (scCfg && scCfg.bandTplWeb && scCfg.bandTplWeb.trim()) || BAND_TPL_WEB]);
-    if (L.android || L.ios) blocks.push(['Для приложений', (scCfg && scCfg.bandTplApp && scCfg.bandTplApp.trim()) || BAND_TPL_APP]);
+    var L = info.links || {}, blocks = [], none = !L.web && !L.android && !L.ios;
+    if (L.web || none) blocks.push(['Для веба', (scCfg && scCfg.bandTplWeb && scCfg.bandTplWeb.trim()) || BAND_TPL_WEB]);
+    if (L.android || L.ios || none) blocks.push(['Для приложений', (scCfg && scCfg.bandTplApp && scCfg.bandTplApp.trim()) || BAND_TPL_APP]);
     homeMsgBox.textContent = '';
     blocks.forEach(function (b) {
       var ta = el('textarea', { class: 'small msg' }), st = el('span', { class: 'muted' });
@@ -2523,15 +2524,16 @@
       homeMsgBox.appendChild(el('div', { class: 'msgblk' }, [el('div', { class: 'lbl', text: b[0] }), ta,
         el('div', { class: 'row' }, [el('button', { class: 'b s', type: 'button', text: '📋 Скопировать', onclick: function () { copyText(ta, st); } }), st])]));
     });
-    if (!blocks.length) homeMsgBox.appendChild(el('p', { class: 'muted', text: 'Сообщения появятся, когда английский уйдёт в Smartcat (веб — в «МП Web», android/iOS — в английские проекты).' }));
+    if (none) homeMsgBox.insertBefore(el('p', { class: 'muted', text: 'Пока это просто шаблоны. Ссылки на Smartcat подставятся сами, когда английский уйдёт через «Отправить» или «Загрузить файлы».' }), homeMsgBox.firstChild);
     /* сводка для вебхука — только если он настроен */
     var hook = scCfg && scCfg.bandHook;
     if (hook) {
       homeMsgText.value = chatFill((scCfg.bandTpl && scCfg.bandTpl.trim()) || BAND_TPL_DEFAULT, info);
       homeMsgBox.appendChild(el('details', { class: 'more' }, [el('summary', { text: 'Сводка в чат по вебхуку' }), homeMsgText, el('div', { class: 'row' }, [homeMsgSend, homeMsgSt])]));
-      if (scCfg.bandAuto && !refill) homeSendMsg();
+      if (scCfg.bandAuto && !refill && !quiet) homeSendMsg();
     }
-    homeMsgCard.classList.remove('hide'); homeMsgNote.classList.remove('hide'); msgEmpty.classList.add('hide'); if (navBtns.msg && curNav !== 'msg') navBtns.msg.classList.add('dot');
+    homeMsgCard.classList.remove('hide'); msgEmpty.classList.add('hide');
+    if (!quiet) { homeMsgNote.classList.remove('hide'); if (navBtns.msg && curNav !== 'msg') navBtns.msg.classList.add('dot'); }
   }
   function homeSendMsg() {
     var hook = scCfg && scCfg.bandHook;
@@ -2648,22 +2650,18 @@
       el('div', { class: 'sheetfoot' }, [upScWhere, el('div', { class: 'row' }, [upScGo, upScMsg])])
     ])
   ]);
-  /* прямые ссылки на вкладку назначения задач документа в Smartcat: /projects/<проект>/tasks?documentIds=<документ без _язык> */
-  function scDocBase(id) { id = String(id); var i = id.lastIndexOf('_'); return i > 0 ? id.slice(0, i) : id; }
-  function taskLinks(projectId, docs, label) {
-    var base = (scCfg && scCfg.base) || 'https://smartcat.com', seen = {}, kids = [document.createTextNode(label || '✏ Назначение в Smartcat (переключить на «Все, кто примет»): ')];
-    docs.forEach(function (d) {
-      var b = scDocBase(d.id); if (seen[b]) return; seen[b] = 1;
-      if (kids.length > 1) kids.push(document.createTextNode(' · '));
-      kids.push(el('a', { href: base + '/projects/' + projectId + '/tasks?documentIds=' + encodeURIComponent(b), target: '_blank', text: (d.name || 'документ') + ' ↗' }));
-    });
-    return el('div', { class: 'tlinks' }, kids);
-  }
-  /* режим назначения из ответа Smartcat — по-человечески */
-  function modeLabel(m) {
-    if (!m) return '';
-    var v = String(m).split('=').pop();
-    return /rocket|first|перв/i.test(v) ? 'первый, кто принял ⚠' : /crowd|among|all|все|every|parallel/i.test(v) ? 'все, кто примет' : /invite/i.test(v) ? 'только приглашение' : v;
+  /* английский, загруженный руками в EN android / EN ios / МП Web, — ссылки в «Сообщения в чат» */
+  function upScChatLinks(pr, path, files) {
+    var c = scCfg || {}, base = c.base || 'https://smartcat.com', id = String(pr.id || ''), url = base + '/projects/' + id;
+    var has = function (ref, def) { ref = String(ref || def || ''); return !!id && (ref.indexOf(id) >= 0 || ref === pr.name); };
+    var names = files.map(function (f) { return f.file.name; }).join(', '), add = {};
+    if (has(c.enAndroid, SC_EN_DEFAULTS.android)) add.android = { url: url, file: names };
+    else if (has(c.enIos, SC_EN_DEFAULTS.ios)) add.ios = { url: url, file: names };
+    else if (has(c.enWeb, SC_EN_DEFAULTS.web)) add.web = { url: url, folder: String(path || '').split('/').pop() || pr.name };
+    else return;
+    var prev = homeMsgInfo && homeMsgInfo.links || {};
+    homeMessage(Object.assign({}, homeMsgInfo, { links: Object.assign({}, prev, add) }), true);
+    upScMsg.appendChild(el('div', {}, [el('button', { class: 'b g s', type: 'button', text: '💬 Сообщение в чат готово →', onclick: function () { nav('msg'); } })]));
   }
   function upScOpen() {
     if (curNav !== 'up') return nav('up');
@@ -2860,22 +2858,21 @@
       upScMsg.appendChild(document.createTextNode('✓ Загружено документов: ' + (x.r.documents || []).length + ' · '));
       upScMsg.appendChild(el('a', { href: (scCfg && scCfg.base || 'https://smartcat.com') + '/projects/' + x.pr.id, target: '_blank', text: 'открыть в Smartcat ↗' }));
       if (tracked) upScMsg.appendChild(document.createTextNode(' · появится в «Перевод готов → в Weblate»'));
+      upScChatLinks(x.pr, path, files);
       var ids = (x.r.documents || []).map(function (d) { return d.id; });
       var roles = [{ stage: 1, label: 'перевод', list: (scCfg && scCfg.enAssign) || [] }, { stage: 2, label: 'редактура', list: (scCfg && scCfg.enEdit) || [] }]
         .filter(function (r) { return r.list.length; });
       if (upScAsg.checked && ids.length) {
         if (!roles.length) upScMsg.appendChild(el('div', { class: 'red', text: '✗ Назначать некого: отметь людей в Настройках → «Люди на английский»' }));
-        var docsForLinks = (x.r.documents || []).map(function (d) { return { id: d.id, name: d.name }; });
         roles.reduce(function (chain, ro) {
           var line = el('div', { class: 'muted', text: 'Назначаю (' + ro.label + ', этап ' + ro.stage + '): ' + ro.list.map(function (p) { return p.name; }).join(', ') + '… (может занять пару минут — Smartcat считает слова)' });
           upScMsg.appendChild(line);
           return chain.then(function () {
             return scCall('sc-assign', { documentIds: ids, projectIds: [x.pr.id], stage: ro.stage, userIds: ro.list.map(function (p) { return p.id; }) }).then(function (res) {
-              line.className = 'ok'; line.textContent = '✓ ' + ro.label + ' (этап ' + ro.stage + ', ' + ids.length + ' док.' + (res && res.how === 'tasks' ? ', на задачи проекта' : '') + (res && res.mode ? ', режим в Smartcat: ' + modeLabel(res.mode) : '') + '): ' + ro.list.map(function (p) { return p.name; }).join(', ') +
-                (res && res.mode && /rocket/i.test(res.mode) ? ' · режим переключи по ссылке ниже' : '');
+              line.className = 'ok'; line.textContent = '✓ ' + ro.label + ' (этап ' + ro.stage + ', ' + ids.length + ' док.' + (res && res.how === 'tasks' ? ', на задачи проекта' : '') + '): ' + ro.list.map(function (p) { return p.name; }).join(', ');
             }, function (e) { line.className = 'red'; line.textContent = '✗ ' + ro.label + ' (этап ' + ro.stage + '): ' + e.message; });
           });
-        }, Promise.resolve()).then(function () { upScMsg.appendChild(taskLinks(x.pr.id, docsForLinks)); });
+        }, Promise.resolve());
       }
       upSc.files = []; upScNewFolder.value = '';
       if (upSc.mode === 'new') upSc.mode = 'old';
@@ -3525,24 +3522,14 @@
               msg.appendChild(am);
               return chain.then(function () {
                 return scCall('sc-assign', { documentIds: enDocIds, projectIds: enProjIds, stage: ro.stage, userIds: ro.list.map(function (x) { return x.id; }) }).then(function (res) {
-                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + (res && res.how === 'tasks' ? ' (на задачи проекта' + (res.mode ? ', режим в Smartcat: ' + modeLabel(res.mode) : '') + (res.mode && /rocket/i.test(res.mode) ? '; режим переключи по ссылкам ниже' : '') + ')' : ' (все, кто примет' + (res && res.how === 'myTeam' ? '; через приглашение «Моей команды»' : '') + ')');
+                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + (res && res.how === 'tasks' ? ' (на задачи проекта)' : ' (все, кто примет' + (res && res.how === 'myTeam' ? '; через приглашение «Моей команды»' : '') + ')');
                   homeAssignNote('✓ ' + ro.label + ': ' + ro.list.length + ' чел.', true);
                 }, function (e) {
                   am.className = 'red'; am.textContent = '✗ Не получилось назначить (' + ro.label + ', этап ' + ro.stage + '): ' + e.message + ' — назначь в Smartcat вручную';
                   homeAssignNote('✗ ' + ro.label + ' не назначена — текст ошибки в «Подробностях»', false);
                 });
               });
-            }, Promise.resolve()).then(function () {
-              /* ссылки на вкладку назначения — переключить режим на «Все, кто примет» */
-              var groups = enRes.filter(function (x) { return x.ok && x.projectId && x.docIds; }).map(function (x) {
-                return { pid: x.projectId, label: x.pl === 'ios' ? 'iOS' : x.pl === 'android' ? 'Android' : x.pl, docs: x.docIds.map(function (id, i) { return { id: id, name: (x.files || [])[i] || x.pl }; }) };
-              }).concat(made.filter(function (p) { return p.enDocs && p.docIds; }).map(function (p) {
-                return { pid: p.id, label: 'Веб', docs: p.docIds.map(function (id) { return { id: id, name: String(p.name || '').split(' / ').pop() }; }) };
-              }));
-              if (groups.length) msg.appendChild(el('div', { class: 'tlinkbox' }, [el('b', { text: '✏ Назначение в Smartcat — переключи режим на «Все, кто примет»:' })].concat(groups.map(function (g) {
-                return taskLinks(g.pid, g.docs, g.label + ': ');
-              }))));
-            });
+            }, Promise.resolve());
           } else if (enDocIds.length && !who.length && !eds.length) {
             msg.appendChild(el('div', { class: 'muted', text: 'Переводчики на английский не назначены — выбрать их можно в ⚙ → «Назначать на английский».' }));
           }

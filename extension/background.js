@@ -443,8 +443,6 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
   if (!done.size) throw new Error('в проекте с задачами не нашла задач этапа ' + stage + ' для этих документов. ' + info.join(' | '));
   return { n: done.size, mode: [...modes].join(', '), diag: diag.slice(0, 2).join('; ') };
 }
-/* «Все, кто примет»: в задаче это invitationStrategyType (по умолчанию rocket — «первый, кто принял»).
-   Точное значение неизвестно — пробуем по очереди, пока Smartcat не перестанет показывать rocket; найденное запоминаем */
 /* режим назначения задачи — поле с mode / strategy / distribution в названии (на 1–2 уровня вглубь) */
 function taskMode(t, depth = 0) {
   for (const k of Object.keys(t || {})) {
