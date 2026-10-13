@@ -1042,6 +1042,8 @@
     '.srt{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
     '.tplchips{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:6px 0 4px}',
     '.chipb.tc{font-size:12px;padding:4px 10px;color:var(--accent);border-style:dashed}',
+    '.mdprev{padding:10px 12px;border-radius:12px;background:var(--soft);font-size:13px;line-height:1.5;word-break:break-word}',
+    '.mdprev a{color:#2389D7;text-decoration:none}.mdprev .mention{color:#2389D7;font-weight:600}',
     '.hide{display:none!important}'
   ].join('\n');
 
@@ -1934,10 +1936,10 @@
   /* сообщение в чат (Band): шаблон, вебхук, автоотправка — у каждого сетапа свои */
   var BAND_TPL_DEFAULT = 'Привет! Выгрузка {дата} · {проект}\n📦 Подрядчикам: {архивы}\n🤖 В Smartcat: {smartcat}\n🌍 Языки: {языки}\n🧩 Компоненты: {компоненты}\nСтрок: {строки}';
   var BAND_TPL_WEB = 'Привет! {люди}\n\nзагрузила новые файлики для веба {ссылка_веб}\nдедлайн — {дедлайн} :bunny_rabbit_flower_thank_you:';
-  var BAND_TPL_APP = 'Привет! {люди}\nновые файлы на перевод для\nандроида {ссылка_android}\nи айоса {ссылка_ios}\nдедлайн — {дедлайн} :pepe_pray:';
+  var BAND_TPL_APP = 'Привет! {люди}\nновые строчки для [айоса]({url_ios}) и [андроида]({url_android})\n\nдедлайн — {дедлайн} :pepe_pray:';
   /* подстановки одним кликом: вставляются туда, где стоит курсор в шаблоне */
-  var TPL_HINT = { 'люди': 'кого тегнуть', 'дедлайн': 'дедлайн', 'дата': 'дата ДДММГГ', 'ссылка_веб': 'ссылка на папку веба', 'папка_веб': 'название папки веба',
-    'ссылка_android': 'ссылка android', 'ссылка_ios': 'ссылка iOS', 'файл_android': 'файл android', 'файл_ios': 'файл iOS', 'языки': 'языки',
+  var TPL_HINT = { 'слово_ios': 'айоса — ссылкой', 'слово_android': 'андроида — ссылкой', 'слово_веб': 'веба — ссылкой', 'люди': 'кого тегнуть', 'дедлайн': 'дедлайн', 'дата': 'дата ДДММГГ', 'ссылка_веб': 'ссылка на папку веба', 'папка_веб': 'название папки веба',
+    'ссылка_android': 'файл android ссылкой', 'ссылка_ios': 'файл iOS ссылкой', 'файл_android': 'файл android', 'файл_ios': 'файл iOS', 'языки': 'языки',
     'проект': 'проект', 'архивы': 'архивы', 'smartcat': 'проекты Smartcat', 'компоненты': 'компоненты', 'строки': 'число строк' };
   function tplChips(ta, def, keys) {
     var ins = function (txt) {
@@ -1947,15 +1949,41 @@
       ta.dispatchEvent(new Event('input', { bubbles: true }));
     };
     var keep = function (e) { e.preventDefault(); };      /* не уводить курсор из шаблона */
-    return el('div', { class: 'tplchips' }, keys.map(function (k) {
-      return el('button', { class: 'chipb tc', type: 'button', title: 'Вставить {' + k + '}', text: '+ ' + TPL_HINT[k], onmousedown: keep, onclick: function () { ins('{' + k + '}'); } });
+    var prev = el('div', { class: 'mdprev' });
+    var draw = function () { mdPreview(prev, chatFill(ta.value.trim() || def, TPL_SAMPLE())); };
+    ta.addEventListener('input', draw); setTimeout(draw, 0);
+    return el('div', {}, [el('div', { class: 'tplchips' }, keys.map(function (k) {
+      var w = TPL_WORD[k];
+      return el('button', { class: 'chipb tc', type: 'button', title: w ? 'Вставить ' + w : 'Вставить {' + k + '}', text: '+ ' + TPL_HINT[k], onmousedown: keep, onclick: function () { ins(w || '{' + k + '}'); draw(); } });
     }).concat([el('button', { class: 'lnk', type: 'button', text: '↺ взять стандартный текст', onmousedown: keep, onclick: function () {
       if (ta.value.trim() && !confirm('Заменить текст шаблона стандартным?')) return;
       ta.value = def; ta.focus(); ta.dispatchEvent(new Event('input', { bubbles: true }));
-    } })]));
+    } })])), el('div', { class: 'lbl', style: 'margin:8px 0 4px', text: 'Как будет выглядеть в Band' }), prev]);
+  }
+  /* слово-ссылка: «айоса» ведёт на проект в Smartcat */
+  var TPL_WORD = { 'слово_ios': '[айоса]({url_ios})', 'слово_android': '[андроида]({url_android})', 'слово_веб': '[веба]({url_веб})' };
+  function TPL_SAMPLE() {
+    var d = ddmmyy(), u = 'https://smartcat.com/projects/…';
+    return { people: bandPeople.value.trim() || '@ник1 @ник2', deadline: 'завтра до 18:00', links: { web: { url: u, folder: d + ' web' }, android: { url: u, file: d + '_global_site-wb-android-en.po' }, ios: { url: u, file: d + '_global_site-wb-ios_new-en.po' } },
+      'дата': d, 'языки': 'EN KA KK UZ KY HY TG AZ', 'проект': 'AI translation 4 MP', 'архивы': d + '_web.zip, ' + d + '_android.zip', 'smartcat': 'AI translation 4 MP', 'компоненты': 'wb-android, wb-ios_new', 'строки': '120' };
+  }
+  /* предпросмотр как в чате: [текст](ссылка) — ссылкой, @ник — жирным, :emoji: как есть */
+  function mdPreview(box, text) {
+    box.textContent = '';
+    text.split('\n').forEach(function (line, i) {
+      if (i) box.appendChild(el('br'));
+      var re = /\[([^\]\n]+)\]\(([^)\s]+)\)|(@[\w.\-]+)/g, last = 0, m;
+      while ((m = re.exec(line))) {
+        if (m.index > last) box.appendChild(document.createTextNode(line.slice(last, m.index)));
+        box.appendChild(m[1] ? el('a', { href: '#', text: m[1], onclick: function (e) { e.preventDefault(); } }) : el('b', { class: 'mention', text: m[3] }));
+        last = re.lastIndex;
+      }
+      if (last < line.length) box.appendChild(document.createTextNode(line.slice(last)));
+    });
   }
   var bandTpl = el('textarea', { class: 'small', placeholder: BAND_TPL_DEFAULT });
   var bandPeople = el('input', { type: 'text', placeholder: '@ник1 @ник2 @ник3' });
+  bandPeople.addEventListener('input', function () { [bandTplWeb, bandTplApp, bandTpl].forEach(function (t) { t.dispatchEvent(new Event('input')); }); });
   var bandTplWeb = el('textarea', { class: 'small', placeholder: BAND_TPL_WEB });
   var bandTplApp = el('textarea', { class: 'small', placeholder: BAND_TPL_APP });
   var bandHook = el('input', { type: 'text', placeholder: 'https://… (вебхук чата; пусто — только «Скопировать»)' });
@@ -2238,9 +2266,9 @@
       el('p', { class: 'muted', text: 'После «Выгрузить и отправить» на главной появятся готовые сообщения для веба и для приложений — со ссылками на Smartcat. Вписываешь дедлайн, копируешь, вставляешь в Band.' }),
       el('label', {}, ['Кого тегнуть ({люди})', bandPeople]),
       el('label', {}, ['Сообщение для веба — пусто = стандартное', bandTplWeb]),
-      tplChips(bandTplWeb, BAND_TPL_WEB, ['люди', 'дедлайн', 'ссылка_веб', 'папка_веб', 'дата', 'языки']),
+      tplChips(bandTplWeb, BAND_TPL_WEB, ['люди', 'дедлайн', 'ссылка_веб', 'слово_веб', 'папка_веб', 'дата', 'языки']),
       el('label', {}, ['Сообщение для приложений — пусто = стандартное', bandTplApp]),
-      tplChips(bandTplApp, BAND_TPL_APP, ['люди', 'дедлайн', 'ссылка_android', 'ссылка_ios', 'файл_android', 'файл_ios', 'дата', 'языки']),
+      tplChips(bandTplApp, BAND_TPL_APP, ['люди', 'дедлайн', 'слово_ios', 'слово_android', 'ссылка_ios', 'ссылка_android', 'дата', 'языки']),
       el('details', { class: 'more' }, [el('summary', { text: 'Сводка и автоотправка по вебхуку (не обязательно)' }),
         el('label', {}, ['Сводка — пусто = стандартная', bandTpl]),
         tplChips(bandTpl, BAND_TPL_DEFAULT, ['люди', 'дата', 'проект', 'архивы', 'smartcat', 'языки', 'компоненты', 'строки']),
@@ -2449,12 +2477,14 @@
   function chatFill(tpl, info) {
     var L = info.links || {}, md = function (t, x) { return x ? '[' + t + '](' + x.url + ')' : '—'; };
     var v = {
-      'люди': (scCfg && scCfg.bandPeople) || '', 'дедлайн': homeDeadline.value.trim() || '[дедлайн]',
+      'люди': info.people != null ? info.people : (scCfg && scCfg.bandPeople) || '', 'дедлайн': info.deadline || homeDeadline.value.trim() || '[дедлайн]',
       'ссылка_веб': L.web ? md(L.web.folder, L.web) : '—', 'папка_веб': L.web ? L.web.folder : '—',
       'ссылка_android': L.android ? md(L.android.file, L.android) : '—', 'ссылка_ios': L.ios ? md(L.ios.file, L.ios) : '—',
-      'файл_android': L.android ? L.android.file : '—', 'файл_ios': L.ios ? L.ios.file : '—'
+      'файл_android': L.android ? L.android.file : '—', 'файл_ios': L.ios ? L.ios.file : '—',
+      'url_веб': L.web ? L.web.url : '—', 'url_android': L.android ? L.android.url : '—', 'url_ios': L.ios ? L.ios.url : '—'
     };
-    return tpl.replace(/\{([а-яёa-z_]+)\}/gi, function (m, k) { return v[k] != null ? v[k] : info[k] != null ? info[k] : m; });
+    return tpl.replace(/\{([а-яёa-z_]+)\}/gi, function (m, k) { return v[k] != null ? v[k] : info[k] != null ? info[k] : m; })
+      .replace(/\[([^\]\n]*)\]\(—\)/g, '$1');          /* ссылки нет (например, не было iOS) — остаётся просто слово */
   }
   function homeMessage(info, refill) {
     homeMsgInfo = info;
