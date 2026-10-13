@@ -348,11 +348,54 @@ SC_HANDLERS['sc-team'] = async () => {
   return out;
 };
 /* назначить людей из «Моей команды» на документы (этап 1 — перевод); документ после загрузки ещё разбирается — повторяем */
+/* проекты «с задачами» (новый режим Smartcat): людей назначают на задачу, а не на документ.
+   Задачи берём из /projectTask/{проект}/list, свои находим по id документа, этап — по номеру или типу задачи */
+function taskStage(t) {
+  const n = t.stageNumber ?? t.workflowStageNumber ?? (t.stage && (t.stage.number ?? t.stage.stageNumber)) ??
+    (t.workflowStage && (t.workflowStage.number ?? t.workflowStage.stageNumber ?? t.workflowStage.order));
+  if (n != null && !isNaN(+n)) return +n;
+  const ty = String(t.stageType || t.taskType || t.type || (t.workflowStage && (t.workflowStage.type || t.workflowStage.stageType)) || (t.stage && t.stage.type) || '').toLowerCase();
+  if (/transl|перев/.test(ty)) return 1;
+  if (/edit|proof|review|post|редакт|коррект/.test(ty)) return 2;
+  return null;
+}
+async function assignByTasks(projectIds, docIds, stage, userIds) {
+  const json = (o) => ({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
+  const done = new Set(), info = [];
+  /* id документа Smartcat — «<документ>_<язык>»; в задаче может быть полный id или только «<документ>» */
+  const base = (id) => { id = String(id); const i = id.lastIndexOf('_'); return i > 0 ? id.slice(0, i) : id; };
+  const hit = (str, id) => str.includes('"' + id + '"') || str.includes('"' + base(id) + '"');
+  for (const pid of [...new Set(projectIds)]) {
+    let list;
+    try { list = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list')).json(); }
+    catch (e) { info.push(pid + ': ' + String(e.message).slice(0, 120)); continue; }   // проект без задач — пропускаем
+    list = Array.isArray(list) ? list : (list && (list.items || list.tasks || list.result || list.data)) || [];
+    const mine = list.map((t) => ({ t, s: JSON.stringify(t) })).filter((x) => docIds.some((id) => hit(x.s, id)));
+    info.push(pid + ': задач ' + list.length + ', наших ' + mine.length + (list[0] ? ', пример: ' + JSON.stringify(list[0]).slice(0, 300) : ''));
+    const staged = mine.filter((x) => taskStage(x.t) === stage);
+    const pick = staged.length ? staged : (stage === 1 && mine.length && mine.every((x) => taskStage(x.t) == null) ? mine : []);
+    for (const { t } of pick) {
+      const tid = t.id || t.taskId || t.projectTaskId;
+      if (!tid) continue;
+      const path = '/projectTask/' + encodeURIComponent(pid) + '/' + encodeURIComponent(tid) + '/individual-assignment';
+      try { await scFetch(path, json({ userIds })); } catch (e) {
+        if (userIds.length !== 1) throw e;
+        await scFetch(path, json({ userId: userIds[0] }));
+      }
+      const ts = JSON.stringify(t);
+      docIds.forEach((id) => { if (hit(ts, id)) done.add(id); });
+    }
+  }
+  if (!done.size) throw new Error('в проекте с задачами не нашла задач этапа ' + stage + ' для этих документов. ' + info.join(' | '));
+  return done.size;
+}
 SC_HANDLERS['sc-assign'] = async (m) => {
   const stage = m.stage || 1;
   const json = (o) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
   /* Smartcat: POST /document/assign?documentId=…&stageNumber=… — по одному документу,
-     в теле исполнители и режим «распределить между всеми, кто принял»; запасной путь — «Моя команда» */
+     в теле исполнители и режим «распределить между всеми, кто принял»; запасной путь — «Моя команда».
+     Если проект «работает с задачами» — назначаем на задачи (assignByTasks) */
+  const taskDocs = new Set();
   const assignOne = async (docId) => {
     const q = '/document/assign?documentId=' + encodeURIComponent(docId) + '&stageNumber=' + stage;
     const errs = [];
@@ -360,7 +403,10 @@ SC_HANDLERS['sc-assign'] = async (m) => {
       try {
         await scFetch(q, json({ executives: m.userIds.map((id) => ({ id, wordsCount: 0 })), minWordsCountForExecutive: 0, assignmentMode: mode }));
         return 'assign';
-      } catch (e) { errs.push('assign: ' + String(e.message).slice(0, 200)); if (!/mode/i.test(String(e.message))) break; }
+      } catch (e) {
+        if (/works with tasks/i.test(String(e.message))) { const t = new Error('tasks'); t.tasks = true; throw t; }
+        errs.push('assign: ' + String(e.message).slice(0, 200)); if (!/mode/i.test(String(e.message))) break;
+      }
     }
     try {
       await scFetch('/document/assignFromMyTeam', json({ documentIds: [docId], stageNumber: stage, strategy: 'distributeAmongAll', userIds: m.userIds }));
@@ -373,6 +419,7 @@ SC_HANDLERS['sc-assign'] = async (m) => {
     let notReady = false;
     for (const id of [...left]) {
       try { await assignOne(id); left.delete(id); done.push(id); } catch (e) {
+        if (e.tasks) { left.delete(id); taskDocs.add(id); continue; }    // проект «с задачами» — назначим ниже через задачи
         const t = String(e.message); errs[id] = t;
         if (/disassembl|not ready|processing|is being|not found.*document|документ/i.test(t)) notReady = true;
       }
@@ -380,11 +427,22 @@ SC_HANDLERS['sc-assign'] = async (m) => {
     if (!left.size || !notReady) break;   // ошибка не про «документ ещё разбирается» — ждать смысла нет
     await sleep(5000);
   }
+  let how = 'assign';
+  if (taskDocs.size) {
+    if (!m.projectIds || !m.projectIds.length) throw new Error('проект работает с задачами, а id проекта не передан');
+    let lastErr = null, n = 0;
+    for (let round = 0; round < 6; round++) {       // задачи появляются не сразу после загрузки файла
+      try { n = await assignByTasks(m.projectIds, [...taskDocs], stage, m.userIds); lastErr = null; break; }
+      catch (e) { lastErr = e; if (!/не нашла задач/.test(String(e.message))) break; await sleep(5000); }
+    }
+    if (lastErr) throw lastErr;
+    done.push(...Array(n).fill(0)); how = 'tasks';
+  }
   if (left.size) {
     const first = errs[[...left][0]] || '';
     throw new Error((done.length ? 'назначено ' + done.length + ' из ' + m.documentIds.length + ', не получилось: ' : '') + first);
   }
-  return { ok: true, docs: done.length };
+  return { ok: true, how, docs: done.length };
 };
 /* сообщение в рабочий чат по вебхуку (Band / Mattermost / Slack-совместимый: JSON {"text": …}).
    «простой» запрос без предварительной проверки: ответ чата не читается, поэтому успех не гарантирован */

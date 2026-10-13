@@ -2841,8 +2841,8 @@
           var line = el('div', { class: 'muted', text: 'Назначаю (' + ro.label + ', этап ' + ro.stage + '): ' + ro.list.map(function (p) { return p.name; }).join(', ') + '…' });
           upScMsg.appendChild(line);
           return chain.then(function () {
-            return scCall('sc-assign', { documentIds: ids, stage: ro.stage, userIds: ro.list.map(function (p) { return p.id; }) }).then(function () {
-              line.className = 'ok'; line.textContent = '✓ ' + ro.label + ' (этап ' + ro.stage + ', ' + ids.length + ' док.): ' + ro.list.map(function (p) { return p.name; }).join(', ');
+            return scCall('sc-assign', { documentIds: ids, projectIds: [x.pr.id], stage: ro.stage, userIds: ro.list.map(function (p) { return p.id; }) }).then(function (res) {
+              line.className = 'ok'; line.textContent = '✓ ' + ro.label + ' (этап ' + ro.stage + ', ' + ids.length + ' док.' + (res && res.how === 'tasks' ? ', на задачи проекта' : '') + '): ' + ro.list.map(function (p) { return p.name; }).join(', ');
             }, function (e) { line.className = 'red'; line.textContent = '✗ ' + ro.label + ' (этап ' + ro.stage + '): ' + e.message; });
           });
         }, Promise.resolve());
@@ -3485,6 +3485,8 @@
           /* назначить переводчиков на английские документы (EN android / EN ios / веб) */
           var enDocIds = [].concat.apply([], enRes.filter(function (x) { return x.ok && x.docIds; }).map(function (x) { return x.docIds; }))
             .concat([].concat.apply([], made.filter(function (p) { return p.enDocs && p.docIds; }).map(function (p) { return p.docIds; })));
+          var enProjIds = enRes.filter(function (x) { return x.ok && x.projectId; }).map(function (x) { return x.projectId; })
+            .concat(made.filter(function (p) { return p.enDocs; }).map(function (p) { return p.id; }));
           var who = c.enAssign || [], eds = c.enEdit || [];
           var roles = [{ stage: 1, label: 'перевод', list: who }, { stage: 2, label: 'редактура', list: eds }].filter(function (x) { return x.list.length; });
           if (enDocIds.length && c.enAssignOn !== false && roles.length) {
@@ -3492,8 +3494,8 @@
               var am = el('div', { class: 'muted', text: 'Назначаю на английский (' + ro.label + '): ' + ro.list.map(function (x) { return x.name; }).join(', ') + '…' });
               msg.appendChild(am);
               return chain.then(function () {
-                return scCall('sc-assign', { documentIds: enDocIds, stage: ro.stage, userIds: ro.list.map(function (x) { return x.id; }) }).then(function (res) {
-                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + ' (все, кто примет' + (res && res.how === 'myTeam' ? '; через приглашение «Моей команды»' : '') + ')';
+                return scCall('sc-assign', { documentIds: enDocIds, projectIds: enProjIds, stage: ro.stage, userIds: ro.list.map(function (x) { return x.id; }) }).then(function (res) {
+                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + (res && res.how === 'tasks' ? ' (на задачи проекта)' : ' (все, кто примет' + (res && res.how === 'myTeam' ? '; через приглашение «Моей команды»' : '') + ')');
                   homeAssignNote('✓ ' + ro.label + ': ' + ro.list.length + ' чел.', true);
                 }, function (e) {
                   am.className = 'red'; am.textContent = '✗ Не получилось назначить (' + ro.label + ', этап ' + ro.stage + '): ' + e.message + ' — назначь в Smartcat вручную';
