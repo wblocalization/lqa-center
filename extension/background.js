@@ -361,7 +361,7 @@ function taskStage(t) {
 }
 async function assignByTasks(projectIds, docIds, stage, userIds) {
   const json = (o) => ({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
-  const done = new Set(), info = [];
+  const done = new Set(), info = [], tasksDone = [], modes = new Set();
   /* id документа Smartcat — «<документ>_<язык>»; в задаче может быть полный id или только «<документ>» */
   const base = (id) => { id = String(id); const i = id.lastIndexOf('_'); return i > 0 ? id.slice(0, i) : id; };
   const hit = (str, id) => str.includes('"' + id + '"') || str.includes('"' + base(id) + '"');
@@ -386,9 +386,17 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
       /* сразу после загрузки Smartcat ещё считает слова — у задачи «нулевой объём», назначать нельзя: ждём и повторяем */
       for (let tryN = 0; ; tryN++) {
         try {
-          try { await scFetch(path, json({ userIds })); } catch (e) {
-            if (userIds.length !== 1 || /zero volume/i.test(String(e.message))) throw e;
-            await scFetch(path, json({ userId: userIds[0] }));
+          /* режим «Все, кто примет»: в задаче поле может называться по-разному — шлём все варианты, лишние Smartcat игнорирует */
+          const MODE = { assignmentMode: 'distributeAmongAll', strategy: 'distributeAmongAll', distributionMode: 'distributeAmongAll', assignmentStrategy: 'distributeAmongAll' };
+          try { await scFetch(path, json(Object.assign({ userIds }, MODE))); } catch (e) {
+            if (/zero volume/i.test(String(e.message))) throw e;
+            try { await scFetch(path, json({ userIds, assignmentMode: 'distributeAmongAll' })); } catch (e2) {
+              if (/zero volume/i.test(String(e2.message))) throw e2;
+              try { await scFetch(path, json({ userIds })); } catch (e3) {
+                if (userIds.length !== 1 || /zero volume/i.test(String(e3.message))) throw e3;
+                await scFetch(path, json({ userId: userIds[0] }));
+              }
+            }
           }
           break;
         } catch (e) {
@@ -398,10 +406,30 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
       }
       const ts = JSON.stringify(t);
       docIds.forEach((id) => { if (hit(ts, id)) done.add(id); });
+      tasksDone.push({ pid, tid });
     }
   }
+  /* перечитать задачи и показать, какой режим назначения реально стоит в Smartcat */
+  for (const { pid, tid } of tasksDone.slice(0, 3)) {
+    try {
+      let l = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list?currency=USD')).json();
+      l = Array.isArray(l) ? l : (l && (l.items || l.tasks || l.result || l.data)) || [];
+      const t = l.filter((x) => (x.id || x.taskId || x.projectTaskId) === tid)[0];
+      const md = t && taskMode(t);
+      if (md) modes.add(md);
+    } catch (e) { /* не страшно */ }
+  }
   if (!done.size) throw new Error('в проекте с задачами не нашла задач этапа ' + stage + ' для этих документов. ' + info.join(' | '));
-  return done.size;
+  return { n: done.size, mode: [...modes].join(', ') };
+}
+/* режим назначения задачи — поле с mode / strategy / distribution в названии (на 1–2 уровня вглубь) */
+function taskMode(t, depth = 0) {
+  for (const k of Object.keys(t || {})) {
+    const v = t[k];
+    if (/mode|strateg|distribut/i.test(k) && (typeof v === 'string' || typeof v === 'number')) return k + '=' + v;
+    if (v && typeof v === 'object' && !Array.isArray(v) && depth < 1) { const r = taskMode(v, depth + 1); if (r) return r; }
+  }
+  return '';
 }
 SC_HANDLERS['sc-assign'] = async (m) => {
   const stage = m.stage || 1;
@@ -444,9 +472,9 @@ SC_HANDLERS['sc-assign'] = async (m) => {
   let how = 'assign';
   if (taskDocs.size) {
     if (!m.projectIds || !m.projectIds.length) throw new Error('проект работает с задачами, а id проекта не передан');
-    let lastErr = null, n = 0;
+    let lastErr = null, n = 0; var taskMode_ = '';
     for (let round = 0; round < 6; round++) {       // задачи появляются не сразу после загрузки файла
-      try { n = await assignByTasks(m.projectIds, [...taskDocs], stage, m.userIds); lastErr = null; break; }
+      try { const r = await assignByTasks(m.projectIds, [...taskDocs], stage, m.userIds); n = r.n; taskMode_ = r.mode; lastErr = null; break; }
       catch (e) { lastErr = e; if (!/не нашла задач/.test(String(e.message))) break; await sleep(5000); }
     }
     if (lastErr) throw lastErr;
@@ -456,7 +484,7 @@ SC_HANDLERS['sc-assign'] = async (m) => {
     const first = errs[[...left][0]] || '';
     throw new Error((done.length ? 'назначено ' + done.length + ' из ' + m.documentIds.length + ', не получилось: ' : '') + first);
   }
-  return { ok: true, how, docs: done.length };
+  return { ok: true, how, docs: done.length, mode: typeof taskMode_ !== 'undefined' ? taskMode_ : '' };
 };
 /* сообщение в рабочий чат по вебхуку (Band / Mattermost / Slack-совместимый: JSON {"text": …}).
    «простой» запрос без предварительной проверки: ответ чата не читается, поэтому успех не гарантирован */
