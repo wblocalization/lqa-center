@@ -2641,7 +2641,7 @@
   function modeLabel(m) {
     if (!m) return '';
     var v = String(m).split('=').pop();
-    return /among|all|все/i.test(v) ? 'все, кто примет' : /rocket|first|перв/i.test(v) ? 'первый, кто принял ⚠' : /invite/i.test(v) ? 'только приглашение' : v;
+    return /rocket|first|перв/i.test(v) ? 'первый, кто принял ⚠' : /among|all|все|every|parallel/i.test(v) ? 'все, кто примет' : /invite/i.test(v) ? 'только приглашение' : v;
   }
   function upScOpen() {
     if (curNav !== 'up') return nav('up');
@@ -2849,7 +2849,7 @@
           return chain.then(function () {
             return scCall('sc-assign', { documentIds: ids, projectIds: [x.pr.id], stage: ro.stage, userIds: ro.list.map(function (p) { return p.id; }) }).then(function (res) {
               line.className = 'ok'; line.textContent = '✓ ' + ro.label + ' (этап ' + ro.stage + ', ' + ids.length + ' док.' + (res && res.how === 'tasks' ? ', на задачи проекта' : '') + (res && res.mode ? ', режим в Smartcat: ' + modeLabel(res.mode) : '') + '): ' + ro.list.map(function (p) { return p.name; }).join(', ') +
-                (res && res.mode && !/among|all/i.test(res.mode) && res.diag ? ' · для разбора: ' + res.diag + ' · ' + res.mode : '');
+                (res && res.mode && /rocket/i.test(res.mode) && res.diag ? ' · для разбора: ' + res.diag + ' · ' + res.mode : '');
             }, function (e) { line.className = 'red'; line.textContent = '✗ ' + ro.label + ' (этап ' + ro.stage + '): ' + e.message; });
           });
         }, Promise.resolve());
@@ -3502,7 +3502,7 @@
               msg.appendChild(am);
               return chain.then(function () {
                 return scCall('sc-assign', { documentIds: enDocIds, projectIds: enProjIds, stage: ro.stage, userIds: ro.list.map(function (x) { return x.id; }) }).then(function (res) {
-                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + (res && res.how === 'tasks' ? ' (на задачи проекта' + (res.mode ? ', режим в Smartcat: ' + modeLabel(res.mode) : '') + (res.mode && !/among|all/i.test(res.mode) && res.diag ? ' · для разбора: ' + res.diag + ' · ' + res.mode : '') + ')' : ' (все, кто примет' + (res && res.how === 'myTeam' ? '; через приглашение «Моей команды»' : '') + ')');
+                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + (res && res.how === 'tasks' ? ' (на задачи проекта' + (res.mode ? ', режим в Smartcat: ' + modeLabel(res.mode) : '') + (res.mode && /rocket/i.test(res.mode) && res.diag ? ' · для разбора: ' + res.diag + ' · ' + res.mode : '') + ')' : ' (все, кто примет' + (res && res.how === 'myTeam' ? '; через приглашение «Моей команды»' : '') + ')');
                   homeAssignNote('✓ ' + ro.label + ': ' + ro.list.length + ' чел.', true);
                 }, function (e) {
                   am.className = 'red'; am.textContent = '✗ Не получилось назначить (' + ro.label + ', этап ' + ro.stage + '): ' + e.message + ' — назначь в Smartcat вручную';

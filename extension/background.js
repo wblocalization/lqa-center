@@ -400,6 +400,11 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
           }
           if (!ok) throw new Error(vErr.join(' | '));
           diag.push('этап ' + stage + ': прошёл «' + ok + '»' + (vErr.length ? ' (до этого: ' + vErr.join(' | ') + ')' : ''));
+          const now = await readTask(pid, tid).catch(() => null);
+          if (now && /rocket/i.test(String(now.invitationStrategyType || ''))) {
+            const r = await setAllStrategy(pid, tid, path, userIds);
+            diag.push(r.ok ? 'режим поставлен: ' + r.value : 'режим не поменялся, пробовала: ' + r.tried.join('; '));
+          }
           break;
         } catch (e) {
           if (!/zero volume/i.test(String(e.message)) || tryN >= 12) throw e;
@@ -424,11 +429,33 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
   if (!done.size) throw new Error('в проекте с задачами не нашла задач этапа ' + stage + ' для этих документов. ' + info.join(' | '));
   return { n: done.size, mode: [...modes].join(', '), diag: diag.slice(0, 2).join('; ') };
 }
+async function readTask(pid, tid) {
+  let l = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list?currency=USD')).json();
+  l = Array.isArray(l) ? l : (l && (l.items || l.tasks || l.result || l.data)) || [];
+  return l.filter((x) => (x.id || x.taskId || x.projectTaskId) === tid)[0] || null;
+}
+/* «Все, кто примет»: в задаче это invitationStrategyType (по умолчанию rocket — «первый, кто принял»).
+   Точное значение неизвестно — пробуем по очереди, пока Smartcat не перестанет показывать rocket; найденное запоминаем */
+const ALL_STRATEGIES = ['distributeAmongAll', 'all', 'sendToAll', 'everyone', 'allAccepted', 'parallel', 'AllAccepted', 'DistributeAmongAll'];
+async function setAllStrategy(pid, tid, path, userIds) {
+  const { scStrategy } = await chrome.storage.local.get('scStrategy');
+  const list = scStrategy ? [scStrategy].concat(ALL_STRATEGIES.filter((v) => v !== scStrategy)) : ALL_STRATEGIES;
+  const tried = [];
+  for (const v of list) {
+    try { await scFetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds, invitationStrategyType: v }) }); }
+    catch (e) { tried.push(v + ': ' + String(e.message).replace(/Error processing request\.|Correlation id: [\w-]+,?|Trace id: \w+/g, '').trim().slice(0, 80)); continue; }
+    const t = await readTask(pid, tid).catch(() => null);
+    const cur = t ? String(t.invitationStrategyType || '') : '';
+    if (cur && !/rocket/i.test(cur)) { await chrome.storage.local.set({ scStrategy: v }); return { ok: true, value: cur, tried }; }
+    tried.push(v + ' → осталось ' + (cur || '?'));
+  }
+  return { ok: false, tried };
+}
 /* режим назначения задачи — поле с mode / strategy / distribution в названии (на 1–2 уровня вглубь) */
 function taskMode(t, depth = 0) {
   for (const k of Object.keys(t || {})) {
     const v = t[k];
-    if (/mode|strateg|distribut/i.test(k) && (typeof v === 'string' || typeof v === 'number')) return k + '=' + v;
+    if (/mode|strateg|distribut/i.test(k) && (typeof v === 'string' || typeof v === 'number')) return k + '=' + v;   // у задач — invitationStrategyType
     if (v && typeof v === 'object' && !Array.isArray(v) && depth < 1) { const r = taskMode(v, depth + 1); if (r) return r; }
   }
   return '';
