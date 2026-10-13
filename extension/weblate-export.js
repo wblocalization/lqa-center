@@ -1919,7 +1919,7 @@
     if (k === 'send') homeRefreshSc();
     if (k === 'settings') fillScSettings();
     if (k === 'msg' && navBtns.msg) navBtns.msg.classList.remove('dot');
-    if (k === 'msg' && !homeMsgInfo) loadScConfig().then(function () { if (!homeMsgInfo) homeMessage(msgRestore(), true, true); }, function () { homeMessage(msgRestore(), true, true); });
+    if (k === 'msg' && !homeMsgInfo) loadScConfig().then(function () { if (!homeMsgInfo) homeMessage({ links: {} }, true, true); }, function () { homeMessage({ links: {} }, true, true); });
     if (k === 'up') upScOpen();
     if (k === 'projects') { if (scImpBody.classList.contains('hide')) scImpOpen.click(); scImpOpen.classList.add('hide'); }
   }
@@ -2514,31 +2514,44 @@
   /* quiet: просто шаблоны (ещё ничего не отправляли) — без точки в меню и без автоотправки */
   /* что показать в «Сообщениях», если в этой вкладке ещё ничего не отправляли: последние ссылки (за неделю),
      иначе — английский, отслеживаемый в «В работе»; иначе пустые шаблоны */
-  /* ссылка для переводчиков: один документ — на вкладку назначения его задачи (/projects/<проект>/tasks?documentIds=<документ без _язык>),
+  /* ссылка для переводчиков: один документ — сразу в редактор Smartcat
+     (/open-editor/<документ>?targetLanguageId=<язык>&stageNumber=1&backUrl=/projects/<проект>/tasks; id документа в API = <документ>_<язык>),
      несколько — на проект/папку */
   function scChatUrl(base, pid, docIds) {
     var ids = (docIds || []).filter(Boolean), id = ids.length === 1 ? String(ids[0]) : '', i = id.lastIndexOf('_');
-    return id ? base + '/projects/' + pid + '/tasks?documentIds=' + encodeURIComponent(i > 0 ? id.slice(0, i) : id) : base + '/projects/' + pid;
+    if (!id) return base + '/projects/' + pid;
+    return base + '/open-editor/' + encodeURIComponent(i > 0 ? id.slice(0, i) : id) + '?' + (i > 0 ? 'targetLanguageId=' + encodeURIComponent(id.slice(i + 1)) + '&' : '') +
+      'stageNumber=1&backUrl=' + encodeURIComponent('/projects/' + pid + '/tasks');
   }
-  function msgRestore() {
-    var s = null; try { s = JSON.parse(sget('wlx_msg_links') || 'null'); } catch (e) {}
-    if (s && s.links && Date.now() - s.t < 7 * 864e5) return { links: s.links, restored: new Date(s.t).toLocaleDateString('ru-RU') };
-    var base = (scCfg && scCfg.base) || 'https://smartcat.com', links = {}, last = 0;
-    scProjects().filter(function (pr) { return scKind(pr) === 'human' && Date.now() - Date.parse(pr.created) < 7 * 864e5; }).forEach(function (pr) {
-      var pl = { 'Веб': 'web', 'Android': 'android', 'iOS': 'ios' }[scPlat(pr)], tail = String(pr.name || '').split(' / ').pop();
-      if (!pl || links[pl]) return;
+  /* последние ссылки по каждой платформе (веб / android / ios) — каждая своя, хранятся неделю */
+  var MSG_DAYS = 7;
+  function msgStore() { var s = null; try { s = JSON.parse(sget('wlx_msg_last') || 'null'); } catch (e) {} return s && typeof s === 'object' ? s : {}; }
+  function msgLatest() {
+    var s = msgStore(), out = {}, base = (scCfg && scCfg.base) || 'https://smartcat.com';
+    ['web', 'android', 'ios'].forEach(function (pl) { if (s[pl] && Date.now() - s[pl].t < MSG_DAYS * 864e5) out[pl] = s[pl]; });
+    /* ещё ничего не запомнено — английский из «В работе» */
+    scProjects().filter(function (pr) { return scKind(pr) === 'human' && Date.now() - Date.parse(pr.created) < MSG_DAYS * 864e5; }).forEach(function (pr) {
+      var pl = { 'Веб': 'web', 'Android': 'android', 'iOS': 'ios' }[scPlat(pr)], tail = String(pr.name || '').split(' / ').pop(), t = Date.parse(pr.created);
+      if (!pl || (out[pl] && out[pl].t >= t)) return;
       var u = scChatUrl(base, pr.id, Object.keys(pr.docs || {}));
-      links[pl] = pl === 'web' ? { url: u, folder: tail } : { url: u, file: tail };
-      last = Math.max(last, Date.parse(pr.created));
+      out[pl] = pl === 'web' ? { url: u, folder: tail, t: t } : { url: u, file: tail, t: t };
     });
-    return last ? { links: links, restored: new Date(last).toLocaleDateString('ru-RU') } : { links: {} };
+    return out;
   }
   function homeMessage(info, refill, quiet) {
     homeMsgInfo = info;
-    var L = info.links || {}, blocks = [], none = !L.web && !L.android && !L.ios;
-    if (!none && !info.restored) sset('wlx_msg_links', JSON.stringify({ t: Date.now(), links: L }));
-    if (L.web || none) blocks.push(['Для веба', (scCfg && scCfg.bandTplWeb && scCfg.bandTplWeb.trim()) || BAND_TPL_WEB]);
-    if (L.android || L.ios || none) blocks.push(['Для приложений', (scCfg && scCfg.bandTplApp && scCfg.bandTplApp.trim()) || BAND_TPL_APP]);
+    var fresh = info.links || {}, s = msgStore(), now = Date.now();
+    if (!quiet && Object.keys(fresh).length) {        /* новая отправка — запоминаем её ссылки (перерисовка из-за дедлайна не считается) */
+      Object.keys(fresh).forEach(function (pl) { s[pl] = Object.assign({}, fresh[pl], { t: now }); });
+      sset('wlx_msg_last', JSON.stringify(s));
+    }
+    var L = msgLatest(), blocks = [];
+    Object.keys(fresh).forEach(function (pl) { L[pl] = Object.assign({ t: now }, fresh[pl]); });
+    var none = !L.web && !L.android && !L.ios;
+    var when = function (x) { return x && x.t ? ' · ссылка от ' + new Date(x.t).toLocaleDateString('ru-RU') : ''; };
+    info = Object.assign({}, info, { links: L });
+    if (L.web || none) blocks.push(['Для веба' + when(L.web), (scCfg && scCfg.bandTplWeb && scCfg.bandTplWeb.trim()) || BAND_TPL_WEB]);
+    if (L.android || L.ios || none) blocks.push(['Для приложений' + when((L.android && L.ios) ? (L.android.t < L.ios.t ? L.android : L.ios) : L.android || L.ios), (scCfg && scCfg.bandTplApp && scCfg.bandTplApp.trim()) || BAND_TPL_APP]);
     homeMsgBox.textContent = '';
     blocks.forEach(function (b) {
       var ta = el('textarea', { class: 'small msg' }), st = el('span', { class: 'muted' });
@@ -2546,7 +2559,6 @@
       homeMsgBox.appendChild(el('div', { class: 'msgblk' }, [el('div', { class: 'lbl', text: b[0] }), ta,
         el('div', { class: 'row' }, [el('button', { class: 'b s', type: 'button', text: '📋 Скопировать', onclick: function () { copyText(ta, st); } }), st])]));
     });
-    if (info.restored) homeMsgBox.insertBefore(el('p', { class: 'muted', text: 'Ссылки — с последней отправки английского (' + info.restored + '). Отправишь новое — обновятся сами.' }), homeMsgBox.firstChild);
     if (none) homeMsgBox.insertBefore(el('p', { class: 'muted', text: 'Пока это просто шаблоны. Ссылки на Smartcat подставятся сами, когда английский уйдёт через «Отправить» или «Загрузить файлы».' }), homeMsgBox.firstChild);
     /* сводка для вебхука — только если он настроен */
     var hook = scCfg && scCfg.bandHook;
@@ -2682,8 +2694,7 @@
     else if (has(c.enIos, SC_EN_DEFAULTS.ios)) add.ios = { url: url, file: names };
     else if (has(c.enWeb, SC_EN_DEFAULTS.web)) add.web = { url: url, folder: String(path || '').split('/').pop() || pr.name };
     else return;
-    var prev = homeMsgInfo && (!homeMsgInfo.restored || homeMsgInfo.restored === new Date().toLocaleDateString('ru-RU')) && homeMsgInfo.links || {};
-    homeMessage(Object.assign({}, homeMsgInfo, { links: Object.assign({}, prev, add), restored: '' }), true);
+    homeMessage(Object.assign({}, homeMsgInfo, { links: add }), true);
     upScMsg.appendChild(el('div', {}, [el('button', { class: 'b g s', type: 'button', text: '💬 Сообщение в чат готово →', onclick: function () { nav('msg'); } })]));
   }
   function upScOpen() {
