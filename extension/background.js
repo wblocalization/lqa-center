@@ -387,9 +387,12 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
       for (let tryN = 0; ; tryN++) {
         try {
           /* режим «Все, кто примет»: в задаче поле может называться по-разному — шлём все варианты, лишние Smartcat игнорирует */
-          const MODE = { assignmentMode: 'distributeAmongAll', strategy: 'distributeAmongAll', distributionMode: 'distributeAmongAll', assignmentStrategy: 'distributeAmongAll' };
-          const variants = [['все поля режима', Object.assign({ userIds }, MODE)], ['assignmentMode', { userIds, assignmentMode: 'distributeAmongAll' }],
-            ['без режима', { userIds }]].concat(userIds.length === 1 ? [['userId без режима', { userId: userIds[0] }]] : []);
+          /* режим «Все, кто примет» — поле invitationStrategyType, и только в первом запросе (потом Smartcat отвечает 409).
+             Значение пробуем по очереди: неверное Smartcat отклоняет (400) — берём следующее; найденное запоминаем */
+          const { scStrategy } = await chrome.storage.local.get('scStrategy');
+          const vals = scStrategy ? [scStrategy].concat(ALL_STRATEGIES.filter((v) => v !== scStrategy)) : ALL_STRATEGIES;
+          const variants = vals.map((v) => ['invitationStrategyType=' + v, { userIds, invitationStrategyType: v }])
+            .concat([['без режима', { userIds }]]).concat(userIds.length === 1 ? [['userId без режима', { userId: userIds[0] }]] : []);
           const vErr = [];
           let ok = null;
           for (const [name, body] of variants) {
@@ -399,12 +402,10 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
             }
           }
           if (!ok) throw new Error(vErr.join(' | '));
-          diag.push('этап ' + stage + ': прошёл «' + ok + '»' + (vErr.length ? ' (до этого: ' + vErr.join(' | ') + ')' : ''));
+          diag.push('этап ' + stage + ': прошёл «' + ok + '»' + (vErr.length ? ' (до этого: ' + vErr.join(' | ').slice(0, 700) + ')' : ''));
           const now = await readTask(pid, tid).catch(() => null);
-          if (now && /rocket/i.test(String(now.invitationStrategyType || ''))) {
-            const r = await setAllStrategy(pid, tid, path, userIds);
-            diag.push(r.ok ? 'режим поставлен: ' + r.value : 'режим не поменялся, пробовала: ' + r.tried.join('; '));
-          }
+          const curMode = now ? String(now.invitationStrategyType || '') : '';
+          if (/^invitationStrategyType=/.test(ok) && curMode && !/rocket/i.test(curMode)) await chrome.storage.local.set({ scStrategy: ok.split('=')[1] });
           break;
         } catch (e) {
           if (!/zero volume/i.test(String(e.message)) || tryN >= 12) throw e;
@@ -436,21 +437,7 @@ async function readTask(pid, tid) {
 }
 /* «Все, кто примет»: в задаче это invitationStrategyType (по умолчанию rocket — «первый, кто принял»).
    Точное значение неизвестно — пробуем по очереди, пока Smartcat не перестанет показывать rocket; найденное запоминаем */
-const ALL_STRATEGIES = ['distributeAmongAll', 'all', 'sendToAll', 'everyone', 'allAccepted', 'parallel', 'AllAccepted', 'DistributeAmongAll'];
-async function setAllStrategy(pid, tid, path, userIds) {
-  const { scStrategy } = await chrome.storage.local.get('scStrategy');
-  const list = scStrategy ? [scStrategy].concat(ALL_STRATEGIES.filter((v) => v !== scStrategy)) : ALL_STRATEGIES;
-  const tried = [];
-  for (const v of list) {
-    try { await scFetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds, invitationStrategyType: v }) }); }
-    catch (e) { tried.push(v + ': ' + String(e.message).replace(/Error processing request\.|Correlation id: [\w-]+,?|Trace id: \w+/g, '').trim().slice(0, 80)); continue; }
-    const t = await readTask(pid, tid).catch(() => null);
-    const cur = t ? String(t.invitationStrategyType || '') : '';
-    if (cur && !/rocket/i.test(cur)) { await chrome.storage.local.set({ scStrategy: v }); return { ok: true, value: cur, tried }; }
-    tried.push(v + ' → осталось ' + (cur || '?'));
-  }
-  return { ok: false, tried };
-}
+const ALL_STRATEGIES = ['distributeAmongAll', 'sendToAll', 'all', 'everyone', 'allAccepted', 'parallel', 'broadcast', 'DistributeAmongAll'];
 /* режим назначения задачи — поле с mode / strategy / distribution в названии (на 1–2 уровня вглубь) */
 function taskMode(t, depth = 0) {
   for (const k of Object.keys(t || {})) {
