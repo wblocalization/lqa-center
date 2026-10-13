@@ -383,9 +383,18 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
       const tid = t.id || t.taskId || t.projectTaskId;
       if (!tid) continue;
       const path = '/projectTask/' + encodeURIComponent(pid) + '/' + encodeURIComponent(tid) + '/individual-assignment';
-      try { await scFetch(path, json({ userIds })); } catch (e) {
-        if (userIds.length !== 1) throw e;
-        await scFetch(path, json({ userId: userIds[0] }));
+      /* сразу после загрузки Smartcat ещё считает слова — у задачи «нулевой объём», назначать нельзя: ждём и повторяем */
+      for (let tryN = 0; ; tryN++) {
+        try {
+          try { await scFetch(path, json({ userIds })); } catch (e) {
+            if (userIds.length !== 1 || /zero volume/i.test(String(e.message))) throw e;
+            await scFetch(path, json({ userId: userIds[0] }));
+          }
+          break;
+        } catch (e) {
+          if (!/zero volume/i.test(String(e.message)) || tryN >= 12) throw e;
+          await sleep(10000);
+        }
       }
       const ts = JSON.stringify(t);
       docIds.forEach((id) => { if (hit(ts, id)) done.add(id); });

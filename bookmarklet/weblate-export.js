@@ -2838,7 +2838,7 @@
       if (upScAsg.checked && ids.length) {
         if (!roles.length) upScMsg.appendChild(el('div', { class: 'red', text: '✗ Назначать некого: отметь людей в Настройках → «Люди на английский»' }));
         roles.reduce(function (chain, ro) {
-          var line = el('div', { class: 'muted', text: 'Назначаю (' + ro.label + ', этап ' + ro.stage + '): ' + ro.list.map(function (p) { return p.name; }).join(', ') + '…' });
+          var line = el('div', { class: 'muted', text: 'Назначаю (' + ro.label + ', этап ' + ro.stage + '): ' + ro.list.map(function (p) { return p.name; }).join(', ') + '… (может занять пару минут — Smartcat считает слова)' });
           upScMsg.appendChild(line);
           return chain.then(function () {
             return scCall('sc-assign', { documentIds: ids, projectIds: [x.pr.id], stage: ro.stage, userIds: ro.list.map(function (p) { return p.id; }) }).then(function (res) {
@@ -3491,7 +3491,7 @@
           var roles = [{ stage: 1, label: 'перевод', list: who }, { stage: 2, label: 'редактура', list: eds }].filter(function (x) { return x.list.length; });
           if (enDocIds.length && c.enAssignOn !== false && roles.length) {
             roles.reduce(function (chain, ro) {
-              var am = el('div', { class: 'muted', text: 'Назначаю на английский (' + ro.label + '): ' + ro.list.map(function (x) { return x.name; }).join(', ') + '…' });
+              var am = el('div', { class: 'muted', text: 'Назначаю на английский (' + ro.label + '): ' + ro.list.map(function (x) { return x.name; }).join(', ') + '… (может занять пару минут — Smartcat считает слова)' });
               msg.appendChild(am);
               return chain.then(function () {
                 return scCall('sc-assign', { documentIds: enDocIds, projectIds: enProjIds, stage: ro.stage, userIds: ro.list.map(function (x) { return x.id; }) }).then(function (res) {
