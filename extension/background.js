@@ -45,6 +45,12 @@ const fileBody = (f) => (f.b64 ? Uint8Array.from(atob(f.b64), (c) => c.charCodeA
 const SC_FONTS = ['cyrillic', 'latin'].flatMap((s) => [400, 500, 600, 700].map((w) => ({ s, w })));
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
+/* поля про папку документа (folderId и т.п.) — нужны для ссылки на папку в сообщении в чат */
+function folderFields(d) {
+  const o = {};
+  Object.keys(d || {}).forEach((k) => { if (/folder/i.test(k)) o[k] = d[k]; });
+  return o;
+}
 const SC_HANDLERS = {
   async 'ui-fonts'() {
     return Promise.all(SC_FONTS.map(async (f) => {
@@ -132,7 +138,7 @@ const SC_HANDLERS = {
     });
     const after = await (await scFetch('/project/' + encodeURIComponent(m.projectId))).json();
     return { name: after.name, documents: (after.documents || []).filter((d) => !known.has(d.id))
-      .map((d) => ({ id: d.id, name: d.name, fullPath: d.fullPath || d.path || '', targetLanguage: d.targetLanguage })) };
+      .map((d) => ({ id: d.id, name: d.name, fullPath: d.fullPath || d.path || '', targetLanguage: d.targetLanguage, ...folderFields(d) })) };
   },
   /* список отправок в Smartcat — копия в расширении, чтобы не терялся вместе с данными страницы */
   async 'sc-list-get'() {

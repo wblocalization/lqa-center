@@ -2517,11 +2517,28 @@
   /* ссылка для переводчиков: один документ — сразу в редактор Smartcat
      (/open-editor/<документ>?targetLanguageId=<язык>&stageNumber=1&backUrl=/projects/<проект>/tasks; id документа в API = <документ>_<язык>),
      несколько — на проект/папку */
-  function scChatUrl(base, pid, docIds) {
+  function scChatUrl(base, pid, docIds, folderId) {
     var ids = (docIds || []).filter(Boolean), id = ids.length === 1 ? String(ids[0]) : '', i = id.lastIndexOf('_');
-    if (!id) return base + '/projects/' + pid;
+    if (!id) return base + '/projects/' + pid + (folderId ? '/files/' + encodeURIComponent(folderId) + '?folderMode=true' : '');
     return base + '/open-editor/' + encodeURIComponent(i > 0 ? id.slice(0, i) : id) + '?' + (i > 0 ? 'targetLanguageId=' + encodeURIComponent(id.slice(i + 1)) + '&' : '') +
       'stageNumber=1&backUrl=' + encodeURIComponent('/projects/' + pid + '/tasks');
+  }
+  /* id папки документов Smartcat (для ссылки /projects/<проект>/files/<папка>?folderMode=true): поле с folder в названии,
+     у всех документов одно и то же; нет — пусто, тогда ссылка на проект */
+  function scFolderOf(docs) {
+    var found = {};
+    var look = function (o, depth) {
+      for (var k in o) {
+        var v = o[k];
+        if (/folder/i.test(k) && /^[0-9a-f]{16,40}$/i.test(String(v))) return String(v);
+        if (/folder/i.test(k) && v && typeof v === 'object' && /^[0-9a-f]{16,40}$/i.test(String(v.id || ''))) return String(v.id);
+        if (v && typeof v === 'object' && !Array.isArray(v) && depth < 1) { var r = look(v, depth + 1); if (r) return r; }
+      }
+      return '';
+    };
+    (docs || []).forEach(function (d) { var f = look(d || {}, 0); if (f) found[f] = 1; });
+    var k = Object.keys(found);
+    return k.length === 1 ? k[0] : '';
   }
   /* последние ссылки по каждой платформе (веб / android / ios) — каждая своя, хранятся неделю */
   var MSG_DAYS = 7;
@@ -2533,7 +2550,7 @@
     scProjects().filter(function (pr) { return scKind(pr) === 'human' && Date.now() - Date.parse(pr.created) < MSG_DAYS * 864e5; }).forEach(function (pr) {
       var pl = { 'Веб': 'web', 'Android': 'android', 'iOS': 'ios' }[scPlat(pr)], tail = String(pr.name || '').split(' / ').pop(), t = Date.parse(pr.created);
       if (!pl || (out[pl] && out[pl].t >= t)) return;
-      var u = scChatUrl(base, pr.id, Object.keys(pr.docs || {}));
+      var u = scChatUrl(base, pr.id, Object.keys(pr.docs || {}), pr.folderId);
       out[pl] = pl === 'web' ? { url: u, folder: tail, t: t } : { url: u, file: tail, t: t };
     });
     return out;
@@ -2687,7 +2704,7 @@
   ]);
   /* английский, загруженный руками в EN android / EN ios / МП Web, — ссылки в «Сообщения в чат» */
   function upScChatLinks(pr, path, files, docs) {
-    var c = scCfg || {}, base = c.base || 'https://smartcat.com', id = String(pr.id || ''), url = scChatUrl(base, id, (docs || []).map(function (d) { return d.id; }));
+    var c = scCfg || {}, base = c.base || 'https://smartcat.com', id = String(pr.id || ''), url = scChatUrl(base, id, (docs || []).map(function (d) { return d.id; }), scFolderOf(docs));
     var has = function (ref, def) { ref = String(ref || def || ''); return !!id && (ref.indexOf(id) >= 0 || ref === pr.name); };
     var names = files.map(function (f) { return f.file.name; }).join(', '), add = {};
     if (has(c.enAndroid, SC_EN_DEFAULTS.android)) add.android = { url: url, file: names };
@@ -3493,9 +3510,10 @@
           if (pl.missing.length) lost.unshift('языков нет в проекте, не отправлены: ' + pl.missing.map(langName).join(', '));
           var key = pr.id + '#' + (folder || 'root');
           var list = scProjects().filter(function (x) { return (x.key || x.id) !== key; });
-          list.unshift({ key: key, id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), created: new Date().toISOString(), docs: docs, files: {}, langs: lmap });
+          var folderId = scFolderOf(r.documents);
+          list.unshift({ key: key, id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), created: new Date().toISOString(), docs: docs, files: {}, langs: lmap, folderId: folderId });
           saveScProjects(list);
-          return { id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), docs: Object.keys(docs).length, lost: lost, docIds: Object.keys(docs) };
+          return { id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), docs: Object.keys(docs).length, lost: lost, docIds: Object.keys(docs), folderId: folderId };
         });
       }
       var btn = el('button', { class: 'b', text: 'Отправить в Smartcat', onclick: function () {
@@ -3529,7 +3547,7 @@
           renderScImport();
           /* ссылки для сообщения в чат: папка веба в «МП Web», файлы в английских проектах android/ios */
           var chatLinks = {};
-          made.forEach(function (p) { if (p.enDocs) chatLinks.web = { url: scChatUrl(c.base, p.id, p.docIds), folder: String(p.name || '').split(' / ').pop() }; });
+          made.forEach(function (p) { if (p.enDocs) chatLinks.web = { url: scChatUrl(c.base, p.id, p.docIds, p.folderId), folder: String(p.name || '').split(' / ').pop() }; });
           enRes.forEach(function (x) { if (x.ok && x.pl) chatLinks[x.pl] = { url: scChatUrl(c.base, x.projectId, x.docIds), file: (x.files || []).join(', ') }; });
           autoDone({ made: made.map(function (p) { return p.name + (p.docs != null ? ' (' + p.docs + ' док.)' : ''); }),
             en: enRes.map(function (x) { return (x.ok ? '' : '✗ ') + x.text; }), error: msg.className === 'red' ? msg.textContent.slice(0, 200) : '', links: chatLinks });
