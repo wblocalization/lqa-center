@@ -1043,6 +1043,7 @@
     '.tplchips{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:6px 0 4px}',
     '.chipb.tc{font-size:12px;padding:4px 10px;color:var(--accent);border-style:dashed}',
     '.mdprev{padding:10px 12px;border-radius:12px;background:var(--soft);font-size:13px;line-height:1.5;word-break:break-word}',
+    '.mdprev strong{font-weight:700}.chipb.tb{font-weight:800;color:var(--ink);border-style:solid}',
     '.mdprev a{color:#2389D7;text-decoration:none}.mdprev .mention{color:#2389D7;font-weight:600}',
     '.hide{display:none!important}'
   ].join('\n');
@@ -1952,13 +1953,21 @@
     var prev = el('div', { class: 'mdprev' });
     var draw = function () { mdPreview(prev, chatFill(ta.value.trim() || def, TPL_SAMPLE())); };
     ta.addEventListener('input', draw); setTimeout(draw, 0);
-    return el('div', {}, [el('div', { class: 'tplchips' }, keys.map(function (k) {
+    /* жирный: выделенное оборачивается в **…**; без выделения — вставляется **текст** с выделенным «текст» */
+    var bold = el('button', { class: 'chipb tc tb', type: 'button', title: 'Жирный: выдели слова в шаблоне и нажми — будет **…**', text: 'Ж жирный', onmousedown: keep, onclick: function () {
+      var a = ta.selectionStart, b = ta.selectionEnd, sel = ta.value.slice(a, b);
+      if (sel && /^\*\*[\s\S]*\*\*$/.test(sel)) { ins(sel.slice(2, -2)); }
+      else if (sel) { ins('**' + sel + '**'); }
+      else { ins('**текст**'); ta.selectionStart = a + 2; ta.selectionEnd = a + 7; }
+      draw();
+    } });
+    return el('div', {}, [el('div', { class: 'tplchips' }, [bold].concat(keys.map(function (k) {
       var w = TPL_WORD[k];
       return el('button', { class: 'chipb tc', type: 'button', title: w ? 'Вставить ' + w : 'Вставить {' + k + '}', text: '+ ' + TPL_HINT[k], onmousedown: keep, onclick: function () { ins(w || '{' + k + '}'); draw(); } });
     }).concat([el('button', { class: 'lnk', type: 'button', text: '↺ взять стандартный текст', onmousedown: keep, onclick: function () {
       if (ta.value.trim() && !confirm('Заменить текст шаблона стандартным?')) return;
       ta.value = def; ta.focus(); ta.dispatchEvent(new Event('input', { bubbles: true }));
-    } })])), el('div', { class: 'lbl', style: 'margin:8px 0 4px', text: 'Как будет выглядеть в Band' }), prev]);
+    } })]))), el('div', { class: 'lbl', style: 'margin:8px 0 4px', text: 'Как будет выглядеть в Band' }), prev]);
   }
   /* слово-ссылка: «айоса» ведёт на проект в Smartcat */
   var TPL_WORD = { 'слово_ios': '[айоса]({url_ios})', 'слово_android': '[андроида]({url_android})', 'слово_веб': '[веба]({url_веб})' };
@@ -1972,13 +1981,18 @@
     box.textContent = '';
     text.split('\n').forEach(function (line, i) {
       if (i) box.appendChild(el('br'));
-      var re = /\[([^\]\n]+)\]\(([^)\s]+)\)|(@[\w.\-]+)/g, last = 0, m;
-      while ((m = re.exec(line))) {
-        if (m.index > last) box.appendChild(document.createTextNode(line.slice(last, m.index)));
-        box.appendChild(m[1] ? el('a', { href: '#', text: m[1], onclick: function (e) { e.preventDefault(); } }) : el('b', { class: 'mention', text: m[3] }));
-        last = re.lastIndex;
-      }
-      if (last < line.length) box.appendChild(document.createTextNode(line.slice(last)));
+      /* **жирный** может содержать ссылки и ники — рисуем по кускам */
+      line.split(/(\*\*[^*\n]+\*\*)/).forEach(function (part) {
+        var isB = /^\*\*[^*\n]+\*\*$/.test(part), into = isB ? box.appendChild(el('strong')) : box;
+        if (isB) part = part.slice(2, -2);
+        var re = /\[([^\]\n]+)\]\(([^)\s]+)\)|(@[\w.\-]+)/g, last = 0, m;
+        while ((m = re.exec(part))) {
+          if (m.index > last) into.appendChild(document.createTextNode(part.slice(last, m.index)));
+          into.appendChild(m[1] ? el('a', { href: '#', text: m[1], onclick: function (e) { e.preventDefault(); } }) : el('b', { class: 'mention', text: m[3] }));
+          last = re.lastIndex;
+        }
+        if (last < part.length) into.appendChild(document.createTextNode(part.slice(last)));
+      });
     });
   }
   var bandTpl = el('textarea', { class: 'small', placeholder: BAND_TPL_DEFAULT });
