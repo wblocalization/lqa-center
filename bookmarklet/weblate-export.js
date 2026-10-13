@@ -2062,7 +2062,7 @@
     scCall('sc-sched-run-now').then(function () { schNext.textContent = 'запущено — итог придёт уведомлением'; }, function (e) { schNext.textContent = '✗ ' + e.message; });
   } });
   /* звук уведомления «перевод готов»: играет фон расширения (offscreen), здесь только выбор и прослушка */
-  var SOUNDS = [['system', 'Системный (как решит Chrome)'], ['quack', '🦆 Кря-кря'], ['ding', '🔔 Дзынь'], ['pop', '🫧 Чпок'], ['coin', '🪙 Монетка'], ['tada', '🎉 Та-да'], ['off', '🔕 Без звука']];
+  var SOUNDS = [['system', 'Системный (как решит Chrome)'], ['quack', '🦆 Кря-кря'], ['meow', '🐱 Мяу'], ['woof', '🐶 Гав-гав'], ['frog', '🐸 Ква-ква'], ['moo', '🐮 Му-у'], ['boing', '🪀 Боинг'], ['laser', '🔫 Пиу-пиу'], ['robot', '🤖 Робот'], ['sad', '🎺 Грустный тромбон'], ['ding', '🔔 Дзынь'], ['pop', '🫧 Чпок'], ['coin', '🪙 Монетка'], ['tada', '🎉 Та-да'], ['off', '🔕 Без звука']];
   var sndSel = el('select', {}, SOUNDS.map(function (s) { return el('option', { value: s[0], text: s[1] }); }));
   sndSel.addEventListener('change', function () { scCall('sc-set-config', { config: { sound: sndSel.value } }); scCall('play-sound', { sound: sndSel.value }); });
   var sndTry = el('button', { class: 'b g s', text: '▶ Послушать', onclick: function () { scCall('play-sound', { sound: sndSel.value }); } });
