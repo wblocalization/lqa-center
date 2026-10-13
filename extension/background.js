@@ -58,7 +58,7 @@ const SC_HANDLERS = {
     const c = await scConfig();
     return { server: c.server || 'eu', customUrl: c.customUrl || '', accountId: c.accountId || '', hasKey: !!c.apiKey,
       langMap: c.langMap || '', extra: c.extra || '', project: c.project || '',
-      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', enAssign: c.enAssign || [], enEdit: c.enEdit || [], langWeb: c.langWeb || '', langMob: c.langMob || '', links: c.links || '', bandTpl: c.bandTpl || '', bandHook: c.bandHook || '', bandAuto: !!c.bandAuto, bandPeople: c.bandPeople || '', bandTplWeb: c.bandTplWeb || '', bandTplApp: c.bandTplApp || '', linksMob: c.linksMob || '', enAssignOn: c.enAssignOn !== false, schedOn: !!c.schedOn, sched: c.sched || SCHED_DEFAULT, base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
+      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', enAssign: c.enAssign || [], enEdit: c.enEdit || [], langWeb: c.langWeb || '', langMob: c.langMob || '', links: c.links || '', bandTpl: c.bandTpl || '', bandHook: c.bandHook || '', bandAuto: !!c.bandAuto, bandPeople: c.bandPeople || '', bandTplWeb: c.bandTplWeb || '', bandTplApp: c.bandTplApp || '', linksMob: c.linksMob || '', enAssignOn: c.enAssignOn !== false, schedOn: !!c.schedOn, sched: c.sched || SCHED_DEFAULT, sound: c.sound || SOUND_DEFAULT, base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
   },
   async 'sc-set-config'(m) {
     const c = await scConfig();
@@ -195,7 +195,7 @@ async function checkSmartcatReady() {
     scReady[key] = new Date().toISOString();
     changed = true;
     try {
-      await chrome.notifications.create('sc-ready|' + key, {
+      await notify('sc-ready|' + key, {
         type: 'basic', iconUrl: 'icons/icon128.png', title: human ? 'Smartcat: переводчики закончили' : 'Smartcat: машперевод готов',
         message: (pr.name || 'Отправка') + ' — ' + docs.length + ' файл(ов). Нажми, чтобы открыть и загрузить в Weblate.',
         priority: 2
@@ -205,6 +205,25 @@ async function checkSmartcatReady() {
   if (changed) await chrome.storage.local.set({ scReady });
   return scReady;
 }
+
+/* ---------- Звук уведомлений: «системный» — как решит Chrome/ОС; остальные играем сами в offscreen-документе ---------- */
+const SOUND_DEFAULT = 'system';
+async function playSound(sound) {
+  if (!sound || sound === 'system' || sound === 'off') return;
+  try {
+    if (!(await chrome.offscreen.hasDocument())) {
+      await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['AUDIO_PLAYBACK'], justification: 'Звук уведомления о готовом переводе' });
+    }
+  } catch (e) { /* документ уже создаётся параллельно */ }
+  chrome.runtime.sendMessage({ type: 'wlx-play-sound', sound }).catch(() => {});
+}
+async function notify(id, opts) {
+  const sound = (await scConfig()).sound || SOUND_DEFAULT;
+  if (sound !== 'system') opts.silent = true;
+  await chrome.notifications.create(id, opts);
+  playSound(sound);
+}
+SC_HANDLERS['play-sound'] = async (m) => { await playSound(m.sound); return { ok: true }; };
 
 function ensureAlarm() {
   chrome.alarms.get('sc-watch', (a) => { if (!a) chrome.alarms.create('sc-watch', { periodInMinutes: 2 }); });
@@ -247,7 +266,7 @@ async function schedTick() {
     if (now - slot <= 20 * 60e3) { schedState[key] = 'run'; await chrome.storage.local.set({ schedState }); await runAuto(s.label); }
     else {
       schedState[key] = 'missed';
-      chrome.notifications.create('sc-sched-miss|' + s.label + '|' + now, { type: 'basic', iconUrl: 'icons/icon128.png', priority: 2, requireInteraction: true,
+      notify('sc-sched-miss|' + s.label + '|' + now, { type: 'basic', iconUrl: 'icons/icon128.png', priority: 2, requireInteraction: true,
         title: 'Smartcat: пропущена отправка ' + s.label, message: 'В ' + s.label + ' (МСК) компьютер или Chrome были выключены. Выгрузить android и ios и отправить сейчас?',
         buttons: [{ title: 'Отправить сейчас' }, { title: 'Не надо' }] });
     }
@@ -256,7 +275,7 @@ async function schedTick() {
   if (changed) await chrome.storage.local.set({ schedState });
 }
 function schedNote(title, message, id) {
-  chrome.notifications.create(id || 'sc-sched-done|' + Date.now(), { type: 'basic', iconUrl: 'icons/icon128.png', priority: 2, title, message });
+  notify(id || 'sc-sched-done|' + Date.now(), { type: 'basic', iconUrl: 'icons/icon128.png', priority: 2, title, message });
 }
 let autoTabId = null;
 async function runAuto(label) {

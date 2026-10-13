@@ -2061,6 +2061,11 @@
     if (!confirm('Выгрузить android и ios и отправить в Smartcat прямо сейчас (как по расписанию)?')) return;
     scCall('sc-sched-run-now').then(function () { schNext.textContent = 'запущено — итог придёт уведомлением'; }, function (e) { schNext.textContent = '✗ ' + e.message; });
   } });
+  /* звук уведомления «перевод готов»: играет фон расширения (offscreen), здесь только выбор и прослушка */
+  var SOUNDS = [['system', 'Системный (как решит Chrome)'], ['quack', '🦆 Кря-кря'], ['ding', '🔔 Дзынь'], ['pop', '🫧 Чпок'], ['coin', '🪙 Монетка'], ['tada', '🎉 Та-да'], ['off', '🔕 Без звука']];
+  var sndSel = el('select', {}, SOUNDS.map(function (s) { return el('option', { value: s[0], text: s[1] }); }));
+  sndSel.addEventListener('change', function () { scCall('sc-set-config', { config: { sound: sndSel.value } }); scCall('play-sound', { sound: sndSel.value }); });
+  var sndTry = el('button', { class: 'b g s', text: '▶ Послушать', onclick: function () { scCall('play-sound', { sound: sndSel.value }); } });
   /* кого назначать на английский — из «Моей команды» Smartcat */
   var asgOn = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' });
   var asgList = el('div', { class: 'team' });
@@ -2208,6 +2213,7 @@
       bandPeople.value = c.bandPeople || ''; bandTplWeb.value = c.bandTplWeb || ''; bandTplApp.value = c.bandTplApp || '';
       asgSel = (c.enAssign || []).slice(); edSel = (c.enEdit || []).slice(); asgOn.checked = c.enAssignOn !== false;
       schOn.checked = !!c.schedOn; schText.value = c.sched || 'вт 14:00, пт 10:00'; schShowNext();
+      sndSel.value = c.sound || 'system';
       dirShow();
       if (!asgList.querySelector('input')) asgRender(null);
     });
@@ -2300,6 +2306,9 @@
       el('label', { class: 'blk' }, [schOn, 'отправлять по расписанию']),
       el('label', {}, ['Когда (по Москве)', schText]),
       el('div', { class: 'row' }, [schRun, schNext])]),
+    fold('Звук уведомлений', [
+      el('p', { class: 'muted', text: 'Каким звуком сообщать, что машперевод или переводчики закончили. «Системный» — как настроены уведомления в Windows / macOS.' }),
+      el('div', { class: 'row' }, [sndSel, sndTry])]),
     fold('Дополнительно', [
       el('label', {}, ['Коды языков для Smartcat (код_weblate=код_smartcat, по строке)', scLangs]),
       el('label', {}, ['Доп. параметры создания проекта (JSON)', scExtra]),
