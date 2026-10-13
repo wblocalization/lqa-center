@@ -361,7 +361,7 @@ function taskStage(t) {
 }
 async function assignByTasks(projectIds, docIds, stage, userIds) {
   const json = (o) => ({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
-  const done = new Set(), info = [], tasksDone = [], modes = new Set();
+  const done = new Set(), info = [], tasksDone = [], modes = new Set(), diag = [];
   /* id документа Smartcat — «<документ>_<язык>»; в задаче может быть полный id или только «<документ>» */
   const base = (id) => { id = String(id); const i = id.lastIndexOf('_'); return i > 0 ? id.slice(0, i) : id; };
   const hit = (str, id) => str.includes('"' + id + '"') || str.includes('"' + base(id) + '"');
@@ -388,16 +388,18 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
         try {
           /* режим «Все, кто примет»: в задаче поле может называться по-разному — шлём все варианты, лишние Smartcat игнорирует */
           const MODE = { assignmentMode: 'distributeAmongAll', strategy: 'distributeAmongAll', distributionMode: 'distributeAmongAll', assignmentStrategy: 'distributeAmongAll' };
-          try { await scFetch(path, json(Object.assign({ userIds }, MODE))); } catch (e) {
-            if (/zero volume/i.test(String(e.message))) throw e;
-            try { await scFetch(path, json({ userIds, assignmentMode: 'distributeAmongAll' })); } catch (e2) {
-              if (/zero volume/i.test(String(e2.message))) throw e2;
-              try { await scFetch(path, json({ userIds })); } catch (e3) {
-                if (userIds.length !== 1 || /zero volume/i.test(String(e3.message))) throw e3;
-                await scFetch(path, json({ userId: userIds[0] }));
-              }
+          const variants = [['все поля режима', Object.assign({ userIds }, MODE)], ['assignmentMode', { userIds, assignmentMode: 'distributeAmongAll' }],
+            ['без режима', { userIds }]].concat(userIds.length === 1 ? [['userId без режима', { userId: userIds[0] }]] : []);
+          const vErr = [];
+          let ok = null;
+          for (const [name, body] of variants) {
+            try { await scFetch(path, json(body)); ok = name; break; } catch (e) {
+              if (/zero volume/i.test(String(e.message))) throw e;
+              vErr.push(name + ': ' + String(e.message).replace(/Error processing request\.|Correlation id: [\w-]+,?|Trace id: \w+/g, '').trim().slice(0, 140));
             }
           }
+          if (!ok) throw new Error(vErr.join(' | '));
+          diag.push('этап ' + stage + ': прошёл «' + ok + '»' + (vErr.length ? ' (до этого: ' + vErr.join(' | ') + ')' : ''));
           break;
         } catch (e) {
           if (!/zero volume/i.test(String(e.message)) || tryN >= 12) throw e;
@@ -420,7 +422,7 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
     } catch (e) { /* не страшно */ }
   }
   if (!done.size) throw new Error('в проекте с задачами не нашла задач этапа ' + stage + ' для этих документов. ' + info.join(' | '));
-  return { n: done.size, mode: [...modes].join(', ') };
+  return { n: done.size, mode: [...modes].join(', '), diag: diag.slice(0, 2).join('; ') };
 }
 /* режим назначения задачи — поле с mode / strategy / distribution в названии (на 1–2 уровня вглубь) */
 function taskMode(t, depth = 0) {
@@ -472,9 +474,9 @@ SC_HANDLERS['sc-assign'] = async (m) => {
   let how = 'assign';
   if (taskDocs.size) {
     if (!m.projectIds || !m.projectIds.length) throw new Error('проект работает с задачами, а id проекта не передан');
-    let lastErr = null, n = 0; var taskMode_ = '';
+    let lastErr = null, n = 0; var taskMode_ = '', taskDiag_ = '';
     for (let round = 0; round < 6; round++) {       // задачи появляются не сразу после загрузки файла
-      try { const r = await assignByTasks(m.projectIds, [...taskDocs], stage, m.userIds); n = r.n; taskMode_ = r.mode; lastErr = null; break; }
+      try { const r = await assignByTasks(m.projectIds, [...taskDocs], stage, m.userIds); n = r.n; taskMode_ = r.mode; taskDiag_ = r.diag; lastErr = null; break; }
       catch (e) { lastErr = e; if (!/не нашла задач/.test(String(e.message))) break; await sleep(5000); }
     }
     if (lastErr) throw lastErr;
@@ -484,7 +486,7 @@ SC_HANDLERS['sc-assign'] = async (m) => {
     const first = errs[[...left][0]] || '';
     throw new Error((done.length ? 'назначено ' + done.length + ' из ' + m.documentIds.length + ', не получилось: ' : '') + first);
   }
-  return { ok: true, how, docs: done.length, mode: typeof taskMode_ !== 'undefined' ? taskMode_ : '' };
+  return { ok: true, how, docs: done.length, mode: typeof taskMode_ !== 'undefined' ? taskMode_ : '', diag: typeof taskDiag_ !== 'undefined' ? taskDiag_ : '' };
 };
 /* сообщение в рабочий чат по вебхуку (Band / Mattermost / Slack-совместимый: JSON {"text": …}).
    «простой» запрос без предварительной проверки: ответ чата не читается, поэтому успех не гарантирован */
