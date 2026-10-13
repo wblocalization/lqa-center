@@ -2514,10 +2514,11 @@
   /* quiet: просто шаблоны (ещё ничего не отправляли) — без точки в меню и без автоотправки */
   /* что показать в «Сообщениях», если в этой вкладке ещё ничего не отправляли: последние ссылки (за неделю),
      иначе — английский, отслеживаемый в «В работе»; иначе пустые шаблоны */
-  /* ссылка для переводчиков: один документ — прямо в редактор Smartcat (id документа = <документ>_<язык>), иначе — проект/папка */
+  /* ссылка для переводчиков: один документ — на вкладку назначения его задачи (/projects/<проект>/tasks?documentIds=<документ без _язык>),
+     несколько — на проект/папку */
   function scChatUrl(base, pid, docIds) {
     var ids = (docIds || []).filter(Boolean), id = ids.length === 1 ? String(ids[0]) : '', i = id.lastIndexOf('_');
-    return i > 0 ? base + '/editor?documentId=' + encodeURIComponent(id.slice(0, i)) + '&languageId=' + encodeURIComponent(id.slice(i + 1)) : base + '/projects/' + pid;
+    return id ? base + '/projects/' + pid + '/tasks?documentIds=' + encodeURIComponent(i > 0 ? id.slice(0, i) : id) : base + '/projects/' + pid;
   }
   function msgRestore() {
     var s = null; try { s = JSON.parse(sget('wlx_msg_links') || 'null'); } catch (e) {}
