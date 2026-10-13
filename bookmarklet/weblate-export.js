@@ -1046,6 +1046,7 @@
     '.mdprev strong{font-weight:700}.chipb.tb{font-weight:800;color:var(--ink);border-style:solid}',
     '.mdprev a{color:#2389D7;text-decoration:none}.mdprev .mention{color:#2389D7;font-weight:600}',
     '.tlinks{margin-top:6px;font-size:13px;line-height:1.6}.tlinks a{font-weight:600}.tlinkbox{margin-top:8px;padding:10px 12px;border-radius:12px;background:var(--soft)}',
+    '.clamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;cursor:help}',
     '.hide{display:none!important}'
   ].join('\n');
 
@@ -3841,6 +3842,40 @@
     });
     return el('td', {}, [el('div', { class: 'row', style: 'margin:0;gap:6px;flex-wrap:nowrap' }, [inp, ok])]);
   }
+  /* выгрузка проблемных строк таблицей: CSV для Excel/Google Таблиц и копирование (табами — вставляется в ячейки) */
+  function planOf(x) {
+    if (x.upState) return { salv: 'вытащен перевод → «На правку»', raw: '«На правку» как есть', skip: 'не загружено', sent: 'загружено', soft: 'загружено — проверь глазами' }[x.upState] || '';
+    if (!x.hard) return 'загрузится — проверь глазами';
+    if (!varSkip.checked) return 'загрузится как перевод';
+    if (salvageOn.checked && x.salvage) return 'вытащу перевод → «На правку»';
+    return brokenUp.checked ? '«На правку» как есть' : 'не загружу';
+  }
+  function problemRows(list) {
+    var rows = [['Компонент', 'Язык', 'Ключ', 'Исходник', 'Перевод', 'Тип', 'Что не так', 'Что с ней', 'Вытащенный перевод', 'Ссылка в Weblate']];
+    list.forEach(function (u) {
+      (u.vars || []).forEach(function (x) {
+        rows.push([u.c, langName(u.lang) + ' (' + u.lang + ')', x.ctx || '', x.src || '', x.tr || '', x.hard ? 'ошибка' : 'проверь',
+          x.probs.map(function (p) { return p.text; }).join('; '), planOf(x), x.salvage || '', location.origin + strHref(u, x)]);
+      });
+    });
+    return rows;
+  }
+  function exportBar(getList, fname) {
+    var note = el('span', { class: 'muted' });
+    var cell = function (v, sep) { v = String(v == null ? '' : v); return sep === '\t' ? v.replace(/[\t\r\n]+/g, ' ') : (/[";\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v); };
+    var dl = el('button', { class: 'b g s', type: 'button', text: '⬇ Скачать таблицей (.csv)', title: 'Открывается в Excel и Google Таблицах', onclick: function () {
+      var rows = problemRows(getList());
+      var csv = '\ufeff' + rows.map(function (r) { return r.map(function (v) { return cell(v, ';'); }).join(';'); }).join('\r\n');
+      downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), fname + '_' + ddmmyy() + '.csv');
+      note.className = 'ok'; note.textContent = '✓ Скачано: ' + (rows.length - 1) + ' строк';
+    } });
+    var cp = el('button', { class: 'b g s', type: 'button', text: '📋 Скопировать для таблицы', title: 'Вставь в Google Таблицу или Excel — разложится по колонкам', onclick: function () {
+      var rows = problemRows(getList());
+      var ta = el('textarea', { class: 'hide' }); ta.value = rows.map(function (r) { return r.map(function (v) { return cell(v, '\t'); }).join('\t'); }).join('\n');
+      note.parentNode.appendChild(ta); copyText(ta, note); setTimeout(function () { ta.remove(); }, 3000);
+    } });
+    return el('div', { class: 'row' }, [dl, cp, note]);
+  }
   function strHref(u, x) { return '/translate/' + u.p + '/' + u.c + '/' + u.lang + '/?q=' + encodeURIComponent(x.ctx ? 'context:"' + x.ctx + '"' : 'source:"' + x.src.slice(0, 60) + '"'); }
   /* после загрузки: все строки с ошибкой или «проверь глазами» — со ссылкой прямо на строку в Weblate */
   function checkList(todo, into) {
@@ -3863,7 +3898,8 @@
     cta.value = 'Проверь в Weblate:\n' + txt.join('\n');
     into.appendChild(el('details', { open: '', class: 'chk-list' }, [el('summary', { text: 'Проверь в Weblate — строк: ' + rows.length + ' (клик по ключу — сразу к строке)' }),
       el('div', { class: 'ftable' }, [el('table', {}, [el('tr', {}, [el('th', { text: 'Где' }), el('th', { text: 'Ключ' }), el('th', { text: 'Что с ней' })])].concat(rows))]),
-      el('div', { class: 'row' }, [el('button', { class: 'b g s', text: '📋 Скопировать список', onclick: function () { copyText(cta, note); } }), note, cta])]));
+      el('div', { class: 'row' }, [el('button', { class: 'b g s', text: '📋 Скопировать список', onclick: function () { copyText(cta, note); } }), note, cta]),
+      exportBar(function () { return todo.filter(function (u) { return u.sent && u.vars && u.vars.length; }); }, 'weblate_check_after_upload')]));
   }
   function renderPreview() {
     preview.textContent = ''; upResults.textContent = '';
@@ -3894,14 +3930,15 @@
           vn++; if (x.hard) vh++;
           vt.appendChild(el('tr', {}, [el('td', { text: u.c + ' · ' + langName(u.lang) }),
             el('td', {}, [el('a', { href: strHref(u, x), target: '_blank', text: x.ctx || x.src.slice(0, 50) })]),
-            el('td', { class: 'brtr', text: x.tr }),
+            el('td', { class: 'brtr' }, [el('div', { class: 'clamp', title: x.tr, text: x.tr })]),
             el('td', {}, x.probs.map(function (p) { return el('div', { class: p.hard ? 'red' : 'muted', text: (p.hard ? '✗ ' : '? ') + p.text }); })
               .concat(x.hard && varSkip.checked && salvageOn.checked && x.salvage ? [el('div', { class: 'ok', text: '→ вытащу и загружу «На правку»: «' + x.salvage + '»' })]
                 : x.hard && varSkip.checked && brokenUp.checked ? [el('div', { class: 'ok', text: '→ загружу «На правку» как есть — после загрузки будет ссылка' })] : []))]));
         });
       });
       preview.appendChild(el('details', vh ? { open: '' } : {}, [el('summary', { class: vh ? 'red' : 'muted',
-        text: 'Проверка переводов (переменные, мусор от машперевода) — строк: ' + vn + (vh ? ', с ошибкой: ' + vh : '') + ' (✗ — ошибка, ? — проверь глазами)' }), vt]));
+        text: 'Проверка переводов (переменные, мусор от машперевода) — строк: ' + vn + (vh ? ', с ошибкой: ' + vh : '') + ' (✗ — ошибка, ? — проверь глазами)' }),
+        exportBar(function () { return withVars; }, 'weblate_check'), el('div', { class: 'ftable' }, [vt])]));
     }
     preview.appendChild(el('div', { class: 'row' }, [
       el('span', { class: 'muted', text: 'Файлов: ' + uploads.length }),
