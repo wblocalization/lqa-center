@@ -367,8 +367,13 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
   const hit = (str, id) => str.includes('"' + id + '"') || str.includes('"' + base(id) + '"');
   for (const pid of [...new Set(projectIds)]) {
     let list;
-    try { list = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list')).json(); }
-    catch (e) { info.push(pid + ': ' + String(e.message).slice(0, 120)); continue; }   // проект без задач — пропускаем
+    /* список задач Smartcat отдаёт только с валютой (в задачах есть стоимость) */
+    let lastErr = null;
+    for (const cur of ['USD', 'RUB', 'EUR', '']) {
+      try { list = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list' + (cur ? '?currency=' + cur : ''))).json(); lastErr = null; break; }
+      catch (e) { lastErr = e; if (!/currency/i.test(String(e.message))) break; }
+    }
+    if (lastErr) { info.push(pid + ': ' + String(lastErr.message).slice(0, 160)); continue; }   // проект без задач — пропускаем
     list = Array.isArray(list) ? list : (list && (list.items || list.tasks || list.result || list.data)) || [];
     const mine = list.map((t) => ({ t, s: JSON.stringify(t) })).filter((x) => docIds.some((id) => hit(x.s, id)));
     info.push(pid + ': задач ' + list.length + ', наших ' + mine.length + (list[0] ? ', пример: ' + JSON.stringify(list[0]).slice(0, 300) : ''));
