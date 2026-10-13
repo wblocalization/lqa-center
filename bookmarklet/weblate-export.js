@@ -1040,6 +1040,8 @@
     '.legend{display:grid;gap:5px;margin:8px 0 4px;padding:10px 12px;border-radius:12px;background:var(--soft);font-size:12.5px}',
     '.k-mt{background:color-mix(in srgb,var(--accent) 14%,var(--card));color:var(--accent)}.k-hu{background:color-mix(in srgb,#F59E0B 18%,var(--card));color:#B45309}',
     '.srt{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+    '.tplchips{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:6px 0 4px}',
+    '.chipb.tc{font-size:12px;padding:4px 10px;color:var(--accent);border-style:dashed}',
     '.hide{display:none!important}'
   ].join('\n');
 
@@ -1933,6 +1935,25 @@
   var BAND_TPL_DEFAULT = 'Привет! Выгрузка {дата} · {проект}\n📦 Подрядчикам: {архивы}\n🤖 В Smartcat: {smartcat}\n🌍 Языки: {языки}\n🧩 Компоненты: {компоненты}\nСтрок: {строки}';
   var BAND_TPL_WEB = 'Привет! {люди}\n\nзагрузила новые файлики для веба {ссылка_веб}\nдедлайн — {дедлайн} :bunny_rabbit_flower_thank_you:';
   var BAND_TPL_APP = 'Привет! {люди}\nновые файлы на перевод для\nандроида {ссылка_android}\nи айоса {ссылка_ios}\nдедлайн — {дедлайн} :pepe_pray:';
+  /* подстановки одним кликом: вставляются туда, где стоит курсор в шаблоне */
+  var TPL_HINT = { 'люди': 'кого тегнуть', 'дедлайн': 'дедлайн', 'дата': 'дата ДДММГГ', 'ссылка_веб': 'ссылка на папку веба', 'папка_веб': 'название папки веба',
+    'ссылка_android': 'ссылка android', 'ссылка_ios': 'ссылка iOS', 'файл_android': 'файл android', 'файл_ios': 'файл iOS', 'языки': 'языки',
+    'проект': 'проект', 'архивы': 'архивы', 'smartcat': 'проекты Smartcat', 'компоненты': 'компоненты', 'строки': 'число строк' };
+  function tplChips(ta, def, keys) {
+    var ins = function (txt) {
+      var a = ta.selectionStart != null ? ta.selectionStart : ta.value.length, b = ta.selectionEnd != null ? ta.selectionEnd : a;
+      ta.value = ta.value.slice(0, a) + txt + ta.value.slice(b);
+      ta.focus(); ta.selectionStart = ta.selectionEnd = a + txt.length;
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    var keep = function (e) { e.preventDefault(); };      /* не уводить курсор из шаблона */
+    return el('div', { class: 'tplchips' }, keys.map(function (k) {
+      return el('button', { class: 'chipb tc', type: 'button', title: 'Вставить {' + k + '}', text: '+ ' + TPL_HINT[k], onmousedown: keep, onclick: function () { ins('{' + k + '}'); } });
+    }).concat([el('button', { class: 'lnk', type: 'button', text: '↺ взять стандартный текст', onmousedown: keep, onclick: function () {
+      if (ta.value.trim() && !confirm('Заменить текст шаблона стандартным?')) return;
+      ta.value = def; ta.focus(); ta.dispatchEvent(new Event('input', { bubbles: true }));
+    } })]));
+  }
   var bandTpl = el('textarea', { class: 'small', placeholder: BAND_TPL_DEFAULT });
   var bandPeople = el('input', { type: 'text', placeholder: '@ник1 @ник2 @ник3' });
   var bandTplWeb = el('textarea', { class: 'small', placeholder: BAND_TPL_WEB });
@@ -2217,10 +2238,12 @@
       el('p', { class: 'muted', text: 'После «Выгрузить и отправить» на главной появятся готовые сообщения для веба и для приложений — со ссылками на Smartcat. Вписываешь дедлайн, копируешь, вставляешь в Band.' }),
       el('label', {}, ['Кого тегнуть ({люди})', bandPeople]),
       el('label', {}, ['Сообщение для веба — пусто = стандартное', bandTplWeb]),
+      tplChips(bandTplWeb, BAND_TPL_WEB, ['люди', 'дедлайн', 'ссылка_веб', 'папка_веб', 'дата', 'языки']),
       el('label', {}, ['Сообщение для приложений — пусто = стандартное', bandTplApp]),
-      el('p', { class: 'muted', text: 'Подстановки: {люди} {дедлайн} {дата} {ссылка_веб} {папка_веб} {ссылка_android} {ссылка_ios} {файл_android} {файл_ios} {архивы} {языки} {компоненты} {строки}.' }),
+      tplChips(bandTplApp, BAND_TPL_APP, ['люди', 'дедлайн', 'ссылка_android', 'ссылка_ios', 'файл_android', 'файл_ios', 'дата', 'языки']),
       el('details', { class: 'more' }, [el('summary', { text: 'Сводка и автоотправка по вебхуку (не обязательно)' }),
         el('label', {}, ['Сводка — пусто = стандартная', bandTpl]),
+        tplChips(bandTpl, BAND_TPL_DEFAULT, ['люди', 'дата', 'проект', 'архивы', 'smartcat', 'языки', 'компоненты', 'строки']),
         el('label', {}, ['Вебхук чата (Band / Mattermost / Slack)', bandHook]),
         el('label', { class: 'blk' }, [bandAuto, 'отправлять сводку в чат автоматически'])])]),
     fold('Папка для архивов', [
