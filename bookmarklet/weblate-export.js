@@ -1840,8 +1840,10 @@
     }).then(function () { scRun.disabled = false; scRunSend.disabled = false; });
   }
 
-  /* служебные флаги Weblate о состоянии строки («keep-needs-editing», «fuzzy») в Smartcat не отправляем:
-     с ними Smartcat может не дать машперевод; форматные флаги (java-printf-format и т. п.) оставляем */
+  /* служебные флаги Weblate о состоянии строки («keep-needs-editing», «fuzzy») в Smartcat на МАШПЕРЕВОД не отправляем:
+     с ними Smartcat может не дать машперевод; форматные флаги (java-printf-format и т. п.) оставляем.
+     Переводчикам (английский, «МП Web») файл уходит как есть: без fuzzy старый перевод строки «нужна правка»
+     приходит в Smartcat подтверждённым на этапах перевода и редактуры */
   function scSendText(t) {
     if (/^\s*[\[{]/.test(t)) return t;
     return t.replace(/^#,(.*)$/mg, function (m, flags) {
@@ -2864,7 +2866,7 @@
     upScGo.disabled = !n || !pr || !docs;
   }
   function upScRead(f) {
-    if (/\.po$/i.test(f.name)) return f.text().then(function (t) { return { text: scSendText(t) }; });
+    if (/\.po$/i.test(f.name)) return f.text().then(function (t) { return { text: upSc.pr && scKind(upSc.pr) === 'mt' ? scSendText(t) : t }; });
     return f.arrayBuffer().then(function (buf) {
       var b = new Uint8Array(buf), s = '';
       for (var i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
@@ -3445,7 +3447,7 @@
                 pls.filter(function (x) { return baseLang(x) === 'en'; })[0] || (pls.length ? null : map('en'));
               if (!code) throw new Error('в проекте «' + pr.name + '» нет английского (в нём: ' + pls.join(', ') + ')');
               return scCall('sc-add-docs', { projectId: pr.id, files: by[pl].map(function (f) {
-                return { name: ddmmyy() + '_' + f.name, text: scSendText(f.text), targetLanguages: [code] };
+                return { name: ddmmyy() + '_' + f.name, text: f.text, targetLanguages: [code] };   /* переводчикам — как есть: «нужна правка» должна прийти неподтверждённой */
               }) }).then(function (r) {
                 /* английский тоже следим в «В работе»: переводчики → в Weblate с заменой переведённых */
                 var byKey = {}, docs = {};
@@ -3488,13 +3490,13 @@
         });
         return { codes: out, missing: missing, all: pl };
       }
-      function addToProject(g, pr, folderOverride) {
+      function addToProject(g, pr, folderOverride, human) {
         var folder = folderOverride != null ? folderOverride : (g.input.value.trim() || ddmmyy() + '_weblate');
         var pl = projectLangs(pr);
         var send = g.files.filter(function (f) { return pl.codes[f.lang]; });
         if (!send.length) return Promise.reject(new Error('ни одного выбранного языка нет в проекте «' + pr.name + '» (в нём: ' + pl.all.join(', ') + ')'));
         return scCall('sc-add-docs', { projectId: pr.id,
-          files: send.map(function (f) { return { name: (folder ? folder + '/' : '') + f.name, text: scSendText(f.text), targetLanguages: [pl.codes[f.lang]] }; }) }).catch(function (e) {
+          files: send.map(function (f) { return { name: (folder ? folder + '/' : '') + f.name, text: human ? f.text : scSendText(f.text), targetLanguages: [pl.codes[f.lang]] }; }) }).catch(function (e) {
           if (/target languages/i.test(String(e.message))) throw new Error(e.message + ' — отправляла языки: ' +
             send.map(function (f) { return pl.codes[f.lang]; }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', ') +
             ', в проекте «' + pr.name + '»: ' + (pl.all.length ? pl.all.join(', ') : 'Smartcat не отдал список языков'));
@@ -3530,7 +3532,7 @@
         var webErr = null;
         if (webGroup) chain = chain.then(function (prev) {
           return scCall('sc-resolve-project', { ref: webRef }).then(function (pr) {
-            return addToProject(webGroup, pr, webGroup.input.value.trim() || ddmmyy() + ' web');
+            return addToProject(webGroup, pr, webGroup.input.value.trim() || ddmmyy() + ' web', true);
           }).then(function (res) { res.enDocs = true; made.push(res); webGroup.input.disabled = true; return prev; },
             function (e) { webErr = e; return prev; });   /* ошибка веба не мешает отправить английский android/ios */
         });
