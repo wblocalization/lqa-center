@@ -212,7 +212,7 @@
     web: 'МП Web'   // для веба в Smartcat уходит только английский — сюда, в папку «ДДММГГ web»
   };
   var SC_PROJECT_DEFAULT = 'AI translation 4 MP';
-  var SC_LANG_DEFAULTS = 'ru=ru-RU\nen=en\nen_US=en\nkk=kk\nky=ky\ntg=tg\nka=ka\nhy=hy\nuz=uz-Latn\nuz_Latn=uz-Latn\naz=az-Latn';
+  var SC_LANG_DEFAULTS = 'ru=ru-RU\nen=en\nen_US=en\nkk=kk\nky=ky\ntg=tg\nka=ka\nhy=hy\nuz=uz-Latn\nuz_Latn=uz-Latn\naz=az-Latn\nsw=sw';
   function scPlatform(p, c) {
     var t = (p + '/' + c).toLowerCase();
     if (/android/.test(t)) return 'android';
@@ -1143,7 +1143,7 @@
   /* ---------- шаблоны языков ---------- */
   var TPL_AUTO = '__auto', TPL_MANUAL = '';
   var LANG_TPL_DEFAULTS = [
-    { name: '[Магазинка] Веб', bases: ['en', 'ka', 'kk', 'uz', 'ky', 'hy', 'tg', 'am', 'az'], plat: 'web' },
+    { name: '[Магазинка] Веб', bases: ['en', 'ka', 'kk', 'uz', 'ky', 'hy', 'tg', 'am', 'az', 'sw'], plat: 'web' },
     { name: '[Магазинка] Android и iOS', bases: ['en', 'ka', 'kk', 'uz', 'ky', 'hy', 'tg', 'az'], plat: 'mobile' }
   ];
   function langTemplates() {
@@ -1933,7 +1933,7 @@
   var scEnAndroid = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.android });
   var scEnIos = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.ios });
   var scEnWeb = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.web });
-  var scLangWeb = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg am az' });
+  var scLangWeb = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg am az sw' });
   var scLangMob = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg az' });
   var scLinksMob = el('textarea', { class: 'small', placeholder: SC_DEFAULT_LINKS });
   /* сообщение в чат (Band): шаблон, вебхук, автоотправка — у каждого сетапа свои */
