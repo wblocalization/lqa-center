@@ -3230,6 +3230,12 @@
       barFill.style.width = '100%';
       showResults(r.res, r.errs);
       otherLangsHint(langs, r.res);
+    }).catch(function (e) {
+      /* упало посреди выгрузки — кнопку обратно, ошибку показать (раньше кнопка оставалась выключенной и «ничего не происходило») */
+      goBtn.disabled = false;
+      progText.textContent = '';
+      err2.textContent = '✗ Выгрузка не удалась: ' + friendly(e);
+      console.error('Weblate LQA:', e);
     });
   }
   /* непереведённое есть в языках, которые не отмечены (например, английский) — подсказать и дать выгрузить */
