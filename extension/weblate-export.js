@@ -699,7 +699,8 @@
     });
   }
   /* папки по платформам на компьютере: ДДММГГ_web / ДДММГГ_iOS / ДДММГГ_android */
-  function platDir(p, c) { var pl = scPlatform(p, c); return ddmmyy() + '_' + (pl === 'ios' ? 'iOS' : pl); }
+  /* обычный проект (ПВЗ и т. п.) — не «_web», а по проекту Weblate: ДДММГГ_wbx-status-tracker */
+  function platDir(p, c) { if (partsOf(scCfg).kind === 'generic') return ddmmyy() + '_' + p; var pl = scPlatform(p, c); return ddmmyy() + '_' + (pl === 'ios' ? 'iOS' : pl); }
   /* выгрузка «папками»: если выбрана папка для архивов и включено «без zip» — пишем файлы прямо туда (по умолчанию выключено) */
   function unzipToDir() { return !!dirHandle && sget('wlx_dir_unzip') === '1'; }
   function saveFilesToDir(files) {
@@ -730,7 +731,7 @@
     if (!unzipToDir()) {
       var groups = {}, rest = [];
       files.forEach(function (f) {
-        var m = /^(\d{6}_(?:web|iOS|android))\/(.+)$/.exec(f.name);
+        var m = /^(\d{6}_[A-Za-z0-9._-]+)\/(.+)$/.exec(f.name);   /* ДДММГГ_web / _iOS / _android или ДДММГГ_<проект> */
         if (m) (groups[m[1]] = groups[m[1]] || []).push({ name: m[2], text: f.text }); else rest.push(f);
       });
       var names = Object.keys(groups).sort();
@@ -3315,7 +3316,7 @@
       var layoutHint = el('span', { class: 'muted' });
       function updateHint() {
         var l = currentLayout();
-        layoutHint.textContent = (byPlatform.checked ? (unzipToDir() ? 'папки ' : 'отдельный zip на платформу: ') + ddmmyy() + '_web / _iOS / _android, внутри ' : '') +
+        layoutHint.textContent = (byPlatform.checked ? (unzipToDir() ? 'папки ' : 'отдельный zip на платформу: ') + ddmmyy() + (partsOf(scCfg).kind === 'generic' ? '_<проект Weblate>' : '_web / _iOS / _android') + ', внутри ' : '') +
           (l === 'language' ? 'папки по языкам' : l === 'flat' ? 'все файлы в одной папке' : 'папки по компонентам') +
           (skipEnglish.checked ? ', без английского (он — в Smartcat)' : englishApart.checked ? ', английский — в «' + ENGLISH_DIR + '»' : '') + ' + summary.csv' +
           (unzipToDir() ? ' → сразу папками в «' + dirHandle.name + '»' : '') + ' (раскладку можно поменять выше)';
@@ -3422,7 +3423,8 @@
       function buildGroups() {
         sset('wlx_sc_split', split.checked ? '1' : '0');
         var by = {};
-        files.forEach(function (f) { var g = split.checked ? platform(f) : 'all'; (by[g] = by[g] || []).push(f); });
+        var byProj = partsOf(c).kind === 'generic';   /* обычный проект: группа = проект Weblate, а не «web» */
+        files.forEach(function (f) { var g = split.checked ? (byProj ? f.p : platform(f)) : 'all'; (by[g] = by[g] || []).push(f); });
         groups = Object.keys(by).sort().map(function (g) {
           var one = by[g].every(function (f) { return f.c === by[g][0].c; });
           var name = ddmmyy() + (g === 'all' ? '_' + (one ? fileKey(by[g][0].c) : 'weblate') : '_' + g);
