@@ -1937,7 +1937,9 @@
   /* что есть в проекте сетапа: веб, android/iOS, английский штатным переводчикам; ненужные поля и шаги прячутся. Нет записи = всё (как у Магазинки) */
   /* en: 'staff' — отдельно штатным переводчикам (свои проекты), 'mt' — как остальные языки, 'skip' — не выгружать совсем */
   function partsOf(c) {
-    var p = (c && c.parts) || {}, en = p.en === 'mt' || p.en === false ? 'mt' : p.en === 'skip' ? 'skip' : 'staff';
+    var p = c && c.parts;
+    if (!p) p = c && c.setup && c.setup !== 'Магазинка' ? { web: true, mob: false, en: 'mt' } : {};   /* старые сетапы без галочек: всё было только у Магазинки */
+    var en = p.en === 'mt' || p.en === false ? 'mt' : p.en === 'skip' ? 'skip' : 'staff';
     return { web: p.web !== false, mob: p.mob !== false, en: en };
   }
   var partBox = function () { return el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle' }); };
@@ -2387,7 +2389,9 @@
   var homeLangInfo = el('div', { class: 'muted' });
   function homeRenderSeg() {
     homeSeg.textContent = '';
-    var pt = partsOf(scCfg), modes = HOME_MODES.filter(function (m) { return m[0] === 'manual' || pt[m[0]]; });
+    var pt = partsOf(scCfg);
+    scPane.classList.toggle('hide', !pt.mob);
+    var modes = HOME_MODES.filter(function (m) { return m[0] === 'manual' || pt[m[0]]; });
     if (!modes.some(function (m) { return m[0] === homeMode; })) {
       var first = modes.filter(function (m) { return m[0] !== 'manual'; })[0];
       if (first) { homeMode = first[0]; homeLoadLinks(); }
@@ -2603,8 +2607,9 @@
     var none = !L.web && !L.android && !L.ios;
     var when = function (x) { return x && x.t ? ' · ссылка от ' + new Date(x.t).toLocaleDateString('ru-RU') : ''; };
     info = Object.assign({}, info, { links: L });
-    if (L.web || none) blocks.push(['Для веба' + when(L.web), (scCfg && scCfg.bandTplWeb && scCfg.bandTplWeb.trim()) || BAND_TPL_WEB]);
-    if (L.android || L.ios || none) blocks.push(['Для приложений' + when((L.android && L.ios) ? (L.android.t < L.ios.t ? L.android : L.ios) : L.android || L.ios), (scCfg && scCfg.bandTplApp && scCfg.bandTplApp.trim()) || BAND_TPL_APP]);
+    var ptM = partsOf(scCfg);
+    if (L.web || (none && ptM.web)) blocks.push(['Для веба' + when(L.web), (scCfg && scCfg.bandTplWeb && scCfg.bandTplWeb.trim()) || BAND_TPL_WEB]);
+    if (L.android || L.ios || (none && ptM.mob)) blocks.push(['Для приложений' + when((L.android && L.ios) ? (L.android.t < L.ios.t ? L.android : L.ios) : L.android || L.ios), (scCfg && scCfg.bandTplApp && scCfg.bandTplApp.trim()) || BAND_TPL_APP]);
     homeMsgBox.textContent = '';
     blocks.forEach(function (b) {
       var ta = el('textarea', { class: 'small msg' }), st = el('span', { class: 'muted' });
@@ -2756,9 +2761,10 @@
     upScMsg.textContent = ''; upScMsg.className = 'muted';
     if (!upScNewName.value) upScNewName.value = ddmmyy() + ' ';
     var tb = upScNewBox.querySelector('#wlx-upsc-tpl'); tb.textContent = '';
+    var ptU = partsOf(scCfg);
     [['web', 'Языки веба'], ['mob', 'Языки android и iOS']].forEach(function (t) {
       var tp = tplByPlat(t[0]);
-      if (!tp) return;
+      if (!tp || !ptU[t[0]]) return;
       tb.appendChild(el('button', { class: 'chipb', type: 'button', text: t[1], onclick: function () {
         var map = scLangMap(scCfg && scCfg.langMap);
         upScNewLangs.value = tp.bases.filter(function (b) { return b !== 'ru'; }).map(function (b) { return map(b === 'uz' ? 'uz_Latn' : b); }).join(' ');
@@ -3010,14 +3016,14 @@
     /* [ключ, пункт меню, панель, заголовок, что здесь делают] */
     ['Перевод по шагам'],
     ['send', '1. Отправить', homePane, 'Отправить на перевод', 'Выгрузить новые строки из Weblate: архивы для подрядчика, машперевод и английский — в Smartcat.'],
-    HAS_EXT ? ['work', '2. В работе', el('div', {}, [scBack]), 'В работе', 'Что сейчас переводится в Smartcat. Готовое — кнопкой «В Weblate».'] : null,
-    ['accept', '3. Принять файлы', importPane, 'Принять файлы', 'Загрузить в Weblate файлы, которые прислал подрядчик (.po, .json, .zip), с проверкой.'],
-    HAS_EXT ? ['Smartcat вручную'] : null,
-    HAS_EXT ? ['up', 'Загрузить файлы', upPane, 'Загрузить файлы в Smartcat', 'Любые свои файлы — в нужный проект и папку Smartcat.'] : null,
-    HAS_EXT ? ['projects', 'Все проекты', el('div', {}, [scImpBox]), 'Все проекты', 'Проекты Smartcat → папки → файлы. Забрать в Weblate можно любые, даже загруженные руками.'] : null,
-    ['Ещё'],
-    HAS_EXT ? ['msg', 'Сообщения в чат', msgPane, 'Сообщения в чат', 'Готовые тексты для переводчиков со ссылками на Smartcat — вписать дедлайн и скопировать.'] : null,
-    ['manual', 'Ручная выгрузка', el('div', {}, [exportPane, scPane]), 'Ручная выгрузка', 'Выгрузка с выбором языков вручную — когда нужен нестандартный набор.'],
+    HAS_EXT ? ['msg', '2. Написать в чат', msgPane, 'Сообщения в чат', 'Готовые тексты для переводчиков со ссылками на Smartcat — вписать дедлайн и скопировать.'] : null,
+    HAS_EXT ? ['work', '3. Ждать перевод', el('div', {}, [scBack]), 'В работе', 'Что сейчас переводится в Smartcat. Готовое — кнопкой «В Weblate».'] : null,
+    ['accept', HAS_EXT ? '4. Принять файлы' : '2. Принять файлы', importPane, 'Принять файлы', 'Загрузить в Weblate файлы, которые прислал подрядчик (.po, .json, .zip), с проверкой.'],
+    ['Вручную'],
+    ['manual', 'Выгрузить вручную', el('div', {}, [exportPane, scPane]), 'Выгрузить из Weblate вручную', 'Свой набор языков и компонентов — когда стандартная отправка не подходит.'],
+    HAS_EXT ? ['up', 'Загрузить в Smartcat', upPane, 'Загрузить файлы в Smartcat', 'Любые свои файлы — в нужный проект и папку Smartcat.'] : null,
+    HAS_EXT ? ['projects', 'Проекты Smartcat', el('div', {}, [scImpBox]), 'Проекты Smartcat', 'Проекты → папки → файлы. Забрать в Weblate можно любые, даже загруженные руками.'] : null,
+    HAS_EXT ? [''] : null,
     HAS_EXT ? ['settings', 'Настройки', settingsPane, 'Настройки', 'Сетап проекта, подключение к Smartcat, люди, сообщения, звук.'] : null
   ].filter(Boolean);
   var side = el('nav', { class: 'side' });
