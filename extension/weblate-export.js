@@ -3459,6 +3459,7 @@
       var webSkip = allMt ? [] : webAll.filter(function (f) { return !isEnglish(f.lang); });
       if (!allMt) files = files.filter(function (f) { return scPlatform(f.p, f.c) !== 'web'; });
       var webRef = c.enWeb || SC_EN_DEFAULTS.web;
+      var mtProj = el('input', { type: 'text', value: c.project || '', placeholder: 'ссылка на проект Smartcat или название' });
       var webGroup = webEn.length && partsOf(c).en === 'staff' ? { files: webEn, input: el('input', { type: 'text', value: ddmmyy() + ' web' }), note: el('span', { class: 'muted' }) } : null;
       /* проекты по платформе: 290926_android, 290926_ios (дата отправки в начале) */
       function platform(f) { return scPlatform(f.p, f.c); }
@@ -3505,14 +3506,21 @@
         groupsBox.querySelectorAll('label').forEach(function (l) { if (l.firstChild && l.firstChild.nodeType === 3) l.firstChild.textContent = 'Папка в проекте «' + pr.name + '»'; });
       }, function (e) { msg.className = 'red'; msg.textContent = '✗ Проект в Smartcat: ' + e.message; });
       if (files.length) {
+        box.appendChild(el('label', { class: 'muted blk' }, ['Машперевод → проект Smartcat (ссылка или название; можно любой)', mtProj]));
         box.appendChild(el('label', { class: 'muted blk' }, [split, c.project ? ' отдельная папка для android и ios' : ' отдельный проект для android и ios']));
         box.appendChild(groupsBox);
         split.addEventListener('change', buildGroups);
         buildGroups();
       }
       if (webGroup) {
+        webGroup.proj = el('input', { type: 'text', value: webRef, placeholder: 'ссылка на проект Smartcat или название' });
         var webLbl = el('label', { class: 'muted blk' }, ['Веб, английский → папка в проекте «' + webRef + '»', webGroup.input]);
-        box.appendChild(el('div', { class: 'scgroup' }, [webLbl,
+        webGroup.proj.addEventListener('change', function () {
+          var ref = webGroup.proj.value.trim() || webRef; webGroup.note.className = 'muted'; webGroup.note.textContent = 'Проверяю проект…';
+          scCall('sc-resolve-project', { ref: ref }).then(function (pr) { webLbl.firstChild.textContent = 'Английский → папка в проекте «' + pr.name + '»'; webGroup.note.textContent = ''; },
+            function (e) { webGroup.note.className = 'red'; webGroup.note.textContent = '✗ Проект «' + ref + '»: ' + e.message; });
+        });
+        box.appendChild(el('div', { class: 'scgroup' }, [el('label', { class: 'muted blk' }, ['Английский → проект Smartcat (можно любой)', webGroup.proj]), webLbl,
           el('div', { class: 'muted', text: webEn.length + ' файл(ов): ' + webEn.map(function (f) { return f.c; }).join(', ') }), webGroup.note]));
         scCall('sc-resolve-project', { ref: webRef }).then(function (pr) { webLbl.firstChild.textContent = 'Веб, английский → папка в проекте «' + pr.name + '»'; },
           function (e) { webGroup.note.className = 'red'; webGroup.note.textContent = '✗ Проект «' + webRef + '»: ' + e.message + ' (поправь в ⚙ → «Веб: английский → проект»)'; });
@@ -3623,7 +3631,8 @@
         try { extra = c.extra ? JSON.parse(c.extra) : {}; } catch (e) {}
         btn.disabled = true; split.disabled = true; msg.className = 'muted';
         msg.textContent = c.project ? 'Добавляю файлы в проект…' : 'Создаю проекты в Smartcat…';
-        var made = [], chain = c.project ? scCall('sc-resolve-project', { ref: c.project }) : Promise.resolve(null);
+        var mtRef = mtProj.value.trim() || c.project;
+        var made = [], chain = mtRef ? scCall('sc-resolve-project', { ref: mtRef }) : Promise.resolve(null);
         groups.forEach(function (g) {
           chain = chain.then(function (pr) {
             return (pr ? addToProject(g, pr) : createOne(g, extra)).then(function (res) { made.push(res); g.input.disabled = true; return pr; });
@@ -3631,7 +3640,7 @@
         });
         var webErr = null;
         if (webGroup) chain = chain.then(function (prev) {
-          return scCall('sc-resolve-project', { ref: webRef }).then(function (pr) {
+          return scCall('sc-resolve-project', { ref: (webGroup.proj && webGroup.proj.value.trim()) || webRef }).then(function (pr) {
             return addToProject(webGroup, pr, webGroup.input.value.trim() || ddmmyy() + ' web', true);
           }).then(function (res) { res.enDocs = true; made.push(res); webGroup.input.disabled = true; return prev; },
             function (e) { webErr = e; return prev; });   /* ошибка веба не мешает отправить английский android/ios */
