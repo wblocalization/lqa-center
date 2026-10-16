@@ -2284,6 +2284,42 @@
       scMsg.textContent = '✓ Настройки загружены из файла. API-ключ — впиши, если его здесь ещё нет.';
     }, function (e) { scMsg.textContent = '✗ ' + (e.message || e); });
   });
+  /* один сетап — в файл, чтобы передать коллеге; у него «Добавить из файла» (ключа и аккаунта в файле нет) */
+  var setupInput = el('input', { type: 'file', accept: '.json', class: 'hide' });
+  function shareSetup() {
+    saveScSettings().then(function (c) {
+      var st = c && activeSetup(c);
+      if (!st) return;
+      var data = { weblateSetup: 1, saved: new Date().toISOString(), setup: st };
+      var safe = String(st.name).replace(/[^0-9A-Za-zА-Яа-яЁё_-]+/g, '_');
+      saveBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), 'setup_' + safe + '.json');
+      scMsg.textContent = 'Сетап «' + st.name + '» сохранён в файл — отправь его коллеге, у него: Настройки → «Добавить из файла»';
+    }, function (e) { scMsg.textContent = '✗ ' + e.message; });
+  }
+  setupInput.addEventListener('change', function () {
+    var f = setupInput.files[0]; setupInput.value = '';
+    if (!f) return;
+    var st;
+    f.text().then(function (t) {
+      var d = JSON.parse(t);
+      if (d.weblateExtensionSettings) throw new Error('это файл всех настроек — его загружают в «Дополнительно → Загрузить из файла»');
+      if (!d.weblateSetup || !d.setup || !d.setup.name) throw new Error('это не файл сетапа');
+      st = d.setup;
+      return loadScConfig();
+    }).then(function (c) {
+      var list = setupsOf(c || {}), name = String(st.name);
+      if (list.some(function (x) { return x.name === name; }) && !confirm('Сетап «' + name + '» уже есть. Заменить его тем, что в файле?')) {
+        name = prompt('Тогда под каким названием добавить?', name + ' (2)');
+        if (!name || !name.trim()) throw new Error('отменено');
+        name = name.trim();
+      }
+      st = Object.assign({}, st, { name: name });
+      list = list.filter(function (x) { return x.name !== name; }).concat([st]);
+      return scCall('sc-set-config', { config: { setups: list } }).then(function () { return switchSetup(name); });
+    }).then(function () {
+      scMsg.textContent = '✓ Сетап «' + st.name + '» добавлен и выбран';
+    }, function (e) { scMsg.textContent = '✗ ' + (e.message || e); });
+  });
   var scCustomLbl = el('label', {}, ['Адрес сервера', scCustom]);
   scServer.addEventListener('change', function () { scCustomLbl.classList.toggle('hide', scServer.value !== 'custom'); });
   var connFold = fold('Подключение к Smartcat', [
@@ -2305,6 +2341,10 @@
       el('div', { class: 'row' }, [scSetup,
         el('button', { class: 'b g s', text: '＋ Новый', onclick: newSetup }),
         el('button', { class: 'b g s', text: 'Удалить', onclick: deleteSetup })]),
+      el('div', { class: 'row' }, [
+        el('button', { class: 'b g s', text: '📤 Поделиться сетапом (файл)', title: 'Сохранить этот сетап в файл, чтобы передать коллеге', onclick: shareSetup }),
+        el('button', { class: 'b g s', text: '📥 Добавить из файла', title: 'Добавить сетап, который прислал коллега', onclick: function () { setupInput.click(); } }),
+        setupInput]),
       el('label', {}, ['Тип проекта', partKind]),
       fShopParts = el('div', { class: 'row', style: 'gap:18px;flex-wrap:wrap' }, [
         el('label', { class: 'blk' }, [partWeb, 'Веб']),
