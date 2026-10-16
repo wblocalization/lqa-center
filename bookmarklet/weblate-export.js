@@ -2189,7 +2189,7 @@
       /* старые поля сетапа — как были; новые (языки, ссылки, люди) — только если они в сетапе заданы */
       SETUP_FIELDS.forEach(function (f) { if (x[f] !== undefined) cfg[f] = x[f]; else if (SETUP_FIELDS.indexOf(f) < 6) cfg[f] = ''; else if (f === 'parts') cfg[f] = null; });
       return scCall('sc-set-config', { config: cfg }).then(loadScConfig);
-    }).then(function (c) { fillScSettings(); if (c) fillSetupSelects(c); return c; });
+    }).then(function (c) { fillScSettings(); if (c) fillSetupSelects(c); renderScImport(); homeRefreshSc(); homeRenderSeg(); return c; });
   }
   scSetup.addEventListener('change', function () { switchSetup(scSetup.value).then(function () { scMsg.textContent = 'Сетап «' + scSetup.value + '»'; }); });
   scSetupQuick.addEventListener('change', function () {
@@ -2655,7 +2655,7 @@
   function homeRefreshSc() {
     if (!HAS_EXT) { homeSteps[2].row.classList.add('hide'); homeSteps[3].row.classList.add('hide'); return; }
     var wk = new Date(); wk.setHours(0, 0, 0, 0); wk.setDate(wk.getDate() - 6);
-    var pending = scProjects().filter(function (pr) { return !pr.uploaded && scDay(pr) >= wk; });
+    var pending = scProjects().filter(function (pr) { return mySetupPr(pr) && !pr.uploaded && scDay(pr) >= wk; });
     var ready = pending.filter(function (pr) { return scReady[pr.key || pr.id]; });
     navCount('work', ready.length);
     var check = el('button', { class: 'b g s', type: 'button', text: 'Проверить', onclick: function () {
@@ -2950,7 +2950,7 @@
         var key = x.pr.id + '#' + (path || 'root');
         var list = scProjects().filter(function (y) { return (y.key || y.id) !== key; });
         var old = scProjects().filter(function (y) { return (y.key || y.id) === key; })[0];
-        list.unshift({ key: key, id: x.pr.id, name: x.pr.name + (path ? ' / ' + path : ''), created: new Date().toISOString(),
+        list.unshift({ key: key, id: x.pr.id, name: x.pr.name + (path ? ' / ' + path : ''), created: new Date().toISOString(), setup: curSetup(),
           docs: Object.assign({}, old && old.docs, docs), files: {}, langs: {} });
         saveScProjects(list); renderScImport(); homeRefreshSc();
       }
@@ -3351,6 +3351,9 @@
   }
 
   /* ----- шаг «Отправить в Smartcat» после выгрузки ----- */
+  /* отправки привязаны к сетапу: в «Ждать перевод» видно только свои; старые записи без сетапа — Магазинка */
+  function curSetup() { return (scCfg && scCfg.setup) || 'Магазинка'; }
+  function mySetupPr(pr) { return (pr.setup || 'Магазинка') === curSetup(); }
   function scProjects() { try { return JSON.parse(sget('wlx_sc_projects') || '[]'); } catch (e) { return []; } }
   function saveScProjects(list) {
     list = list.slice(0, 40);
@@ -3505,7 +3508,7 @@
                 if (Object.keys(docs).length) {
                   var key = pr.id + '#' + ddmmyy() + '_' + pl;
                   var list = scProjects().filter(function (x) { return (x.key || x.id) !== key; });
-                  list.unshift({ key: key, id: pr.id, name: pr.name + ' / ' + ddmmyy() + '_' + pl, created: new Date().toISOString(), docs: docs, files: {}, langs: {}, kind: 'human' });
+                  list.unshift({ key: key, id: pr.id, name: pr.name + ' / ' + ddmmyy() + '_' + pl, created: new Date().toISOString(), setup: curSetup(), docs: docs, files: {}, langs: {}, kind: 'human' });
                   saveScProjects(list);
                 }
                 acc.push({ ok: true, text: pl + ' → ' + pr.name + ' (' + r.documents.length + ' док.)', docIds: r.documents.map(function (d) { return d.id; }),
@@ -3562,7 +3565,7 @@
           var key = pr.id + '#' + (folder || 'root');
           var list = scProjects().filter(function (x) { return (x.key || x.id) !== key; });
           var folderId = scFolderOf(r.documents);
-          list.unshift({ key: key, id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), created: new Date().toISOString(), docs: docs, files: {}, langs: lmap, folderId: folderId });
+          list.unshift({ key: key, id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), created: new Date().toISOString(), setup: curSetup(), docs: docs, files: {}, langs: lmap, folderId: folderId });
           saveScProjects(list);
           return { id: pr.id, name: pr.name + (folder ? ' / ' + folder : ''), docs: Object.keys(docs).length, lost: lost, docIds: Object.keys(docs), folderId: folderId };
         });
@@ -4079,7 +4082,7 @@
   function renderScList(box, auto) {
     box.textContent = '';
     if (!HAS_EXT) { box.classList.add('hide'); return; }
-    var all = scProjects();
+    var all = scProjects().filter(mySetupPr);
     box.classList.remove('hide');
     var keyOf = function (pr) { return pr.key || pr.id; };
     var cut = new Date(); cut.setHours(0, 0, 0, 0); cut.setDate(cut.getDate() - (scRange === '7' ? 6 : 1));
