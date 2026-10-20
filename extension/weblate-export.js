@@ -2568,22 +2568,13 @@
       homeSeg.appendChild(el('button', { class: 'chipb' + (homeMode === m[0] ? ' on' : ''), type: 'button', text: m[1], onclick: function () {
         if (m[0] === 'manual') { homeToManual(); return; }
         if (homeMode === 'web') homeWebLinks = homeLinks.value;
-        homeMode = m[0]; sset('wlx_home_tpl', homeMode); homeTgt.proj = null; homeTgt.folder = ''; homeTgtNew.value = ''; homeLoadLinks(); homeRenderSeg();
+        homeMode = m[0]; sset('wlx_home_tpl', homeMode); homeLangSel = null; homeTgt.proj = null; homeTgt.folder = ''; homeTgtNew.value = ''; homeLoadLinks(); homeRenderSeg();
       } }));
     });
     var w = tplByPlat('web'), mb = tplByPlat('android');
     var up = function (t) { return t ? t.bases.join(' ').toUpperCase() : '—'; };
-    homeLangInfo.textContent = '';
-    if (pt.kind === 'shop') homeLangInfo.textContent = 'Языки: ' + (homeMode === 'mob' ? up(mb) : up(w)) + ' · меняются в Настройках → Проект';
-    else {
-      /* обычный сетап: без «шаблонов» Магазинки — только свои языки и ссылка поменять */
-      var own = scCfg && String(scCfg.langWeb || '').trim();
-      homeLangInfo.appendChild(document.createTextNode(own ? 'Языки: ' + up(w) + ' · ' : 'Языки этого сетапа не заданы — сейчас берутся стандартные (' + up(w) + ') · '));
-      homeLangInfo.appendChild(el('button', { class: 'lnk', type: 'button', text: own ? 'поменять' : 'задать свои', onclick: function () { showSettings(true); } }));
-      homeLangInfo.appendChild(document.createTextNode(' · '));
-      homeLangInfo.appendChild(el('button', { class: 'lnk', type: 'button', text: 'выбрать галочками разово', onclick: homeToManual }));
-    }
-    if (homeTplLbl) { homeTplLbl.textContent = pt.kind === 'shop' ? 'Шаблон' : 'Языки'; homeSeg.classList.toggle('hide', pt.kind !== 'shop'); }
+    homeLangDraw();
+    if (homeTplLbl) { homeTplLbl.textContent = pt.kind === 'shop' ? 'Шаблон и языки' : 'Языки'; homeSeg.classList.toggle('hide', pt.kind !== 'shop'); }
     homeTexts(pt);
   }
   /* тексты кнопки и шагов — по тому, что делает сетап (у обычного проекта нет «машперевода и английского» Магазинки) */
@@ -2614,8 +2605,41 @@
     if (parseLinks(links.value).length) loadLangs();
   }
   function homePickFor(x, codes) {
-    var t = tplByPlat(scPlatform(x.p, x.c));      /* языки — по компоненту: веб по шаблону веба, android/iOS по своему */
+    var pl = scPlatform(x.p, x.c), t = tplByPlat(pl);      /* языки — по компоненту: веб по шаблону веба, android/iOS по своему */
+    /* языки, выбранные на экране отправки, — для своей платформы (у обычного сетапа — для всех) */
+    if (homeLangSel && (partsOf(scCfg).kind !== 'shop' || (homeMode === 'mob') === (pl !== 'web'))) return mtPick(codes, homeLangSel);
     return t ? mtPick(codes, t.bases) : [];
+  }
+  /* языки прямо на экране отправки: кнопки с флагами; меняют языки этой отправки, «запомнить» — для сетапа */
+  var homeLangSel = null, homeLangMore = false;
+  function homeLangBase() { var t = tplByPlat(partsOf(scCfg).kind === 'shop' && homeMode === 'mob' ? 'android' : 'web'); return t ? t.bases.slice() : []; }
+  function homeLangDraw() {
+    homeLangInfo.textContent = '';
+    var base = homeLangBase(), cur = homeLangSel || base;
+    var all = base.slice();
+    cur.concat(homeLangMore ? LANG_PICK : []).forEach(function (c) { if (all.indexOf(c) < 0) all.push(c); });
+    var box = el('div', { class: 'lpick' });
+    all.forEach(function (c) {
+      var on = cur.indexOf(c) >= 0;
+      box.appendChild(el('button', { class: 'lpb' + (on ? ' on' : ''), type: 'button', title: c, onclick: function () {
+        var now = (homeLangSel || base).slice();
+        homeLangSel = on ? now.filter(function (x) { return x !== c; }) : now.concat([c]);
+        homeLangDraw();
+      } }, [flag(c), el('span', { text: langName(c) })]));
+    });
+    if (!homeLangMore) box.appendChild(el('button', { class: 'lpb more', type: 'button', text: '＋ ещё языки', onclick: function () { homeLangMore = true; homeLangDraw(); } }));
+    homeLangInfo.appendChild(box);
+    var changed = homeLangSel && homeLangSel.join(' ') !== base.join(' ');
+    var line = el('div', { class: 'row', style: 'gap:10px;margin-top:6px' }, [el('span', { class: 'muted', style: 'font-size:12px', text: changed ? 'только для этой отправки' : 'как в сетапе' })]);
+    if (changed && HAS_EXT) {
+      line.appendChild(el('button', { class: 'lnk', type: 'button', text: '✓ запомнить для сетапа', onclick: function () {
+        var f = {}; f[partsOf(scCfg).kind === 'shop' && homeMode === 'mob' ? 'langMob' : 'langWeb'] = homeLangSel.join(' ');
+        patchSetup(f).then(function () { homeLangSel = null; homeRenderSeg(); toast('Языки сохранены для этого сетапа'); }, function () {});
+      } }));
+      line.appendChild(el('button', { class: 'lnk', type: 'button', text: '↺ как в сетапе', onclick: function () { homeLangSel = null; homeLangDraw(); } }));
+    }
+    line.appendChild(el('button', { class: 'lnk', type: 'button', text: 'выбрать галочками разово', onclick: homeToManual }));
+    homeLangInfo.appendChild(line);
   }
   /* шаги */
   var homeSteps = [
@@ -3070,6 +3094,7 @@
   homeSetup.addEventListener('change', function () {
     switchSetup(homeSetup.value).then(function (c) {
       homeSetupFill(c);
+      homeLangSel = null;
       if (c) { homeWebLinks = c.links || ''; sset('wlx_home_links_mob', ''); homeLoadLinks(); }
     });
   });
