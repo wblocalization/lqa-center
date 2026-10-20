@@ -1064,6 +1064,8 @@
     '.zipfor{width:auto!important;padding:3px 8px!important;font-size:12.5px!important;margin-left:4px}',
     '.duechips{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}.duerow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}',
     '.chipb.s{padding:4px 10px;font-size:12px}',
+    '.duetime{width:auto!important;padding:3px 10px!important;border-radius:999px!important;border:1px solid var(--line)!important;font:inherit!important;font-size:12.5px!important;color:var(--ink);background:var(--card)}',
+    '.duetime.on{border-color:var(--accent)!important;background:var(--soft);color:var(--accent);font-weight:600!important}',
     '.dueother{width:auto!important;padding:5px 10px!important;border-radius:999px!important;border:1px solid var(--accent)!important;font-size:12.5px!important;color:var(--ink);background:var(--card)}',
     '.tgtdate{font-weight:700;font-size:13.5px;color:var(--accent)}.tgttitle{flex:1;min-width:200px}',
     '.gtabs{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:14px;background:var(--soft);margin-bottom:14px}',
@@ -2722,9 +2724,16 @@
     row1.appendChild(homeDueOther);
     homeDueChips.appendChild(row1);
     if (dueSt.day) {
-      ['10:00', '12:00', '15:00', '18:00', '20:00'].forEach(function (t) {
+      var TIMES = ['10:00', '12:00', '15:00', '18:00', '20:00'];
+      TIMES.forEach(function (t) {
         row2.appendChild(el('button', { class: 'chipb s' + (dueSt.time === t ? ' on' : ''), type: 'button', text: t, onclick: function () { dueSt.time = t; dueApply(); } }));
       });
+      /* своё время — любое, например 16:30 */
+      var own = TIMES.indexOf(dueSt.time) < 0;
+      var tIn = el('input', { type: 'time', class: 'duetime' + (own ? ' on' : ''), value: own ? dueSt.time : '', title: 'Своё время' });
+      tIn.addEventListener('change', function () { if (tIn.value) { dueSt.time = tIn.value; dueApply(); } });
+      row2.appendChild(el('span', { class: 'muted', style: 'font-size:12px', text: 'или' }));
+      row2.appendChild(tIn);
       row2.appendChild(el('span', { class: 'muted', style: 'font-size:12px', text: '→ ' + dueText(homeDue.value) + ' · поставится задачам в Smartcat и в сообщение' }));
       homeDueChips.appendChild(row2);
     }
