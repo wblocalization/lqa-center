@@ -2536,7 +2536,7 @@
       homeSeg.appendChild(el('button', { class: 'chipb' + (homeMode === m[0] ? ' on' : ''), type: 'button', text: m[1], onclick: function () {
         if (m[0] === 'manual') { homeToManual(); return; }
         if (homeMode === 'web') homeWebLinks = homeLinks.value;
-        homeMode = m[0]; sset('wlx_home_tpl', homeMode); homeLoadLinks(); homeRenderSeg();
+        homeMode = m[0]; sset('wlx_home_tpl', homeMode); homeTgt.proj = null; homeTgt.folder = ''; homeTgtNew.value = ''; homeLoadLinks(); homeRenderSeg();
       } }));
     });
     var w = tplByPlat('web'), mb = tplByPlat('android');
@@ -2560,14 +2560,14 @@
     var proj = scCfg ? (activeSetup(scCfg).project || '') : '';
     var shop = pt.kind === 'shop', sendSc = shop || pt.mt;
     homeGo.firstChild.textContent = sendSc ? 'Выгрузить и отправить' : 'Выгрузить архивы';
-    homeGo.lastChild.textContent = shop ? 'архивы на компьютер · машперевод и английский в Smartcat'
+    homeGo.lastChild.textContent = shop ? (homeMode === 'web' ? 'архивы на компьютер · английский в Smartcat переводчикам' : 'архивы на компьютер · машперевод и английский в Smartcat')
       : sendSc ? 'архивы на компьютер · все языки в Smartcat' + (pt.en === 'staff' ? ' · английский переводчикам' : '') : 'на компьютер, для подрядчика — без Smartcat';
     homeZip.classList.toggle('hide', !sendSc);
     homeTgtBox.classList.toggle('hide', !sendSc);
     homeTgtDraw();
     homeSteps[1].row.classList.toggle('hide', !sendSc);
     homeSteps[2].row.classList.toggle('hide', !sendSc);
-    homeSteps[2].t.textContent = shop ? 'Машинный перевод' : 'Перевод в Smartcat';
+    homeSteps[2].t.textContent = shop ? (homeMode === 'web' ? 'Перевод английского' : 'Машинный перевод') : 'Перевод в Smartcat';
     homeSteps[3].row.classList.toggle('hide', !sendSc);
     if (!shop) homeSetupNote.textContent = !sendSc ? 'только архивы, без Smartcat' : proj ? 'Smartcat: ' + proj : 'проект Smartcat не выбран — ⚙';
   }
@@ -2605,15 +2605,26 @@
   var homeTgtFold = el('div', { class: 'chipsw', style: 'margin:0' });
   var homeTgtNew = el('input', { type: 'text', class: 'tgtnew', placeholder: 'или имя новой папки' });
   homeTgtNew.addEventListener('input', function () { homeTgt.folder = homeTgtNew.value.trim(); homeTgtDrawFolders(); });
-  var homeTgtBox = el('div', { class: 'hblock tgt' }, [el('span', { class: 'lbl', text: 'Куда в Smartcat' }),
+  var homeTgtHint = el('div', { class: 'muted', style: 'font-size:12.5px' });
+  var homeTgtBox = el('div', { class: 'hblock tgt' }, [el('span', { class: 'lbl', text: 'Куда в Smartcat' }), homeTgtHint,
     el('div', { class: 'tgtrow' }, [el('span', { class: 'tgtk', text: 'Проект' }), homeTgtProj, homeTgtReset]), homeTgtPick,
     el('div', { class: 'tgtrow' }, [el('span', { class: 'tgtk', text: 'Папка' }), el('div', { class: 'tgtf' }, [homeTgtFold, homeTgtNew])])]);
-  function homeTgtDef() { var pt = partsOf(scCfg), pr = scCfg ? activeSetup(scCfg).project : ''; return pr || (pt.kind === 'shop' ? SC_PROJECT_DEFAULT : ''); }
+  /* Магазинка, «Веб»: в Smartcat уходит только английский — в проект английского веба («МП Web»); «Android и iOS» — машперевод */
+  function homeTgtWeb() { return partsOf(scCfg).kind === 'shop' && homeMode === 'web'; }
+  function homeTgtDef() {
+    var pt = partsOf(scCfg), pr = scCfg ? activeSetup(scCfg).project : '';
+    if (homeTgtWeb()) return (scCfg && scCfg.enWeb) || SC_EN_DEFAULTS.web;
+    return pr || (pt.kind === 'shop' ? SC_PROJECT_DEFAULT : '');
+  }
   function homeTgtDraw() {
     var d = homeTgtDef();
+    if (homeTgtPr && homeTgtPr._ref !== d) homeTgtPr = null;   /* сменили шаблон или сетап — проект по умолчанию другой */
     homeTgtProj.textContent = (homeTgt.proj ? homeTgt.proj.name : d ? (homeTgtPr && homeTgtPr.name) || d.replace(/^https?:\/\/[^/]+\/projects\//, '') : 'не выбран — нажми, чтобы выбрать') + ' ▾';
     homeTgtProj.classList.toggle('empty', !homeTgt.proj && !d);
     homeTgtReset.classList.toggle('hide', !homeTgt.proj);
+    var ptT = partsOf(scCfg);
+    homeTgtHint.textContent = ptT.kind !== 'shop' ? '' : homeTgtWeb() ? 'Веб: в Smartcat уходит только английский — переводчикам. Остальные языки — в архиве для подрядчика.'
+      : 'Android и iOS: все языки — на машперевод сюда; английский — переводчикам в EN android / EN ios.';
     if (scCfg && partsOf(scCfg).kind !== 'shop' && partsOf(scCfg).mt) homeSetupNote.textContent = homeTgt.proj ? 'в этот раз — «' + homeTgt.proj.name + '»' : d ? 'Smartcat: ' + d : 'проект Smartcat не выбран — выбери ниже или в ⚙';
     homeTgtDrawFolders();
   }
@@ -2622,14 +2633,14 @@
     var chip = function (f, text) {
       return el('button', { class: 'chipb' + (homeTgt.folder === f ? ' on' : ''), type: 'button', text: text, onclick: function () { homeTgt.folder = f; homeTgtNew.value = ''; homeTgtDrawFolders(); } });
     };
-    homeTgtFold.appendChild(chip('', '✨ новая по дате (' + ddmmyy() + '…)'));
+    homeTgtFold.appendChild(chip('', '✨ новая по дате (' + ddmmyy() + (homeTgtWeb() ? ' web' : '…') + ')'));
     var id = homeTgt.proj ? homeTgt.proj.id : homeTgtPr && homeTgtPr.id, list = id && homeTgtFolders[id];
     if (list) list.slice(0, 8).forEach(function (f) { homeTgtFold.appendChild(chip(f, '📁 ' + f)); });
     else if (HAS_EXT && (homeTgt.proj || homeTgtDef())) homeTgtFold.appendChild(el('button', { class: 'lnk', type: 'button', text: 'показать папки проекта', onclick: homeTgtLoadFolders }));
     if (homeTgt.folder && (!list || list.indexOf(homeTgt.folder) < 0) && homeTgtNew.value.trim() !== homeTgt.folder) homeTgtFold.appendChild(chip(homeTgt.folder, '📁 ' + homeTgt.folder));
   }
   function homeTgtLoadFolders() {
-    var p0 = homeTgt.proj ? Promise.resolve(homeTgt.proj) : scCall('sc-resolve-project', { ref: homeTgtDef() }).then(function (pr) { homeTgtPr = pr; return pr; });
+    var p0 = homeTgt.proj ? Promise.resolve(homeTgt.proj) : scCall('sc-resolve-project', { ref: homeTgtDef() }).then(function (pr) { pr._ref = homeTgtDef(); homeTgtPr = pr; return pr; });
     homeTgtFold.appendChild(el('span', { class: 'muted', text: ' смотрю папки…' }));
     p0.then(function (pr) { return scCall('sc-project', { id: pr.id }).then(function (full) {
       var seen = {};
@@ -2753,6 +2764,7 @@
       if (!send || !HAS_EXT) { homeStep(1, 'next', send ? '' : 'пропущено — выбрано «Только архивы»'); return; }
       homeStep(1, 'run', 'Готовлю отправку…');
       var box = el('div'); homeOut.appendChild(box);
+      homeTgt.forWeb = homeTgtWeb();
       return Promise.resolve(renderSmartcat(res, box, homeTgt)).then(function (btn) {
         if (!btn) {
           if (info) info.smartcat = 'не отправляли';
@@ -3724,7 +3736,8 @@
       var webSkip = allMt ? [] : webAll.filter(function (f) { return !isEnglish(f.lang); });
       if (!allMt) files = files.filter(function (f) { return scPlatform(f.p, f.c) !== 'web'; });
       var webRef = c.enWeb || SC_EN_DEFAULTS.web;
-      var mtProj = el('input', { type: 'text', value: (tgt && tgt.proj && tgt.proj.id) || c.project || '', placeholder: 'ссылка на проект Smartcat или название' });
+      var tMt = tgt && !tgt.forWeb ? tgt : null;   /* «Веб» у Магазинки: выбор на шаге 1 — про английский веба, машперевод не трогаем */
+      var mtProj = el('input', { type: 'text', value: (tMt && tMt.proj && tMt.proj.id) || c.project || '', placeholder: 'ссылка на проект Smartcat или название' });
       var webGroup = webEn.length && partsOf(c).en === 'staff' ? { files: webEn, input: el('input', { type: 'text', value: ddmmyy() + ' web' }), note: el('span', { class: 'muted' }) } : null;
       /* проекты по платформе: 290926_android, 290926_ios (дата отправки в начале) */
       function platform(f) { return scPlatform(f.p, f.c); }
@@ -3776,10 +3789,11 @@
         box.appendChild(groupsBox);
         split.addEventListener('change', buildGroups);
         buildGroups();
-        if (tgt && tgt.folder) groups.forEach(function (g) { g.input.value = tgt.folder; });   /* выбранная на шаге 1 папка */
+        if (tMt && tMt.folder) groups.forEach(function (g) { g.input.value = tMt.folder; });   /* выбранная на шаге 1 папка */
       }
       if (webGroup) {
-        webGroup.proj = el('input', { type: 'text', value: webRef, placeholder: 'ссылка на проект Smartcat или название' });
+        webGroup.proj = el('input', { type: 'text', value: (tgt && tgt.forWeb && tgt.proj && tgt.proj.id) || webRef, placeholder: 'ссылка на проект Smartcat или название' });
+        if (tgt && tgt.forWeb && tgt.folder) webGroup.input.value = tgt.folder;
         var webLbl = el('label', { class: 'muted blk' }, ['Веб, английский → папка в проекте «' + webRef + '»', webGroup.input]);
         webGroup.proj.addEventListener('change', function () {
           var ref = webGroup.proj.value.trim() || webRef; webGroup.note.className = 'muted'; webGroup.note.textContent = 'Проверяю проект…';
