@@ -267,7 +267,7 @@
     var keep = [], n = 0, words = 0, plurals = 0;
     poEntries(text).forEach(function (e) {
       if (e.header) { keep.push(e.lines.join('\n')); return; }
-      if (e.obsolete || e.done) return;
+      if (e.obsolete || (e.done && !keys)) return;      /* ключи, названные вручную, уходят, даже если уже переведены */
       if (keys && !keys[e.ctx] && !keys[e.msgid]) return;
       if (e.plural) { plurals++; if (dropPlurals) return; }
       keep.push(e.lines.join('\n'));
@@ -2892,7 +2892,8 @@
       var total = hcomps.reduce(function (a, x) { return a + map[x.p + '/' + x.c].length; }, 0), done = 0;
       if (!total) throw new Error('В компонентах нет языков из шаблона — проверь языки в ⚙ или выбери «Свои языки…»');
       homeStep(0, 'run', 'Скачиваю непереведённое… 0 из ' + total);
-      return exportCore(hcomps, union, { q: fuzzy.checked ? QUERY_ALL : QUERY_EMPTY, wantJson: pluralsJson.checked, keys: keys,
+      homeTgt.langMap = map;   /* какие языки выбраны для каждого компонента — «один файл на все языки» идёт на все */
+      return exportCore(hcomps, union, { q: keys ? 'state:>=empty' : fuzzy.checked ? QUERY_ALL : QUERY_EMPTY, wantJson: pluralsJson.checked && !keys, keys: keys,
         langsFor: function (x) { return map[x.p + '/' + x.c]; } }, function () {
         done++; homeBar.style.width = Math.round(100 * Math.min(done, total) / total) + '%';
         homeStep(0, 'run', 'Скачиваю непереведённое… ' + Math.min(done, total) + ' из ' + total);
@@ -3898,6 +3899,10 @@
         var name = poName(r);
         files.push({ name: name, key: name.replace(/\.json$/i, ''), p: r.p, c: r.component, lang: r.language, text: r.text, strings: r.strings, src: r.src, json: true });
       });
+      /* «один файл на все языки»: в проект Smartcat сверяем и те выбранные языки, где сейчас нечего переводить — файл пойдёт и на них */
+      if (tgt && tgt.langMap && partsOf(c).merge && partsOf(c).kind !== 'shop') Object.keys(tgt.langMap).forEach(function (k) {
+        (tgt.langMap[k] || []).forEach(function (l) { if (langs.indexOf(l) < 0 && !/_n\d+$/i.test(l)) langs.push(l); });
+      });
       var jsonCount = 0;
       /* веб: в Smartcat уходит только английский — в свой проект («МП Web»), в папку «ДДММГГ web»; остальные языки веба — только в архиве */
       var webAll = files.filter(function (f) { return scPlatform(f.p, f.c) === 'web'; });
@@ -4059,7 +4064,7 @@
         if (!human) {
           if (!ptA.folder && !(tMt && tMt.folder)) folder = '';
           else if (ptA.name === 'custom' && title && !(tMt && tMt.folder)) folder = title;
-          if (ptA.merge) up = mergeFiles(send, folder ? '' : title, pl);
+          if (ptA.merge) up = mergeFiles(send, folder ? '' : title, pl, function (f) { return (tMt && tMt.langMap && tMt.langMap[f.p + '/' + f.c]) || []; });
           else if (!folder && title) up = send.map(function (f) { var n = title + ' ' + f.lang + (f.json ? '.json' : '.po'); return Object.assign({}, f, { name: n, key: scDocKey(n) }); });
         }
         return scCall('sc-add-docs', { projectId: pr.id,
@@ -4072,7 +4077,7 @@
           if (!r.documents.length) throw new Error('Smartcat не показал новых документов в проекте — проверь проект вручную');
           var lmap = {}, byKey = {}, docs = {}, lost = [];
           send.forEach(function (f) { lmap[pl.codes[f.lang].toLowerCase()] = f.lang; });
-          up.forEach(function (f) { byKey[f.key] = f; });
+          up.forEach(function (f) { byKey[f.key] = f; Object.keys(f.tlMap || {}).forEach(function (k) { lmap[k] = f.tlMap[k]; }); });
           r.documents.forEach(function (d) {
             var f = byKey[scDocKey(d.name)] || byKey[scDocKey(d.fullPath)];
             /* один файл на все языки: язык документа — из Smartcat */
@@ -4691,7 +4696,7 @@
           onclick: function () { fetchSc(pr, st, get, auto); } });
         var zip = el('button', { class: 'b g s', text: 'ZIP', title: 'Скачать готовые переводы из Smartcat архивом (в Weblate ничего не загружается)',
           onclick: function () { zipSc(pr, st, zip); } });
-        var openSc = el('a', { class: 'b g s ico', href: scChatUrl((scCfg && scCfg.base) || 'https://smartcat.com', pr.id, Object.keys(pr.docs || {}), pr.folderId), target: '_blank', rel: 'noopener', text: '↗', title: 'Открыть в Smartcat' });
+        var openSc = el('a', { class: 'b g s', href: scChatUrl((scCfg && scCfg.base) || 'https://smartcat.com', pr.id, Object.keys(pr.docs || {}), pr.folderId), target: '_blank', rel: 'noopener', text: 'Smartcat ↗', title: 'Открыть в Smartcat' });
         var del = el('button', { class: 'b g s ico', text: '×', title: 'Убрать из списка', onclick: function () {
           saveScProjects(scProjects().filter(function (x) { return keyOf(x) !== keyOf(pr); })); renderScImport();
         } });
@@ -4810,7 +4815,7 @@
   function renderScImport() { renderScList(scBack, true); }
   /* «один файл на все языки»: на компонент — один .po со всеми строками, которых нет хотя бы в одном языке, без переводов;
      в Smartcat он загружается сразу на все языки (плюралки .json остаются по языкам) */
-  function mergeFiles(files, title, pl) {
+  function mergeFiles(files, title, pl, langsOf) {
     var by = {}, out = [];
     files.forEach(function (f) { if (f.json) out.push(f); else (by[f.p + '/' + f.c] = by[f.p + '/' + f.c] || []).push(f); });
     var groups = Object.keys(by);
@@ -4830,8 +4835,11 @@
         });
       });
       var f0 = fs[0], nm = (title ? title + (groups.length > 1 ? ' ' + fileKey(f0.c) : '') : f0.p + '-' + fileKey(f0.c)) + '.po';
-      var tl = fs.map(function (f) { return pl.codes[f.lang]; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
-      out.push({ name: nm, key: scDocKey(nm), p: f0.p, c: f0.c, lang: f0.lang, tl: tl, text: (header ? header + '\n\n' : '') + blocks.join('\n\n') + '\n', strings: blocks.length });
+      /* языки файла — все выбранные для компонента (и те, где всё уже переведено), если они есть в проекте Smartcat */
+      var wl = fs.map(function (f) { return f.lang; }).concat(langsOf ? langsOf(f0) : []).filter(function (x, i, a) { return a.indexOf(x) === i; });
+      var tlMap = {}, tl = [];
+      wl.forEach(function (l) { var c = pl.codes[l]; if (c && tl.indexOf(c) < 0) { tl.push(c); tlMap[c.toLowerCase()] = l; } });
+      out.push({ name: nm, key: scDocKey(nm), p: f0.p, c: f0.c, lang: f0.lang, tl: tl, tlMap: tlMap, text: (header ? header + '\n\n' : '') + blocks.join('\n\n') + '\n', strings: blocks.length });
     });
     return out;
   }
