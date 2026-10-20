@@ -465,6 +465,40 @@ function taskMode(t, depth = 0) {
 }
 /* срок у загруженных файлов: в Smartcat срок ставится задаче (у каждого документа по языку и этапу — своя задача).
    Ищем задачи этих документов и ставим им срок; задачи появляются не сразу после загрузки — ждём до ~30 с */
+/* все задачи проекта: Smartcat отдаёт их страницами (по 50) — листаем offset/limit, запасной вариант skip/take;
+   если параметры не понимает (та же страница) — останавливаемся */
+let scCur = null;
+async function scTaskList(pid, until, errs) {
+  const get = async (q) => {
+    const u = '/projectTask/' + encodeURIComponent(pid) + '/list?' + q;
+    const r = await (await scFetch(u, { timeout: 30000 })).json();
+    return Array.isArray(r) ? r : (r && (r.items || r.tasks || r.result || r.data)) || [];
+  };
+  let first = null;
+  for (const cur of scCur ? [scCur] : ['USD', 'RUB', 'EUR', '']) {
+    try { first = await get(cur ? 'currency=' + cur : ''); scCur = cur; break; }
+    catch (e) { if (!/currency/i.test(String(e.message))) { errs.push(String(e.message).slice(0, 160)); return null; } }
+  }
+  if (!first) return null;
+  const cq = scCur ? 'currency=' + scCur + '&' : '', size = first.length, all = first.slice();
+  const idOf = (t) => String(t.id || t.taskId || t.projectTaskId || JSON.stringify(t));
+  const have = new Set(all.map(idOf));
+  if (!size) return all;
+  for (const [o, l] of [['offset', 'limit'], ['skip', 'take']]) {
+    let grew = false;
+    for (let off = size, pg = 0; pg < 60 && Date.now() < until; off += size, pg++) {
+      let page;
+      try { page = await get(cq + o + '=' + off + '&' + l + '=' + size); } catch (e) { errs.push(String(e.message).slice(0, 160)); break; }
+      const fresh = page.filter((t) => !have.has(idOf(t)));
+      if (!fresh.length) break;
+      fresh.forEach((t) => { have.add(idOf(t)); all.push(t); });
+      grew = true;
+      if (page.length < size) break;
+    }
+    if (grew) break;
+  }
+  return all;
+}
 SC_HANDLERS['sc-deadline'] = async (m) => {
   const iso = String(m.deadline || '');
   if (!iso) throw new Error('срок не указан');
@@ -472,20 +506,15 @@ SC_HANDLERS['sc-deadline'] = async (m) => {
   const hit = (str, id) => str.includes('"' + id + '"') || str.includes('"' + base(id) + '"');
   const ids = [...new Set((m.documentIds || []).map(String))];
   let n = 0, found = 0, noTasks = 0, seen = 0; const errs = [], doneTask = {}, covered = {};
-  const until = Date.now() + 80000;   /* всего не больше ~1,5 мин: большие проекты отдают список задач долго */
+  const until = Date.now() + 120000;   /* всего не больше ~2 мин: большие проекты отдают задачи долго и страницами */
   for (const pid of [...new Set(m.projectIds || [])]) {
     /* задачи у файлов появляются не сразу и не все разом (у части языков — когда их возьмут) —
        ждём до ~1 мин, пока задачи не найдутся у всех документов, ставим срок каждой новой */
     let listed = false;
     for (let round = 0; round < 12 && Date.now() < until; round++) {
-      let list = null;
-      for (const cur of ['USD', 'RUB', 'EUR', '']) {
-        try { list = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list' + (cur ? '?currency=' + cur : ''), { timeout: 30000 })).json(); break; }
-        catch (e) { if (!/currency/i.test(String(e.message))) { errs.push(String(e.message).slice(0, 160)); break; } }
-      }
+      const list = await scTaskList(pid, until, errs);
       if (!list) break;
       listed = true;
-      list = Array.isArray(list) ? list : (list && (list.items || list.tasks || list.result || list.data)) || [];
       seen = Math.max(seen, list.length);
       for (const t of list) {
         const js = JSON.stringify(t), mineIds = ids.filter((id) => hit(js, id));

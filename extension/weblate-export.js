@@ -2984,10 +2984,10 @@
               var due = new Date(homeDue.value), st1 = homeSteps[1];
               st1.sub.textContent += ' · ставлю срок ' + dueText(homeDue.value) + ' (до минуты)…';
               Promise.race([scCall('sc-deadline', { deadline: due.toISOString(), projectIds: x.dl.map(function (d) { return d.pid; }), documentIds: [].concat.apply([], x.dl.map(function (d) { return d.ids; })) }),
-                new Promise(function (res, rej) { setTimeout(function () { rej(new Error('Smartcat долго не отвечает')); }, 150000); })])
+                new Promise(function (res, rej) { setTimeout(function () { rej(new Error('Smartcat долго не отвечает')); }, 200000); })])
                 .then(function (r) { st1.sub.textContent = st1.sub.textContent.replace(/ · ставлю срок [^…]*…$/, '') + ' · ✓ срок ' + dueText(homeDue.value) +
                   (r.left ? ' — не у всех файлов: ' + r.left + ' из ' + r.docs + ' без задачи, им поставь в Smartcat' : ''); },
-                  function (e) { st1.sub.textContent = st1.sub.textContent.replace(/ · ставлю срок [^…]*…$/, '') + ' · ✗ срок не поставился — поставь в Smartcat (' + String(e.message).slice(0, 120) + ')'; });
+                  function (e) { st1.sub.textContent = st1.sub.textContent.replace(/ · ставлю срок [^…]*…$/, '') + ' · ✗ срок не поставился — поставь в Smartcat (' + String(e.message).slice(0, 220) + ')'; });
             }
             resolve();
           };
