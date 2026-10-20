@@ -2056,6 +2056,8 @@
   var TPL_HINT = { 'ссылка_папка': 'папка — ссылкой', 'папка': 'название папки', 'слово_ios': 'айоса — ссылкой', 'слово_android': 'андроида — ссылкой', 'слово_веб': 'веба — ссылкой', 'люди': 'кого тегнуть', 'дедлайн': 'дедлайн', 'дата': 'дата ДДММГГ', 'ссылка_веб': 'ссылка на папку веба', 'папка_веб': 'название папки веба',
     'ссылка_android': 'файл android ссылкой', 'ссылка_ios': 'файл iOS ссылкой', 'файл_android': 'файл android', 'файл_ios': 'файл iOS', 'языки': 'языки',
     'проект': 'проект', 'архивы': 'архивы', 'smartcat': 'проекты Smartcat', 'компоненты': 'компоненты', 'строки': 'число строк' };
+  var TPL_DRAWS = [];
+  function tplRedraw() { (TPL_DRAWS || []).forEach(function (f) { try { f(); } catch (e) {} }); }
   function tplChips(ta, def, keys) {
     var ins = function (txt) {
       var a = ta.selectionStart != null ? ta.selectionStart : ta.value.length, b = ta.selectionEnd != null ? ta.selectionEnd : a;
@@ -2068,6 +2070,7 @@
     var D = function () { return typeof def === 'function' ? def() : def; };
     var draw = function () { mdPreview(prev, chatFill(ta.value.trim() || D(), TPL_SAMPLE())); };
     ta.addEventListener('input', draw); setTimeout(draw, 0);
+    TPL_DRAWS.push(draw);   /* предпросмотр обновляется и при загрузке сетапа, смене типа проекта и «Кого тегнуть» */
     /* жирный: выделенное оборачивается в **…**; без выделения — вставляется **текст** с выделенным «текст» */
     var bold = el('button', { class: 'chipb tc tb', type: 'button', title: 'Жирный: выдели слова в шаблоне и нажми — будет **…**', text: 'Ж жирный', onmousedown: keep, onclick: function () {
       var a = ta.selectionStart, b = ta.selectionEnd, sel = ta.value.slice(a, b);
@@ -2088,7 +2091,7 @@
   var TPL_WORD = { 'слово_ios': '[айоса]({url_ios})', 'слово_android': '[андроида]({url_android})', 'слово_веб': '[веба]({url_веб})' };
   function TPL_SAMPLE() {
     var d = ddmmyy(), u = 'https://smartcat.com/projects/…';
-    return { people: bandPeople.value.trim() || '@ник1 @ник2', deadline: 'завтра до 18:00', links: { web: { url: u, folder: d + ' web' }, android: { url: u, file: d + '_global_site-wb-android-en.po' }, ios: { url: u, file: d + '_global_site-wb-ios_new-en.po' } },
+    return { people: bandPeople.value.trim() || '@ник1 @ник2', deadline: 'завтра до 18:00', links: { web: { url: u, folder: partKind.value === 'shop' ? d + ' web' : ddmm() + ' Название папки' }, android: { url: u, file: d + '_global_site-wb-android-en.po' }, ios: { url: u, file: d + '_global_site-wb-ios_new-en.po' } },
       'дата': d, 'языки': 'EN KA KK UZ KY HY TG AZ', 'проект': 'AI translation 4 MP', 'архивы': d + '_web.zip, ' + d + '_android.zip', 'smartcat': 'AI translation 4 MP', 'компоненты': 'wb-android, wb-ios_new', 'строки': '120' };
   }
   /* предпросмотр как в чате: [текст](ссылка) — ссылкой, @ник — жирным, :emoji: как есть */
@@ -2112,6 +2115,7 @@
   }
   var bandTpl = el('textarea', { class: 'small', placeholder: BAND_TPL_DEFAULT });
   var bandPeople = el('input', { type: 'text', placeholder: '@ник1 @ник2 @ник3' });
+  bandPeople.addEventListener('input', function () { tplRedraw(); });
   bandPeople.addEventListener('input', function () { [bandTplWeb, bandTplApp, bandTpl].forEach(function (t) { t.dispatchEvent(new Event('input')); }); });
   var bandTplWeb = el('textarea', { class: 'small', placeholder: BAND_TPL_WEB });
   var bandTplApp = el('textarea', { class: 'small', placeholder: BAND_TPL_APP });
@@ -2280,9 +2284,22 @@
       if (!x) return c;
       var cfg = { setups: list, setup: name };
       /* старые поля сетапа — как были; новые (языки, ссылки, люди) — только если они в сетапе заданы */
-      SETUP_FIELDS.forEach(function (f) { if (x[f] !== undefined) cfg[f] = x[f]; else if (SETUP_FIELDS.indexOf(f) < 6) cfg[f] = ''; else if (f === 'parts') cfg[f] = null; });
+      /* поля, которых нет в сетапе, не берём от прошлого сетапа (иначе у ПВЗ оставались шаблоны, люди и ссылки Магазинки);
+         исключение — старая Магазинка без этих полей: у неё они лежат в общих настройках */
+      var legacyShop = name === 'Магазинка';
+      SETUP_FIELDS.forEach(function (f) {
+        if (x[f] !== undefined) cfg[f] = x[f];
+        else if (SETUP_FIELDS.indexOf(f) < 6) cfg[f] = '';
+        else if (f === 'parts') cfg[f] = null;
+        else if (!legacyShop) cfg[f] = f === 'enAssign' || f === 'enEdit' ? [] : f === 'bandAuto' ? false : '';
+      });
       return scCall('sc-set-config', { config: cfg }).then(loadScConfig);
-    }).then(function (c) { fillScSettings(); if (c) fillSetupSelects(c); renderScImport(); homeRefreshSc(); homeRenderSeg(); return c; });
+    }).then(function (c) {
+      homeLangSel = null; homeMsgInfo = null;
+      fillScSettings(); if (c) fillSetupSelects(c); renderScImport(); homeRefreshSc(); homeRenderSeg();
+      homeMessage({ links: {} }, true, true);   /* сообщения и их последние ссылки — этого сетапа */
+      return c;
+    });
   }
   scSetup.addEventListener('change', function () { switchSetup(scSetup.value).then(function () { scMsg.textContent = 'Сетап «' + scSetup.value + '»'; }); });
   scSetupQuick.addEventListener('change', function () {
@@ -2329,7 +2346,7 @@
       scLangWeb.value = c.langWeb || ''; scLangMob.value = c.langMob || ''; scLinksMob.value = c.linksMob || '';
       if (scLangWeb._lpDraw) { scLangWeb._lpDraw(); scLangMob._lpDraw(); }
       bandTpl.value = c.bandTpl || ''; bandHook.value = c.bandHook || ''; bandAuto.checked = !!c.bandAuto;
-      bandPeople.value = c.bandPeople || ''; bandTplWeb.value = c.bandTplWeb || ''; bandTplApp.value = c.bandTplApp || '';
+      bandPeople.value = c.bandPeople || ''; bandTplWeb.value = c.bandTplWeb || ''; bandTplApp.value = c.bandTplApp || ''; setTimeout(tplRedraw, 0);
       asgSel = (c.enAssign || []).slice(); edSel = (c.enEdit || []).slice(); asgOn.checked = c.enAssignOn !== false;
       schOn.checked = !!c.schedOn; schText.value = c.sched || 'вт 14:00, пт 10:00'; schShowNext();
       sndSel.value = c.sound || 'system';
@@ -2426,7 +2443,7 @@
   function partsShow() {
     var shop = partKind.value === 'shop', w = !shop || partWeb.checked, m = shop && partMob.checked, e = partEn.value === 'staff';
     [[fShopParts, shop], [fMt, !shop], [fWeb, w], [fMob, m], [fEnMob, m && e], [fEnWeb, w && e], [fPeople, false], [fBandWeb, w], [fBandApp, m], [fSched, m]].forEach(function (x) { if (x[0]) x[0].classList.toggle('hide', !x[1]); });
-    bandTplWeb.placeholder = shop ? BAND_TPL_WEB : BAND_TPL_GEN;
+    bandTplWeb.placeholder = shop ? BAND_TPL_WEB : BAND_TPL_GEN; tplRedraw();
     if (fProjLbl) fProjLbl.textContent = shop ? 'Машперевод: проект в Smartcat (ссылка или название) — пусто = «' + SC_PROJECT_DEFAULT + '»' : 'Проект в Smartcat, куда отправлять (ссылка или название)';
     scProject.placeholder = shop ? 'ссылка на проект или название; пусто = ' + SC_PROJECT_DEFAULT : 'ссылка на проект Smartcat или его название';
     if (fBandWebLbl) fBandWebLbl.textContent = shop ? 'Сообщение для веба — пусто = стандартное' : 'Сообщение переводчикам — пусто = стандартное';
@@ -3000,13 +3017,17 @@
   }
   /* последние ссылки по каждой платформе (веб / android / ios) — каждая своя, хранятся неделю */
   var MSG_DAYS = 7;
-  function msgStore() { var s = null; try { s = JSON.parse(sget('wlx_msg_last') || 'null'); } catch (e) {} return s && typeof s === 'object' ? s : {}; }
+  /* последние ссылки для сообщений — у каждого сетапа свои (у Магазинки — прежний ключ) */
+  function msgKey() { var n = curSetup(); return n === 'Магазинка' ? 'wlx_msg_last' : 'wlx_msg_last:' + n; }
+  function msgStore() { var s = null; try { s = JSON.parse(sget(msgKey()) || 'null'); } catch (e) {} return s && typeof s === 'object' ? s : {}; }
   function msgLatest() {
     var s = msgStore(), out = {}, base = (scCfg && scCfg.base) || 'https://smartcat.com';
     ['web', 'android', 'ios'].forEach(function (pl) { if (s[pl] && Date.now() - s[pl].t < MSG_DAYS * 864e5) out[pl] = s[pl]; });
     /* ещё ничего не запомнено — английский из «В работе» */
-    scProjects().filter(function (pr) { return scKind(pr) === 'human' && Date.now() - Date.parse(pr.created) < MSG_DAYS * 864e5; }).forEach(function (pr) {
-      var pl = { 'Веб': 'web', 'Android': 'android', 'iOS': 'ios' }[scPlat(pr)], tail = String(pr.name || '').split(' / ').pop(), t = Date.parse(pr.created);
+    var shopM = partsOf(scCfg).kind === 'shop';
+    scProjects().filter(function (pr) { return mySetupPr(pr) && (!shopM || scKind(pr) === 'human') && Date.now() - Date.parse(pr.created) < MSG_DAYS * 864e5; }).forEach(function (pr) {
+      /* у обычного сетапа любая его отправка — «папка ссылкой» */
+      var pl = shopM ? { 'Веб': 'web', 'Android': 'android', 'iOS': 'ios' }[scPlat(pr)] : 'web', tail = String(pr.name || '').split(' / ').pop(), t = Date.parse(pr.created);
       if (!pl || (out[pl] && out[pl].t >= t)) return;
       var u = scChatUrl(base, pr.id, Object.keys(pr.docs || {}), pr.folderId);
       out[pl] = pl === 'web' ? { url: u, folder: tail, t: t } : { url: u, file: tail, t: t };
@@ -3018,7 +3039,7 @@
     var fresh = info.links || {}, s = msgStore(), now = Date.now();
     if (!quiet && Object.keys(fresh).length) {        /* новая отправка — запоминаем её ссылки (перерисовка из-за дедлайна не считается) */
       Object.keys(fresh).forEach(function (pl) { s[pl] = Object.assign({}, fresh[pl], { t: now }); });
-      sset('wlx_msg_last', JSON.stringify(s));
+      sset(msgKey(), JSON.stringify(s));
     }
     var L = msgLatest(), blocks = [];
     Object.keys(fresh).forEach(function (pl) { L[pl] = Object.assign({ t: now }, fresh[pl]); });
@@ -3026,6 +3047,8 @@
     var when = function (x) { return x && x.t ? ' · ссылка от ' + new Date(x.t).toLocaleDateString('ru-RU') : ''; };
     info = Object.assign({}, info, { links: L });
     var ptM = partsOf(scCfg);
+    if (!ptM.mob) { delete L.android; delete L.ios; }   /* у сетапа без android/iOS — без «Для приложений» */
+    none = !L.web && !L.android && !L.ios;
     if (L.web || (none && ptM.web)) blocks.push([(ptM.kind === 'shop' ? 'Для веба' : 'Сообщение переводчикам') + when(L.web), genTpl(ptM)]);
     if (L.android || L.ios || (none && ptM.mob)) blocks.push(['Для приложений' + when((L.android && L.ios) ? (L.android.t < L.ios.t ? L.android : L.ios) : L.android || L.ios), (scCfg && scCfg.bandTplApp && scCfg.bandTplApp.trim()) || BAND_TPL_APP]);
     homeMsgBox.textContent = '';
@@ -3094,7 +3117,6 @@
   homeSetup.addEventListener('change', function () {
     switchSetup(homeSetup.value).then(function (c) {
       homeSetupFill(c);
-      homeLangSel = null;
       if (c) { homeWebLinks = c.links || ''; sset('wlx_home_links_mob', ''); homeLoadLinks(); }
     });
   });
