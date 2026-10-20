@@ -471,7 +471,7 @@ SC_HANDLERS['sc-deadline'] = async (m) => {
   const base = (id) => { id = String(id); const i = id.lastIndexOf('_'); return i > 0 ? id.slice(0, i) : id; };
   const hit = (str, id) => str.includes('"' + id + '"') || str.includes('"' + base(id) + '"');
   const ids = [...new Set((m.documentIds || []).map(String))];
-  let n = 0, found = 0, noTasks = 0; const errs = [], doneTask = {}, covered = {};
+  let n = 0, found = 0, noTasks = 0, seen = 0; const errs = [], doneTask = {}, covered = {};
   const until = Date.now() + 80000;   /* всего не больше ~1,5 мин: большие проекты отдают список задач долго */
   for (const pid of [...new Set(m.projectIds || [])]) {
     /* задачи у файлов появляются не сразу и не все разом (у части языков — когда их возьмут) —
@@ -486,6 +486,7 @@ SC_HANDLERS['sc-deadline'] = async (m) => {
       if (!list) break;
       listed = true;
       list = Array.isArray(list) ? list : (list && (list.items || list.tasks || list.result || list.data)) || [];
+      seen = Math.max(seen, list.length);
       for (const t of list) {
         const js = JSON.stringify(t), mineIds = ids.filter((id) => hit(js, id));
         const tid = t.id || t.taskId || t.projectTaskId;
@@ -507,7 +508,7 @@ SC_HANDLERS['sc-deadline'] = async (m) => {
     if (listed && !found) noTasks++;
   }
   const left = ids.filter((id) => !covered[id]).length;
-  if (!n) throw new Error(found ? 'Smartcat не принял срок: ' + (errs[errs.length - 1] || '') : 'у этих файлов в Smartcat нет задач — в этом проекте срок ставится вручную ' + (errs[0] || ''));
+  if (!n) throw new Error(found ? 'Smartcat не принял срок: ' + (errs[errs.length - 1] || '') : 'у этих файлов в Smartcat нет задач — в этом проекте срок ставится вручную' + (seen ? ' (задач в проекте: ' + seen + ', но не этих файлов)' : ' (в проекте нет ни одной задачи)') + (errs[0] ? ' ' + errs[0] : ''));
   return { ok: true, tasks: n, of: found, docs: ids.length, left: left };
 };
 SC_HANDLERS['sc-assign'] = async (m) => {
