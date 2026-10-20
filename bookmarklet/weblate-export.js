@@ -4049,12 +4049,21 @@
               var code = pls.filter(function (x) { return x.toLowerCase() === map('en').toLowerCase(); })[0] ||
                 pls.filter(function (x) { return baseLang(x) === 'en'; })[0] || (pls.length ? null : map('en'));
               if (!code) throw new Error('в проекте «' + pr.name + '» нет английского (в нём: ' + pls.join(', ') + ')');
-              return scCall('sc-add-docs', { projectId: pr.id, files: by[pl].map(function (f) {
-                return { name: ddmmyy() + '_' + f.name, text: f.text, targetLanguages: [code] };   /* переводчикам — как есть: «нужна правка» должна прийти неподтверждённой */
-              }) }).then(function (r) {
+              var pre = ddmmyy() + '_';
+              var addEn = function () {
+                return scCall('sc-add-docs', { projectId: pr.id, files: by[pl].map(function (f) {
+                  return { name: pre + f.name, text: f.text, targetLanguages: [code] };   /* переводчикам — как есть: «нужна правка» должна прийти неподтверждённой */
+                }) });
+              };
+              /* файл с таким именем уже был (даже удалённый) — повторяем с временем в имени */
+              return addEn().catch(function (e) {
+                if (!/already exists/i.test(String(e.message))) throw e;
+                var d = new Date(); pre = ddmmyy() + '_' + ('0' + d.getHours()).slice(-2) + ('0' + d.getMinutes()).slice(-2) + '_';
+                return addEn();
+              }).then(function (r) {
                 /* английский тоже следим в «В работе»: переводчики → в Weblate с заменой переведённых */
                 var byKey = {}, docs = {};
-                by[pl].forEach(function (f) { byKey[ddmmyy() + '_' + f.key] = f; });
+                by[pl].forEach(function (f) { byKey[pre + f.key] = f; });
                 r.documents.forEach(function (d) { var f = byKey[scDocKey(d.name)] || byKey[scDocKey(d.fullPath)]; if (f) docs[d.id] = { p: f.p, c: f.c, lang: f.lang, json: !!f.json }; });
                 if (Object.keys(docs).length) {
                   var key = pr.id + '#' + ddmmyy() + '_' + pl;
@@ -4063,7 +4072,7 @@
                   saveScProjects(list);
                 }
                 acc.push({ ok: true, text: pl + ' → ' + pr.name + ' (' + r.documents.length + ' док.)', docIds: r.documents.map(function (d) { return d.id; }),
-                pl: pl, projectId: pr.id, files: by[pl].map(function (f) { return ddmmyy() + '_' + f.name; }) }); return acc; });
+                pl: pl, projectId: pr.id, files: by[pl].map(function (f) { return pre + f.name; }) }); return acc; });
             }).catch(function (e) { acc.push({ ok: false, text: pl + ': ' + e.message }); return acc; });
           });
         }, Promise.resolve([]));
@@ -4107,8 +4116,17 @@
           if (ptA.merge) up = mergeFiles(send, folder ? '' : title, pl, function (f) { return (tMt && tMt.langMap && tMt.langMap[f.p + '/' + f.c]) || []; });
           else if (!folder && title) up = send.map(function (f) { var n = title + ' ' + f.lang + (f.json ? '.json' : '.po'); return Object.assign({}, f, { name: n, key: scDocKey(n) }); });
         }
-        return scCall('sc-add-docs', { projectId: pr.id,
-          files: up.map(function (f) { return { name: (folder ? folder + '/' : '') + f.name, text: human ? f.text : scSendText(f.text), targetLanguages: f.tl || [pl.codes[f.lang]] }; }) }).catch(function (e) {
+        var addDocs = function (list) {
+          return scCall('sc-add-docs', { projectId: pr.id,
+            files: list.map(function (f) { return { name: (folder ? folder + '/' : '') + f.name, text: human ? f.text : scSendText(f.text), targetLanguages: f.tl || [pl.codes[f.lang]] }; }) });
+        };
+        /* Smartcat не даёт загрузить файл с именем, которое уже было (даже если файл удалили) — повторяем с временем в имени */
+        return addDocs(up).catch(function (e) {
+          if (!/already exists/i.test(String(e.message))) throw e;
+          var d = new Date(), sfx = '_' + ('0' + d.getHours()).slice(-2) + ('0' + d.getMinutes()).slice(-2);
+          up = up.map(function (f) { var n = f.name.replace(/(\.[a-z]+)?$/i, function (ext) { return sfx + (ext || ''); }); return Object.assign({}, f, { name: n, key: scDocKey(n) }); });
+          return addDocs(up);
+        }).catch(function (e) {
           if (/target languages/i.test(String(e.message))) throw new Error(e.message + ' — отправляла языки: ' +
             send.map(function (f) { return pl.codes[f.lang]; }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', ') +
             ', в проекте «' + pr.name + '»: ' + (pl.all.length ? pl.all.join(', ') : 'Smartcat не отдал список языков'));
