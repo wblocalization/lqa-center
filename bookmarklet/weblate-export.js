@@ -1054,6 +1054,12 @@
     '.scs:hover{background:var(--card)}.scs .v{margin-left:auto;font-weight:700;color:var(--ink-soft)}.scs .v.hot{color:#fff;background:var(--accent-2);border-radius:999px;padding:0 7px}',
     '.sidetip{margin:10px 4px;padding:10px 12px;border-radius:14px;background:var(--soft);font-size:12px;line-height:1.45;color:var(--ink-soft)}.sidetip b{display:block;color:var(--ink);margin-bottom:2px}',
     '@media (max-width:820px){.sidecard,.sidetip{display:none}}',
+    '.tgt .tgtrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}.tgtk{width:56px;flex:none;font-size:12.5px;color:var(--ink-soft);font-weight:600}',
+    '.tgtb{font:inherit;font-size:13.5px;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:7px 12px;cursor:pointer;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.tgtb:hover{border-color:var(--accent);color:var(--accent)}.tgtb.empty{color:var(--err);border-color:var(--err)}',
+    '.tgtpick{margin:8px 0 0 66px;padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--card);box-shadow:var(--shadow)}.tgtpick .plist{max-height:260px;overflow:auto}',
+    '.tgtf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex:1;min-width:0}.tgtnew{width:180px!important;padding:5px 10px!important;font-size:12.5px!important;border-radius:999px!important}',
+    '.tgtlinks{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}a.b{text-decoration:none;display:inline-block}',
     '.gtabs{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:14px;background:var(--soft);margin-bottom:14px}',
     '.gtab{font:inherit;font-size:13.5px;font-weight:600;border:0;border-radius:11px;padding:7px 14px;cursor:pointer;background:transparent;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px}',
     '.gtab:hover{color:var(--ink)}.gtab.on{background:var(--card);color:var(--accent);box-shadow:0 2px 8px rgb(139 92 246 / .18)}',
@@ -2023,9 +2029,11 @@
   /* сообщение в чат (Band): шаблон, вебхук, автоотправка — у каждого сетапа свои */
   var BAND_TPL_DEFAULT = 'Привет! Выгрузка {дата} · {проект}\n📦 Подрядчикам: {архивы}\n🤖 В Smartcat: {smartcat}\n🌍 Языки: {языки}\n🧩 Компоненты: {компоненты}\nСтрок: {строки}';
   var BAND_TPL_WEB = 'Привет! {люди}\n\nзагрузила новые файлики для веба {ссылка_веб}\nдедлайн — {дедлайн} :bunny_rabbit_flower_thank_you:';
+  /* обычный сетап (не Магазинка): как пишут менеджеры — «назначила в Smartcat: **название папки**», папка ссылкой */
+  var BAND_TPL_GEN = 'Привет! {люди}\nназначила в Smartcat: **{ссылка_папка}**\n\nдедлайн — {дедлайн}';
   var BAND_TPL_APP = 'Привет! {люди}\nновые строчки для [айоса]({url_ios}) и [андроида]({url_android})\n\nдедлайн — {дедлайн} :pepe_pray:';
   /* подстановки одним кликом: вставляются туда, где стоит курсор в шаблоне */
-  var TPL_HINT = { 'слово_ios': 'айоса — ссылкой', 'слово_android': 'андроида — ссылкой', 'слово_веб': 'веба — ссылкой', 'люди': 'кого тегнуть', 'дедлайн': 'дедлайн', 'дата': 'дата ДДММГГ', 'ссылка_веб': 'ссылка на папку веба', 'папка_веб': 'название папки веба',
+  var TPL_HINT = { 'ссылка_папка': 'папка — ссылкой', 'папка': 'название папки', 'слово_ios': 'айоса — ссылкой', 'слово_android': 'андроида — ссылкой', 'слово_веб': 'веба — ссылкой', 'люди': 'кого тегнуть', 'дедлайн': 'дедлайн', 'дата': 'дата ДДММГГ', 'ссылка_веб': 'ссылка на папку веба', 'папка_веб': 'название папки веба',
     'ссылка_android': 'файл android ссылкой', 'ссылка_ios': 'файл iOS ссылкой', 'файл_android': 'файл android', 'файл_ios': 'файл iOS', 'языки': 'языки',
     'проект': 'проект', 'архивы': 'архивы', 'smartcat': 'проекты Smartcat', 'компоненты': 'компоненты', 'строки': 'число строк' };
   function tplChips(ta, def, keys) {
@@ -2431,8 +2439,8 @@
     fold('Сообщения в чат (Band)', [
       el('p', { class: 'muted', text: 'После «Выгрузить и отправить» на главной появятся готовые сообщения для веба и для приложений — со ссылками на Smartcat. Вписываешь дедлайн, копируешь, вставляешь в Band.' }),
       el('label', {}, ['Кого тегнуть ({люди})', bandPeople]),
-      fBandWeb = el('div', {}, [el('label', {}, ['Сообщение для веба — пусто = стандартное', bandTplWeb]),
-        tplChips(bandTplWeb, BAND_TPL_WEB, ['люди', 'дедлайн', 'ссылка_веб', 'слово_веб', 'папка_веб', 'дата', 'языки'])]),
+      fBandWeb = el('div', {}, [el('label', {}, ['Сообщение для веба / переводчикам — пусто = стандартное', bandTplWeb]),
+        tplChips(bandTplWeb, BAND_TPL_WEB, ['люди', 'дедлайн', 'ссылка_папка', 'папка', 'ссылка_веб', 'слово_веб', 'дата', 'языки'])]),
       fBandApp = el('div', {}, [el('label', {}, ['Сообщение для приложений — пусто = стандартное', bandTplApp]),
         tplChips(bandTplApp, BAND_TPL_APP, ['люди', 'дедлайн', 'слово_ios', 'слово_android', 'ссылка_ios', 'ссылка_android', 'дата', 'языки'])]),
       el('details', { class: 'more' }, [el('summary', { text: 'Сводка и автоотправка по вебхуку (не обязательно)' }),
@@ -2555,6 +2563,8 @@
     homeGo.lastChild.textContent = shop ? 'архивы на компьютер · машперевод и английский в Smartcat'
       : sendSc ? 'архивы на компьютер · все языки в Smartcat' + (pt.en === 'staff' ? ' · английский переводчикам' : '') : 'на компьютер, для подрядчика — без Smartcat';
     homeZip.classList.toggle('hide', !sendSc);
+    homeTgtBox.classList.toggle('hide', !sendSc);
+    homeTgtDraw();
     homeSteps[1].row.classList.toggle('hide', !sendSc);
     homeSteps[2].row.classList.toggle('hide', !sendSc);
     homeSteps[2].t.textContent = shop ? 'Машинный перевод' : 'Перевод в Smartcat';
@@ -2587,6 +2597,79 @@
     s.sub.textContent = sub || ''; s.sub.className = state === 'err' ? 'red' : 'muted';
     s.act.textContent = ''; if (act) s.act.appendChild(act);
   }
+  /* куда в Smartcat: проект и папка выбираются прямо перед отправкой (по умолчанию — проект сетапа и новая папка по дате) */
+  var homeTgt = { proj: null, folder: '' }, homeTgtFolders = {}, homeTgtPr = null;
+  var homeTgtProj = el('button', { class: 'tgtb', type: 'button', title: 'Выбрать другой проект Smartcat', onclick: function () { homeTgtToggle(); } });
+  var homeTgtReset = el('button', { class: 'lnk hide', type: 'button', text: 'как в сетапе', onclick: function () { homeTgt.proj = null; homeTgt.folder = ''; homeTgtPr = null; homeTgtDraw(); } });
+  var homeTgtPick = el('div', { class: 'tgtpick hide' });
+  var homeTgtFold = el('div', { class: 'chipsw', style: 'margin:0' });
+  var homeTgtNew = el('input', { type: 'text', class: 'tgtnew', placeholder: 'или имя новой папки' });
+  homeTgtNew.addEventListener('input', function () { homeTgt.folder = homeTgtNew.value.trim(); homeTgtDrawFolders(); });
+  var homeTgtBox = el('div', { class: 'hblock tgt' }, [el('span', { class: 'lbl', text: 'Куда в Smartcat' }),
+    el('div', { class: 'tgtrow' }, [el('span', { class: 'tgtk', text: 'Проект' }), homeTgtProj, homeTgtReset]), homeTgtPick,
+    el('div', { class: 'tgtrow' }, [el('span', { class: 'tgtk', text: 'Папка' }), el('div', { class: 'tgtf' }, [homeTgtFold, homeTgtNew])])]);
+  function homeTgtDef() { var pt = partsOf(scCfg), pr = scCfg ? activeSetup(scCfg).project : ''; return pr || (pt.kind === 'shop' ? SC_PROJECT_DEFAULT : ''); }
+  function homeTgtDraw() {
+    var d = homeTgtDef();
+    homeTgtProj.textContent = (homeTgt.proj ? homeTgt.proj.name : d ? (homeTgtPr && homeTgtPr.name) || d.replace(/^https?:\/\/[^/]+\/projects\//, '') : 'не выбран — нажми, чтобы выбрать') + ' ▾';
+    homeTgtProj.classList.toggle('empty', !homeTgt.proj && !d);
+    homeTgtReset.classList.toggle('hide', !homeTgt.proj);
+    if (scCfg && partsOf(scCfg).kind !== 'shop' && partsOf(scCfg).mt) homeSetupNote.textContent = homeTgt.proj ? 'в этот раз — «' + homeTgt.proj.name + '»' : d ? 'Smartcat: ' + d : 'проект Smartcat не выбран — выбери ниже или в ⚙';
+    homeTgtDrawFolders();
+  }
+  function homeTgtDrawFolders() {
+    homeTgtFold.textContent = '';
+    var chip = function (f, text) {
+      return el('button', { class: 'chipb' + (homeTgt.folder === f ? ' on' : ''), type: 'button', text: text, onclick: function () { homeTgt.folder = f; homeTgtNew.value = ''; homeTgtDrawFolders(); } });
+    };
+    homeTgtFold.appendChild(chip('', '✨ новая по дате (' + ddmmyy() + '…)'));
+    var id = homeTgt.proj ? homeTgt.proj.id : homeTgtPr && homeTgtPr.id, list = id && homeTgtFolders[id];
+    if (list) list.slice(0, 8).forEach(function (f) { homeTgtFold.appendChild(chip(f, '📁 ' + f)); });
+    else if (HAS_EXT && (homeTgt.proj || homeTgtDef())) homeTgtFold.appendChild(el('button', { class: 'lnk', type: 'button', text: 'показать папки проекта', onclick: homeTgtLoadFolders }));
+    if (homeTgt.folder && (!list || list.indexOf(homeTgt.folder) < 0) && homeTgtNew.value.trim() !== homeTgt.folder) homeTgtFold.appendChild(chip(homeTgt.folder, '📁 ' + homeTgt.folder));
+  }
+  function homeTgtLoadFolders() {
+    var p0 = homeTgt.proj ? Promise.resolve(homeTgt.proj) : scCall('sc-resolve-project', { ref: homeTgtDef() }).then(function (pr) { homeTgtPr = pr; return pr; });
+    homeTgtFold.appendChild(el('span', { class: 'muted', text: ' смотрю папки…' }));
+    p0.then(function (pr) { return scCall('sc-project', { id: pr.id }).then(function (full) {
+      var seen = {};
+      (full.documents || []).forEach(function (d) {
+        var parts = String(d.fullPath || d.path || '').replace(/^\/+/, '').split('/').slice(0, -1), t = Date.parse(d.creationDate || '') || 0;
+        for (var i = 1; i <= parts.length; i++) { var k = parts.slice(0, i).join('/'); seen[k] = Math.max(seen[k] || 0, t); }
+      });
+      homeTgtFolders[pr.id] = Object.keys(seen).sort(function (a, b) { return seen[b] - seen[a] || a.localeCompare(b); });
+      homeTgtDraw();
+    }); }).catch(function (e) { homeTgtFold.appendChild(el('span', { class: 'red', text: ' ✗ ' + e.message })); });
+  }
+  function homeTgtToggle() {
+    if (!homeTgtPick.classList.contains('hide')) { homeTgtPick.classList.add('hide'); return; }
+    homeTgtPick.classList.remove('hide'); homeTgtPick.textContent = '';
+    var q = el('input', { type: 'text', placeholder: '🔍 найди проект или вставь ссылку на него' }), list = el('div', { class: 'plist' });
+    homeTgtPick.appendChild(q); homeTgtPick.appendChild(list);
+    var all = null;
+    function draw() {
+      list.textContent = '';
+      var t = q.value.trim().toLowerCase(), idm = /([0-9a-f]{8}-[0-9a-f-]{27,})/i.exec(q.value);
+      if (idm) { list.appendChild(el('button', { class: 'pitem', type: 'button', onclick: function () { pick({ id: idm[1], name: 'Проект по ссылке' }); } }, [el('span', { class: 'pname', text: '🔗 Проект по ссылке' })])); }
+      if (!all) { list.appendChild(el('div', { class: 'muted', text: 'Загружаю проекты…' })); return; }
+      var favs = scFavs ? scFavs() : [];
+      var l = all.filter(function (p) { return !t || String(p.name).toLowerCase().indexOf(t) >= 0; })
+        .sort(function (a, b) { return (favs.indexOf(b.id) >= 0) - (favs.indexOf(a.id) >= 0); });
+      l.slice(0, 8).forEach(function (p) {
+        list.appendChild(el('button', { class: 'pitem', type: 'button', onclick: function () { pick(p); } }, [el('span', { class: 'pname', text: (favs.indexOf(p.id) >= 0 ? '★ ' : '') + p.name }),
+          el('span', { class: 'muted', text: (p.targetLanguages || []).length ? p.targetLanguages.length + ' яз.' : '' })]));
+      });
+      if (!l.length) list.appendChild(el('div', { class: 'muted', text: 'Ничего не нашлось' }));
+    }
+    function pick(p) {
+      homeTgt.proj = { id: p.id, name: p.name }; homeTgt.folder = ''; homeTgtNew.value = ''; homeTgtPick.classList.add('hide');
+      homeTgtDraw(); homeTgtLoadFolders();
+      if (p.name === 'Проект по ссылке') scCall('sc-project', { id: p.id }).then(function (f) { if (f.name) { homeTgt.proj.name = f.name; homeTgtDraw(); } }, function () {});
+    }
+    q.addEventListener('input', draw); draw(); q.focus();
+    (scProjCache ? Promise.resolve(scProjCache) : scCall('sc-projects').then(function (l) { scProjCache = l; return l; })).then(function (l) { all = l; draw(); },
+      function (e) { list.textContent = ''; list.appendChild(el('div', { class: 'red', text: '✗ ' + e.message })); });
+  }
   /* только определённые ключи: по одному на строку — уйдут только эти строки (например, 2–3 правки) */
   var homeKeysOn = el('input', { type: 'checkbox' });
   var homeKeys = el('textarea', { class: 'small hide', placeholder: 'Ключи по одному на строку, например:\nnotifications.dbs_permission_revoked\nnotifications.dbs_permission_granted' });
@@ -2608,9 +2691,9 @@
     var ptR = partsOf(scCfg);
     if (ptR.kind !== 'shop' && !ptR.mt) send = false;   /* сетап «только архивы» — в Smartcat ничего не уходит */
     /* обычный сетап отправляет в свой проект; без проекта не отправляем «по умолчанию» в проект Магазинки */
-    if (send && HAS_EXT && ptR.kind !== 'shop' && scCfg && !activeSetup(scCfg).project) {
+    if (send && HAS_EXT && ptR.kind !== 'shop' && scCfg && !activeSetup(scCfg).project && !homeTgt.proj) {
       homeSteps.forEach(function (st, i) { homeStep(i, 'next', ''); });
-      homeStep(1, 'err', 'Выбери проект Smartcat для этого сетапа: ⚙ → Проект → «Проект в Smartcat». Или нажми «Только архивы».');
+      homeStep(1, 'err', 'Выбери проект Smartcat выше («Куда в Smartcat» → Проект) или в ⚙ для всего сетапа. Или нажми «Только архивы».');
       return;
     }
     var text = homeLinks.value.trim();
@@ -2670,7 +2753,7 @@
       if (!send || !HAS_EXT) { homeStep(1, 'next', send ? '' : 'пропущено — выбрано «Только архивы»'); return; }
       homeStep(1, 'run', 'Готовлю отправку…');
       var box = el('div'); homeOut.appendChild(box);
-      return Promise.resolve(renderSmartcat(res, box)).then(function (btn) {
+      return Promise.resolve(renderSmartcat(res, box, homeTgt)).then(function (btn) {
         if (!btn) {
           if (info) info.smartcat = 'не отправляли';
           homeStep(1, 'err', scCfg && scCfg.accountId && scCfg.hasKey ? 'Отправлять в Smartcat нечего' : 'Smartcat не подключён — открой ⚙');
@@ -2684,7 +2767,9 @@
             var made = (x.made || []).join(', '), en = (x.en || []).join(', ');
             if (info) { info.smartcat = x.error ? 'ошибка: ' + x.error : (made || '—') + (en ? '; английский: ' + en : ''); info.links = x.links || {}; }
             if (x.error) homeStep(1, 'err', x.error + (made ? ' · отправлено: ' + made : ''));
-            else homeStep(1, 'ok', (made || 'отправлено') + (en ? ' · английский: ' + en : ''));
+            else homeStep(1, 'ok', (made || 'отправлено') + (en ? ' · английский: ' + en : ''), (x.open || []).length ? el('span', { class: 'tgtlinks' }, x.open.map(function (o) {
+              return el('a', { class: 'b g s', href: o.url, target: '_blank', rel: 'noopener', title: 'Открыть в Smartcat: ' + o.name, text: '↗ ' + String(o.name).split(' / ').pop() });
+            })) : null);
             homeRefreshSc(); resolve();
           };
           btn.click();
@@ -2718,6 +2803,7 @@
     var v = {
       'люди': info.people != null ? info.people : (scCfg && scCfg.bandPeople) || '', 'дедлайн': info.deadline || homeDeadline.value.trim() || '[дедлайн]',
       'ссылка_веб': L.web ? md(L.web.folder, L.web) : '—', 'папка_веб': L.web ? L.web.folder : '—',
+      'ссылка_папка': L.web ? md(L.web.folder, L.web) : '—', 'папка': L.web ? L.web.folder : '—',
       'ссылка_android': L.android ? md(L.android.file, L.android) : '—', 'ссылка_ios': L.ios ? md(L.ios.file, L.ios) : '—',
       'файл_android': L.android ? L.android.file : '—', 'файл_ios': L.ios ? L.ios.file : '—',
       'url_веб': L.web ? L.web.url : '—', 'url_android': L.android ? L.android.url : '—', 'url_ios': L.ios ? L.ios.url : '—'
@@ -2782,7 +2868,7 @@
     var when = function (x) { return x && x.t ? ' · ссылка от ' + new Date(x.t).toLocaleDateString('ru-RU') : ''; };
     info = Object.assign({}, info, { links: L });
     var ptM = partsOf(scCfg);
-    if (L.web || (none && ptM.web)) blocks.push([(ptM.kind === 'shop' ? 'Для веба' : 'Сообщение переводчикам') + when(L.web), (scCfg && scCfg.bandTplWeb && scCfg.bandTplWeb.trim()) || BAND_TPL_WEB]);
+    if (L.web || (none && ptM.web)) blocks.push([(ptM.kind === 'shop' ? 'Для веба' : 'Сообщение переводчикам') + when(L.web), (scCfg && scCfg.bandTplWeb && scCfg.bandTplWeb.trim()) || (ptM.kind === 'shop' ? BAND_TPL_WEB : BAND_TPL_GEN)]);
     if (L.android || L.ios || (none && ptM.mob)) blocks.push(['Для приложений' + when((L.android && L.ios) ? (L.android.t < L.ios.t ? L.android : L.ios) : L.android || L.ios), (scCfg && scCfg.bandTplApp && scCfg.bandTplApp.trim()) || BAND_TPL_APP]);
     homeMsgBox.textContent = '';
     blocks.forEach(function (b) {
@@ -3157,6 +3243,7 @@
     el('div', { class: 'hblock' }, [homeTplLbl = el('span', { class: 'lbl', text: 'Шаблон' }), homeSeg, homeLangInfo]),
     el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Что выгружаем' }), homeLinks,
       el('div', { class: 'row', style: 'margin-top:6px' }, [el('label', { class: 'muted', title: 'Включено — ссылки подставятся сами в следующий раз. Выключено — поле каждый раз своё, а сохранённые ссылки сетапа забываются' }, [homePin, ' запомнить ссылки для этого сетапа']), homeClear])]),
+    HAS_EXT ? homeTgtBox : null,
     el('div', { class: 'hblock' }, [el('label', { class: 'muted', title: 'Отправить не всё, а только строки с этими ключами' }, [homeKeysOn, ' только определённые ключи']), homeKeys]),
     el('div', { class: 'row' }, [homeGo, homeZip]),
     homeProg], 'homecard'),
@@ -3599,7 +3686,7 @@
       saveScProjects(merged);
     }, function () {});
   }
-  function renderSmartcat(res, container) {
+  function renderSmartcat(res, container, tgt) {
     var po = res.filter(function (r) { return r.ext !== 'json'; });
     var js = res.filter(function (r) { return r.ext === 'json' && r.strings; });
     if (!po.length && !js.length) return;
@@ -3637,7 +3724,7 @@
       var webSkip = allMt ? [] : webAll.filter(function (f) { return !isEnglish(f.lang); });
       if (!allMt) files = files.filter(function (f) { return scPlatform(f.p, f.c) !== 'web'; });
       var webRef = c.enWeb || SC_EN_DEFAULTS.web;
-      var mtProj = el('input', { type: 'text', value: c.project || '', placeholder: 'ссылка на проект Smartcat или название' });
+      var mtProj = el('input', { type: 'text', value: (tgt && tgt.proj && tgt.proj.id) || c.project || '', placeholder: 'ссылка на проект Smartcat или название' });
       var webGroup = webEn.length && partsOf(c).en === 'staff' ? { files: webEn, input: el('input', { type: 'text', value: ddmmyy() + ' web' }), note: el('span', { class: 'muted' }) } : null;
       /* проекты по платформе: 290926_android, 290926_ios (дата отправки в начале) */
       function platform(f) { return scPlatform(f.p, f.c); }
@@ -3689,6 +3776,7 @@
         box.appendChild(groupsBox);
         split.addEventListener('change', buildGroups);
         buildGroups();
+        if (tgt && tgt.folder) groups.forEach(function (g) { g.input.value = tgt.folder; });   /* выбранная на шаге 1 папка */
       }
       if (webGroup) {
         webGroup.proj = el('input', { type: 'text', value: webRef, placeholder: 'ссылка на проект Smartcat или название' });
@@ -3838,7 +3926,14 @@
           var chatLinks = {};
           made.forEach(function (p) { if (p.enDocs) chatLinks.web = { url: scChatUrl(c.base, p.id, p.docIds, p.folderId), folder: String(p.name || '').split(' / ').pop() }; });
           enRes.forEach(function (x) { if (x.ok && x.pl) chatLinks[x.pl] = { url: scChatUrl(c.base, x.projectId, x.docIds), file: (x.files || []).join(', ') }; });
-          autoDone({ made: made.map(function (p) { return p.name + (p.docs != null ? ' (' + p.docs + ' док.)' : ''); }),
+          /* обычный сетап: в сообщение — папка, куда загрузили, ссылкой на неё в Smartcat */
+          if (!chatLinks.web && partsOf(c).kind !== 'shop' && made.length) {
+            var p0 = made[0];
+            chatLinks.web = { url: scChatUrl(c.base, p0.id, null, p0.folderId), folder: String(p0.name || '').split(' / ').pop() };
+          }
+          var open = made.map(function (p) { return { name: p.name, url: scChatUrl(c.base, p.id, p.docIds, p.folderId) }; })
+            .concat(enRes.filter(function (x) { return x.ok && x.projectId; }).map(function (x) { return { name: 'английский ' + (x.pl || ''), url: scChatUrl(c.base, x.projectId, x.docIds) }; }));
+          autoDone({ open: open, made: made.map(function (p) { return p.name + (p.docs != null ? ' (' + p.docs + ' док.)' : ''); }),
             en: enRes.map(function (x) { return (x.ok ? '' : '✗ ') + x.text; }), error: msg.className === 'red' ? msg.textContent.slice(0, 200) : '', links: chatLinks });
           if (!made.length) return;
           if (msg.className !== 'red') msg.textContent = '';
@@ -4396,6 +4491,7 @@
           onclick: function () { fetchSc(pr, st, get, auto); } });
         var zip = el('button', { class: 'b g s', text: 'ZIP', title: 'Скачать готовые переводы из Smartcat архивом (в Weblate ничего не загружается)',
           onclick: function () { zipSc(pr, st, zip); } });
+        var openSc = el('a', { class: 'b g s ico', href: scChatUrl((scCfg && scCfg.base) || 'https://smartcat.com', pr.id, Object.keys(pr.docs || {}), pr.folderId), target: '_blank', rel: 'noopener', text: '↗', title: 'Открыть в Smartcat' });
         var del = el('button', { class: 'b g s ico', text: '×', title: 'Убрать из списка', onclick: function () {
           saveScProjects(scProjects().filter(function (x) { return keyOf(x) !== keyOf(pr); })); renderScImport();
         } });
@@ -4410,7 +4506,7 @@
               el('span', { class: 'pill ' + (kind === 'mt' ? 'k-mt' : 'k-hu'), text: kind === 'mt' ? '🤖 ИИ-перевод' : '👤 Переводчики' }), st]),
             el('div', { class: 'muted' }, [String(pr.name || '').split(' / ').join(' › ') + (pr.created ? ' · ' + fmtDate(pr.created) : '') +
               ' · в Weblate: ' + (kind === 'mt' ? 'только пустые строки' : 'заменит переведённые и одобренные')])]),
-          get, zip, del]));
+          get, openSc, zip, del]));
       });
       box.appendChild(det);
     });
