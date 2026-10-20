@@ -2427,7 +2427,23 @@
   var homeMode = sget('wlx_home_tpl') === 'mob' ? 'mob' : 'web';
   function mobLinks() { return (scCfg && String(scCfg.linksMob || '').trim()) || SC_DEFAULT_LINKS; }
   var homeWebLinks = sget('wlx_home_links') || '';
+  /* «запомнить ссылки» — у каждого сетапа своя галочка: Магазинке удобно, разовым отправкам — нет */
+  var homePin = el('input', { type: 'checkbox' });
+  function pinKey() { return 'wlx_home_pin:' + curSetup(); }
+  function homePinOn() { return sget(pinKey()) !== '0'; }
+  homePin.addEventListener('change', function () {
+    sset(pinKey(), homePin.checked ? '1' : '0');
+    var text = homeLinks.value.trim();
+    if (homeMode === 'mob') sset('wlx_home_links_mob', homePin.checked && text !== mobLinks() ? text : '');
+    else {
+      homeWebLinks = text;
+      sset('wlx_home_links', homePin.checked ? text : '');
+      if (HAS_EXT) patchSetup({ links: homePin.checked ? text : '' }).catch(function () {});
+    }
+  });
+  var homeClear = el('button', { class: 'b g s', type: 'button', text: 'Очистить', onclick: function () { homeLinks.value = ''; if (homeMode === 'web') homeWebLinks = ''; homeLinks.focus(); } });
   function homeLoadLinks() {
+    homePin.checked = homePinOn();
     homeLinks.value = homeMode === 'mob' ? (sget('wlx_home_links_mob') || mobLinks()) : homeWebLinks;
     homeLinks.placeholder = homeMode === 'mob' ? 'Ссылки на android и iOS' : 'Ссылки на компоненты веба, категории или целый проект — можно вставить сообщение из чата целиком';
   }
@@ -2493,8 +2509,8 @@
     homeSteps.forEach(function (s, i) { homeStep(i, 'next', ''); });
     homeAssignOn = false;
     if (!parseLinks(text).length) { homeStep(0, 'err', 'Вставь ссылки на компоненты Weblate (…/projects/<проект>/…)'); return; }
-    if (homeMode === 'mob') { if (text !== mobLinks()) sset('wlx_home_links_mob', text); else sset('wlx_home_links_mob', ''); }
-    else { homeWebLinks = text; sset('wlx_home_links', text); if (HAS_EXT) patchSetup({ links: text }).catch(function () {}); }
+    if (homeMode === 'mob') { if (homePin.checked) sset('wlx_home_links_mob', text !== mobLinks() ? text : ''); }
+    else { homeWebLinks = text; if (homePin.checked) { sset('wlx_home_links', text); if (HAS_EXT) patchSetup({ links: text }).catch(function () {}); } }
     homeGo.disabled = homeZip.disabled = true;
     homeOut.textContent = ''; homeDetails.classList.add('hide');
     homeProg.classList.remove('hide'); homeBar.style.width = '0%';
@@ -3027,7 +3043,8 @@
     HAS_EXT ? el('div', { class: 'row hsetup', style: 'margin-top:0' }, [el('span', { class: 'lbl', text: 'Проект' }), homeSetup,
       el('button', { class: 'b g s', type: 'button', text: '＋', title: 'Новый сетап: свои ссылки, языки и проекты Smartcat', onclick: function () { showSettings(true); newSetup(); } }), homeSetupNote]) : null,
     el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Шаблон' }), homeSeg, homeLangInfo]),
-    el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Что выгружаем' }), homeLinks]),
+    el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Что выгружаем' }), homeLinks,
+      el('div', { class: 'row', style: 'margin-top:6px' }, [el('label', { class: 'muted', title: 'Включено — ссылки подставятся сами в следующий раз. Выключено — поле каждый раз своё, а сохранённые ссылки сетапа забываются' }, [homePin, ' запомнить ссылки для этого сетапа']), homeClear])]),
     el('div', { class: 'row' }, [homeGo, homeZip]),
     homeProg], 'homecard'),
     card('Что дальше', [el('div', { class: 'steps', style: 'margin-top:0;padding-top:0;border-top:0' }, homeSteps.map(function (s) { return s.row; })), homeDetails]),
