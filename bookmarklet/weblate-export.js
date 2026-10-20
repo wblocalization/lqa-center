@@ -265,11 +265,19 @@
   /* keys — «только определённые ключи»: оставить строки, у которых ключ (msgctxt) или исходник совпадает с одним из списка */
   /* ключ можно писать полностью (debitsDrawer.supply-detail.debits.goodsQty) или только хвост (goodsQty); или исходный текст.
      Найденные отмечаются в keys.__hit — чтобы сказать, каких ключей нет */
+  /* ключ — полностью, или окончание из одной или нескольких частей (goodsQty, debits.goodsQty), или исходный текст;
+     keys.__hit[ключ] — какие полные ключи нашлись (больше одного — предупреждаем, что уйдут все) */
   function keyHit(keys, e) {
-    var ctx = e.ctx || '', tail = ctx.split(/[.:\/]/).pop(), k = keys[ctx] ? ctx : keys[tail] ? tail : keys[e.msgid] ? e.msgid : null;
-    if (!k) return false;
-    (keys.__hit = keys.__hit || {})[k] = 1;
-    return true;
+    var ctx = e.ctx || '', hit = false;
+    Object.keys(keys).forEach(function (k) {
+      if (k === '__hit') return;
+      var ok = ctx === k || e.msgid === k ||
+        (ctx.length > k.length && ctx.slice(-k.length) === k && /[.:\/]/.test(ctx.charAt(ctx.length - k.length - 1)));   /* окончание по границе части ключа */
+      if (!ok) return;
+      hit = true;
+      var h = (keys.__hit = keys.__hit || {}); (h[k] = h[k] || {})[ctx || e.msgid] = 1;
+    });
+    return hit;
   }
   function filterPo(text, dropPlurals, keys) {
     var keep = [], n = 0, words = 0, plurals = 0;
@@ -1076,6 +1084,7 @@
     '.duetime.on{border-color:var(--accent)!important;background:var(--soft);color:var(--accent);font-weight:600!important}',
     '.dueother{width:auto!important;padding:5px 10px!important;border-radius:999px!important;border:1px solid var(--accent)!important;font-size:12.5px!important;color:var(--ink);background:var(--card)}',
     '.tgtdate{font-weight:700;font-size:13.5px;color:var(--accent)}.tgttitle{flex:1;min-width:200px}',
+    '.warnbox{margin-top:8px;padding:10px 12px;border-radius:12px;background:var(--warn-soft);color:var(--warn);font-size:12.5px;display:flex;flex-direction:column;gap:4px}',
     '.gtabs{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:14px;background:var(--soft);margin-bottom:14px}',
     '.gtab{font:inherit;font-size:13.5px;font-weight:600;border:0;border-radius:11px;padding:7px 14px;cursor:pointer;background:transparent;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px}',
     '.gtab:hover{color:var(--ink)}.gtab.on{background:var(--card);color:var(--accent);box-shadow:0 2px 8px rgb(139 92 246 / .18)}',
@@ -2930,6 +2939,15 @@
         homeStep(0, 'ok', 'Непереведённого нет — всё переведено 🎉' + (errs.length ? ' (есть проблемы — ниже)' : '')); return;
       }
       if (miss.length) { homeOut.appendChild(el('div', { class: 'red', text: 'Не нашлись ключи (' + miss.length + '): ' + miss.join(', ') })); homeDetails.classList.remove('hide'); homeDetails.open = true; }
+      /* короткий ключ подошёл к нескольким разным ключам — уйдут все, подсказываем написать точнее */
+      var many = keys ? Object.keys(keys.__hit || {}).filter(function (k) { return Object.keys(keys.__hit[k]).length > 1; }) : [];
+      if (many.length) {
+        homeOut.appendChild(el('div', { class: 'warnbox' }, many.map(function (k) {
+          var full = Object.keys(keys.__hit[k]);
+          return el('div', { text: '«' + k + '» нашёлся в ' + full.length + ' ключах: ' + full.slice(0, 5).join(', ') + (full.length > 5 ? '…' : '') + ' — ушли все; если нужен один, впиши ключ точнее' });
+        })));
+        homeDetails.classList.remove('hide'); homeDetails.open = true;
+      }
       var strings = res.reduce(function (a, x) { return a + x.strings; }, 0);
       var a = ptR.zip || !send ? saveArchives(res) : { files: 0, zips: [], off: true };   /* архивы на компьютер — если включено в сетапе (или «Только скачать архив») */
       var uniq = function (l) { return l.filter(function (x, i, arr) { return arr.indexOf(x) === i; }); };
