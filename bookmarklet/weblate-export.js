@@ -1085,6 +1085,8 @@
     '.dueother{width:auto!important;padding:5px 10px!important;border-radius:999px!important;border:1px solid var(--accent)!important;font-size:12.5px!important;color:var(--ink);background:var(--card)}',
     '.tgtdate{font-weight:700;font-size:13.5px;color:var(--accent)}.tgttitle{flex:1;min-width:200px}',
     '.warnbox{margin-top:8px;padding:10px 12px;border-radius:12px;background:var(--warn-soft);color:var(--warn);font-size:12.5px;display:flex;flex-direction:column;gap:4px}',
+    '.wllinks{display:flex;flex-direction:column;gap:6px;margin:6px 0 12px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card)}',
+    '.wlrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.wlc{font-weight:600;font-size:13px;margin-right:6px}a.chipb{text-decoration:none}',
     '.gtabs{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:14px;background:var(--soft);margin-bottom:14px}',
     '.gtab{font:inherit;font-size:13.5px;font-weight:600;border:0;border-radius:11px;padding:7px 14px;cursor:pointer;background:transparent;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px}',
     '.gtab:hover{color:var(--ink)}.gtab.on{background:var(--card);color:var(--accent);box-shadow:0 2px 8px rgb(139 92 246 / .18)}',
@@ -5003,7 +5005,16 @@
     scSetupNote.textContent = 'проект: ' + (c.project || SC_PROJECT_DEFAULT);
   });
 
-  function setRow(u, cls, text) { u.status = text; u.row.className = cls; u.row.textContent = text; }
+  /* куда загрузилось: перевод компонента на этом языке в Weblate — нажать и проверить */
+  function wlTrUrl(u) { return '/projects/' + encodeURIComponent(u.p) + '/' + u.c.split('/').map(encodeURIComponent).join('/') + '/' + encodeURIComponent(u.lang) + '/'; }
+  function wlCompUrl(p, c) { return '/projects/' + encodeURIComponent(p) + '/' + c.split('/').map(encodeURIComponent).join('/') + '/'; }
+  function setRow(u, cls, text) {
+    u.status = text; u.row.className = cls; u.row.textContent = text;
+    if (cls === 'ok' && u.p && u.c && u.lang) {
+      u.row.appendChild(document.createTextNode(' · '));
+      u.row.appendChild(el('a', { href: wlTrUrl(u), target: '_blank', rel: 'noopener', text: 'открыть в Weblate ↗', title: u.c + ' · ' + langName(u.lang) }));
+    }
+  }
   /* отправки Smartcat, у которых всё загрузилось, помечаем «загружено» */
   function markScUploaded(todo) {
     var keys = {};
@@ -5037,8 +5048,16 @@
     sent.forEach(function (u) { (by[u.p + '/' + u.c] = by[u.p + '/' + u.c] || []).push(u); });
     Object.keys(by).sort().forEach(function (k) {
       out.push(k.split('/').slice(1).join('/') + ': ' + by[k].sort(function (a, b) { return langName(a.lang).localeCompare(langName(b.lang), 'ru'); })
-        .map(function (u) { return langName(u.lang) + ' ' + (u.accepted != null ? u.accepted : '✓'); }).join(', '));
+        .map(function (u) { return langName(u.lang) + ' ' + (u.accepted != null ? u.accepted : '✓'); }).join(', ') +
+        '\n  ' + location.origin + wlCompUrl(by[k][0].p, by[k][0].c));   /* ссылка на компонент — проверить в Weblate */
     });
+    /* те же компоненты и языки — кнопками: нажать и проверить, что загрузилось */
+    var linkBox = el('div', { class: 'wllinks' }, [el('div', { class: 'lbl', text: 'Открыть в Weblate' })].concat(Object.keys(by).sort().map(function (k) {
+      var u0 = by[k][0];
+      return el('div', { class: 'wlrow' }, [el('a', { class: 'wlc', href: wlCompUrl(u0.p, u0.c), target: '_blank', rel: 'noopener', text: u0.c + ' ↗' })].concat(by[k].map(function (u) {
+        return el('a', { class: 'chipb s', href: wlTrUrl(u), target: '_blank', rel: 'noopener', text: langName(u.lang), title: 'Перевод «' + u.c + '» на ' + langName(u.lang) });
+      })));
+    })));
     var vsk = sent.filter(function (u) { return u.varSkipped; });
     if (vsk.length) {
       var ST = { salv: 'вытащен перевод → «На правку»', raw: '«На правку» как есть', skip: 'не загружено' };
@@ -5067,7 +5086,7 @@
       };
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
     } });
-    return el('div', { class: 'blk' }, [el('h2', { text: 'Отчёт' }), pre, el('div', { class: 'row' }, [copy, note])]);
+    return el('div', { class: 'blk' }, [Object.keys(by).length ? linkBox : null, el('h2', { text: 'Отчёт' }), pre, el('div', { class: 'row' }, [copy, note])].filter(Boolean));
   }
   /* после загрузки: какие именно строки не легли (не найдено / пропущено) — со ссылками на Weblate */
   function explainAll(list, into) {
