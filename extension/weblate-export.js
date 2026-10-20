@@ -123,7 +123,7 @@
     throw new Error('Weblate прислал не .po файл' + (title ? ': «' + title.trim() + '»' : t.trim() ? ': ' + t.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150) : ' (пустой ответ)'));
   }
   function downloadPo(p, c, lang, q, viaUi) {
-    var qs = '?format=po&q=' + encodeURIComponent(q) + '&_=' + Date.now();   // _= — чтобы ни один кэш не отдал старый файл
+    var qs = '?format=po' + (q ? '&q=' + encodeURIComponent(q) : '') + '&_=' + Date.now();   // _= — чтобы ни один кэш не отдал старый файл; без q — весь файл
     if (viaUi) return http('/download/' + p + '/' + c + '/' + lang + '/' + qs, true).then(checkPo);
     return http(trApi(p, c, lang) + 'file/' + qs, true).then(checkPo)
       .catch(function (e) {
@@ -270,7 +270,7 @@
   function keyHit(keys, e) {
     var ctx = e.ctx || '', hit = false;
     Object.keys(keys).forEach(function (k) {
-      if (k === '__hit') return;
+      if (k === '__hit' || k === '__seen') return;
       var ok = ctx === k || e.msgid === k ||
         (ctx.length > k.length && ctx.slice(-k.length) === k && /[.:\/]/.test(ctx.charAt(ctx.length - k.length - 1)));   /* окончание по границе части ключа */
       if (!ok) return;
@@ -2919,7 +2919,7 @@
       if (!total) throw new Error('В компонентах нет языков из шаблона — проверь языки в ⚙ или выбери «Свои языки…»');
       homeStep(0, 'run', 'Скачиваю непереведённое… 0 из ' + total);
       homeTgt.langMap = map;   /* какие языки выбраны для каждого компонента — «один файл на все языки» идёт на все */
-      return exportCore(hcomps, union, { q: keys ? 'state:>=empty' : fuzzy.checked ? QUERY_ALL : QUERY_EMPTY, wantJson: pluralsJson.checked && !keys, keys: keys,
+      return exportCore(hcomps, union, { q: keys ? '' : fuzzy.checked ? QUERY_ALL : QUERY_EMPTY, wantJson: pluralsJson.checked && !keys, keys: keys,
         langsFor: function (x) { return map[x.p + '/' + x.c]; } }, function () {
         done++; homeBar.style.width = Math.round(100 * Math.min(done, total) / total) + '%';
         homeStep(0, 'run', 'Скачиваю непереведённое… ' + Math.min(done, total) + ' из ' + total);
@@ -2933,9 +2933,9 @@
         homeOut.appendChild(el('div', {}, [el('b', { class: 'red', text: 'Проблемы: ' + errs.length }), et]));
         homeDetails.classList.remove('hide'); homeDetails.open = true;
       }
-      var miss = keys ? Object.keys(keys).filter(function (k) { return k !== '__hit' && !(keys.__hit || {})[k]; }) : [];
+      var miss = keys ? Object.keys(keys).filter(function (k) { return k !== '__hit' && k !== '__seen' && !(keys.__hit || {})[k]; }) : [];
       if (!res.length) {
-        if (keys) { homeStep(0, 'err', 'Ни один ключ не нашёлся в этих компонентах и языках — проверь ключи и ссылки' + (miss.length ? ': ' + miss.slice(0, 8).join(', ') + (miss.length > 8 ? '…' : '') : '')); return; }
+        if (keys) { homeStep(0, 'err', (keys.__seen ? 'Weblate отдал ' + keys.__seen + ' строк, но ни один ключ среди них не нашёлся — проверь ключи и ссылки' : 'Weblate отдал пустые файлы — проверь ссылки и что ты вошла в Weblate') + (miss.length ? ': ' + miss.slice(0, 8).join(', ') + (miss.length > 8 ? '…' : '') : '')); return; }
         homeStep(0, 'ok', 'Непереведённого нет — всё переведено 🎉' + (errs.length ? ' (есть проблемы — ниже)' : '')); return;
       }
       if (miss.length) { homeOut.appendChild(el('div', { class: 'red', text: 'Не нашлись ключи (' + miss.length + '): ' + miss.join(', ') })); homeDetails.classList.remove('hide'); homeDetails.open = true; }
@@ -3680,6 +3680,7 @@
               }
               return raw;
             }).then(function (raw) {
+              if (opts.keys) opts.keys.__seen = (opts.keys.__seen || 0) + poEntries(raw).filter(function (e) { return !e.header; }).length;
               var r = filterPo(raw, false, opts.keys);
               if (!r.plurals || !opts.wantJson || opts.keys) return r;
               return Promise.all([units(x.p, x.c, code, opts.q + ' AND has:plural'), componentFormat(x.p, x.c)]).then(function (a) {
