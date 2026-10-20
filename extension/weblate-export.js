@@ -2487,7 +2487,7 @@
       el('div', { class: 'howbox' }, [el('b', { text: 'Как отправлять' }),
         el('label', { class: 'blk' }, [partZip, 'сохранять архивы на компьютер — ', partZipFor]),
         el('label', { class: 'blk' }, [partFolder, 'класть в Smartcat в отдельную папку (выключено — прямо в проект)']),
-        el('label', { class: 'blk' }, [partMerge, 'один файл на все языки (удобно, если отправляешь 2–3 ключа)']),
+        el('label', { class: 'blk' }, [partMerge, 'один файл на все языки']),
         el('label', {}, ['Название папки или файла в Smartcat', partName])])], true),
     fPeople = fold('Люди на английский', [
       el('p', { class: 'muted', text: 'Назначаются сразу при отправке на английские документы (EN android, EN ios, веб). Перевод — этап 1, редактура — этап 2. Режим — все, кто примет.' }),
@@ -2828,7 +2828,7 @@
     (scProjCache ? Promise.resolve(scProjCache) : scCall('sc-projects').then(function (l) { scProjCache = l; return l; })).then(function (l) { all = l; draw(); },
       function (e) { list.textContent = ''; list.appendChild(el('div', { class: 'red', text: '✗ ' + e.message })); });
   }
-  /* только определённые ключи: по одному на строку — уйдут только эти строки (например, 2–3 правки) */
+  /* только определённые ключи: через запятую или по одному на строку — уйдут только эти строки */
   var homeKeysOn = el('input', { type: 'checkbox' });
   var homeKeys = el('textarea', { class: 'small hide', placeholder: 'Ключи через запятую или по одному на строку — полностью или только конец ключа, например:\ngoodsQty, shipmentDate, notifications.dbs_permission_revoked' });
   homeKeysOn.addEventListener('change', function () { homeKeys.classList.toggle('hide', !homeKeysOn.checked); if (homeKeysOn.checked) homeKeys.focus(); });
