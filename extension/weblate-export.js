@@ -1061,6 +1061,7 @@
     '.tgtf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex:1;min-width:0}.tgtnew{width:180px!important;padding:5px 10px!important;font-size:12.5px!important;border-radius:999px!important}',
     '.tgtlinks{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}a.b{text-decoration:none;display:inline-block}',
     '.howbox{margin-top:14px;padding:12px 14px;border-radius:14px;background:var(--soft);display:flex;flex-direction:column;gap:8px}.howbox label{margin:0}',
+    '.tgtdue{width:auto!important;padding:5px 10px!important;border-radius:10px!important}',
     '.tgtdate{font-weight:700;font-size:13.5px;color:var(--accent)}.tgttitle{flex:1;min-width:200px}',
     '.gtabs{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:14px;background:var(--soft);margin-bottom:14px}',
     '.gtab{font:inherit;font-size:13.5px;font-weight:600;border:0;border-radius:11px;padding:7px 14px;cursor:pointer;background:transparent;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px}',
@@ -2637,16 +2638,28 @@
   var homeTgtNew = el('input', { type: 'text', class: 'tgtnew', placeholder: 'или имя новой папки' });
   homeTgtNew.addEventListener('input', function () { homeTgt.folder = homeTgtNew.value.trim(); homeTgtDrawFolders(); });
   var homeTgtHint = el('div', { class: 'muted', style: 'font-size:12.5px' });
-  function ddmm() { var d = new Date(); return ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2); }
+  function ddmm() { var d = new Date(); return d.getDate() + '.' + ('0' + (d.getMonth() + 1)).slice(-2); }   /* как пишут в Smartcat: 1.10, 16.10 */
   /* «дата + своё название»: дата подставляется сама, остальное вписывают (как «16.10 Создание поставки_Нумерация коробов») */
   var homeTitleIn = el('input', { type: 'text', class: 'tgttitle', placeholder: 'например: Создание поставки_Нумерация коробов' });
   var homeTitleDate = el('span', { class: 'tgtdate' });
   var homeTitleRow = el('div', { class: 'tgtrow hide' }, [el('span', { class: 'tgtk', text: 'Название' }), homeTitleDate, homeTitleIn]);
   var homeFoldRow = null;
+  /* срок файла: ставится задачам загруженных документов в Smartcat и сам подставляется в сообщение */
+  var homeDue = el('input', { type: 'datetime-local', class: 'tgtdue' });
+  var homeDueAuto = '';
+  function dueText(v) { var d = new Date(v); return isNaN(d) ? '' : ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2) + ', ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  homeDue.addEventListener('change', function () {
+    var t = dueText(homeDue.value);
+    if (typeof homeDeadline !== 'undefined' && homeDeadline && (!homeDeadline.value.trim() || homeDeadline.value === homeDueAuto)) { homeDeadline.value = t; homeDueAuto = t; homeDeadline.dispatchEvent(new Event('input')); }
+  });
+  var homeDueRow = el('div', { class: 'tgtrow' }, [el('span', { class: 'tgtk', text: 'Срок' }), homeDue,
+    el('button', { class: 'lnk', type: 'button', text: 'завтра 18:00', onclick: function () { var d = new Date(); d.setDate(d.getDate() + 1); d.setHours(18, 0, 0, 0);
+      homeDue.value = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + 'T18:00'; homeDue.dispatchEvent(new Event('change')); } }),
+    el('span', { class: 'muted', style: 'font-size:12px', text: 'необязательно · поставится задачам в Smartcat и в сообщение' })]);
   function homeTitle() { var t = homeTitleIn.value.trim(); return t ? ddmm() + ' ' + t : ''; }
   var homeTgtBox = el('div', { class: 'hblock tgt' }, [el('span', { class: 'lbl', text: 'Куда в Smartcat' }), homeTgtHint,
     el('div', { class: 'tgtrow' }, [el('span', { class: 'tgtk', text: 'Проект' }), homeTgtProj, homeTgtReset]), homeTgtPick,
-    homeFoldRow = el('div', { class: 'tgtrow' }, [el('span', { class: 'tgtk', text: 'Папка' }), el('div', { class: 'tgtf' }, [homeTgtFold, homeTgtNew])]), homeTitleRow]);
+    homeFoldRow = el('div', { class: 'tgtrow' }, [el('span', { class: 'tgtk', text: 'Папка' }), el('div', { class: 'tgtf' }, [homeTgtFold, homeTgtNew])]), homeTitleRow, homeDueRow]);
   /* Магазинка, «Веб»: в Smartcat уходит только английский — в проект английского веба («МП Web»); «Android и iOS» — машперевод */
   function homeTgtWeb() { return partsOf(scCfg).kind === 'shop' && homeMode === 'web'; }
   function homeTgtDef() {
@@ -2827,7 +2840,16 @@
             else homeStep(1, 'ok', (made || 'отправлено') + (en ? ' · английский: ' + en : ''), (x.open || []).length ? el('span', { class: 'tgtlinks' }, x.open.map(function (o) {
               return el('a', { class: 'b g s', href: o.url, target: '_blank', rel: 'noopener', title: 'Открыть в Smartcat: ' + o.name, text: '↗ ' + String(o.name).split(' / ').pop() });
             })) : null);
-            homeRefreshSc(); resolve();
+            homeRefreshSc();
+            /* срок файлам — задачам этих документов в Smartcat */
+            if (!x.error && homeDue.value && (x.dl || []).length) {
+              var due = new Date(homeDue.value), st1 = homeSteps[1];
+              st1.sub.textContent += ' · ставлю срок ' + dueText(homeDue.value) + '…';
+              scCall('sc-deadline', { deadline: due.toISOString(), projectIds: x.dl.map(function (d) { return d.pid; }), documentIds: [].concat.apply([], x.dl.map(function (d) { return d.ids; })) })
+                .then(function (r) { st1.sub.textContent = st1.sub.textContent.replace(/ · ставлю срок [^…]*…$/, '') + ' · ✓ срок ' + dueText(homeDue.value) + ' (задач: ' + r.tasks + ')'; },
+                  function (e) { st1.sub.textContent = st1.sub.textContent.replace(/ · ставлю срок [^…]*…$/, '') + ' · ✗ срок не поставился — поставь в Smartcat (' + String(e.message).slice(0, 120) + ')'; });
+            }
+            resolve();
           };
           btn.click();
         });
@@ -4005,7 +4027,9 @@
           }
           var open = made.map(function (p) { return { name: p.name, url: scChatUrl(c.base, p.id, p.docIds, p.folderId) }; })
             .concat(enRes.filter(function (x) { return x.ok && x.projectId; }).map(function (x) { return { name: 'английский ' + (x.pl || ''), url: scChatUrl(c.base, x.projectId, x.docIds) }; }));
-          autoDone({ open: open, made: made.map(function (p) { return p.name + (p.docs != null ? ' (' + p.docs + ' док.)' : ''); }),
+          var dl = made.map(function (p) { return { pid: p.id, ids: p.docIds || [] }; })
+            .concat(enRes.filter(function (x) { return x.ok && x.projectId; }).map(function (x) { return { pid: x.projectId, ids: x.docIds || [] }; }));
+          autoDone({ dl: dl, open: open, made: made.map(function (p) { return p.name + (p.docs != null ? ' (' + p.docs + ' док.)' : ''); }),
             en: enRes.map(function (x) { return (x.ok ? '' : '✗ ') + x.text; }), error: msg.className === 'red' ? msg.textContent.slice(0, 200) : '', links: chatLinks });
           if (!made.length) return;
           if (msg.className !== 'red') msg.textContent = '';
