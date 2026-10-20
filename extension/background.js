@@ -32,7 +32,12 @@ async function scFetch(path, init = {}) {
   const c = await scConfig();
   if (!c.accountId || !c.apiKey) throw new Error('Smartcat не подключён: ⚙ → Account ID и API-ключ');
   const headers = Object.assign({}, init.headers, { Authorization: 'Basic ' + btoa(c.accountId + ':' + c.apiKey) });
-  const r = await fetch(scBase(c) + SC_API + path, Object.assign({}, init, { headers }));
+  /* init.timeout (мс) — не ждать Smartcat вечно */
+  const ac = init.timeout ? new AbortController() : null, tm = ac ? setTimeout(() => ac.abort(), init.timeout) : 0;
+  let r;
+  try { r = await fetch(scBase(c) + SC_API + path, Object.assign({}, init, { headers }, ac ? { signal: ac.signal } : {})); }
+  catch (e) { if (ac && ac.signal.aborted) throw new Error('Smartcat не ответил за ' + Math.round(init.timeout / 1000) + ' с'); throw e; }
+  finally { if (tm) clearTimeout(tm); }
   if (!r.ok && r.status !== 204) {
     const t = await r.text();
     throw new Error('Smartcat ' + r.status + (r.status === 401 ? ' (неверный Account ID или ключ)' : '') + ': ' + t.slice(0, 400));
@@ -467,14 +472,15 @@ SC_HANDLERS['sc-deadline'] = async (m) => {
   const hit = (str, id) => str.includes('"' + id + '"') || str.includes('"' + base(id) + '"');
   const ids = [...new Set((m.documentIds || []).map(String))];
   let n = 0, found = 0, noTasks = 0; const errs = [], doneTask = {}, covered = {};
+  const until = Date.now() + 80000;   /* всего не больше ~1,5 мин: большие проекты отдают список задач долго */
   for (const pid of [...new Set(m.projectIds || [])]) {
     /* задачи у файлов появляются не сразу и не все разом (у части языков — когда их возьмут) —
        ждём до ~1 мин, пока задачи не найдутся у всех документов, ставим срок каждой новой */
     let listed = false;
-    for (let round = 0; round < 12; round++) {
+    for (let round = 0; round < 12 && Date.now() < until; round++) {
       let list = null;
       for (const cur of ['USD', 'RUB', 'EUR', '']) {
-        try { list = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list' + (cur ? '?currency=' + cur : ''))).json(); break; }
+        try { list = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list' + (cur ? '?currency=' + cur : ''), { timeout: 30000 })).json(); break; }
         catch (e) { if (!/currency/i.test(String(e.message))) { errs.push(String(e.message).slice(0, 160)); break; } }
       }
       if (!list) break;
@@ -492,10 +498,10 @@ SC_HANDLERS['sc-deadline'] = async (m) => {
           [path + '?deadline=' + encodeURIComponent(iso), { method: 'POST' }]
         ];
         let ok = false;
-        for (const [u, init] of tries) { try { await scFetch(u, init); ok = true; break; } catch (e) { errs.push(String(e.message).slice(0, 160)); } }
+        for (const [u, init] of tries) { try { await scFetch(u, Object.assign({ timeout: 20000 }, init)); ok = true; break; } catch (e) { errs.push(String(e.message).slice(0, 160)); } }
         if (ok) { n++; mineIds.forEach((id) => { covered[id] = 1; }); }
       }
-      if (ids.every((id) => covered[id])) break;
+      if (ids.every((id) => covered[id]) || Date.now() > until) break;
       await sleep(5000);
     }
     if (listed && !found) noTasks++;
