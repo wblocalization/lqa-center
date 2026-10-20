@@ -262,11 +262,13 @@
     });
     return out;
   }
-  function filterPo(text, dropPlurals) {
+  /* keys — «только определённые ключи»: оставить строки, у которых ключ (msgctxt) или исходник совпадает с одним из списка */
+  function filterPo(text, dropPlurals, keys) {
     var keep = [], n = 0, words = 0, plurals = 0;
     poEntries(text).forEach(function (e) {
       if (e.header) { keep.push(e.lines.join('\n')); return; }
       if (e.obsolete || e.done) return;
+      if (keys && !keys[e.ctx] && !keys[e.msgid]) return;
       if (e.plural) { plurals++; if (dropPlurals) return; }
       keep.push(e.lines.join('\n'));
       n++;
@@ -1027,6 +1029,16 @@
     '.nav:hover{background:var(--soft);color:var(--ink)}',
     '.nav.on{background:var(--soft);color:var(--accent)}',
     '.navt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.side{display:flex;flex-direction:column;width:236px}.side>*{flex-shrink:0}.navgrow{flex:1 0 12px}.navdiv{height:1px;background:var(--line);margin:12px 10px;flex:none}',
+    '.nav.navstep{align-items:flex-start;padding:8px 10px}.navstep .navt{white-space:normal}.navstep .navt small{display:block;font-weight:500;font-size:11.5px;color:var(--ink-soft);opacity:.85;margin-top:1px}',
+    '.navstep .num{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);display:grid;place-items:center;font-size:12px;font-weight:700;color:var(--ink-soft);flex:none;position:relative;z-index:1}',
+    '.navstep.on .num{background:linear-gradient(135deg,var(--accent),var(--accent-2));border-color:transparent;color:#fff;box-shadow:var(--glow)}',
+    '.navstep.done:not(.on) .num{background:var(--ok-soft);border-color:var(--ok);color:var(--ok);font-size:0}.navstep.done:not(.on) .num::after{content:"✓";font-size:13px}',
+    '.navstep+.navstep::before{content:"";position:absolute;left:22px;top:-10px;height:16px;width:1.5px;background:var(--line)}',
+    '.gtabs{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:14px;background:var(--soft);margin-bottom:14px}',
+    '.gtab{font:inherit;font-size:13.5px;font-weight:600;border:0;border-radius:11px;padding:7px 14px;cursor:pointer;background:transparent;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px}',
+    '.gtab:hover{color:var(--ink)}.gtab.on{background:var(--card);color:var(--accent);box-shadow:0 2px 8px rgb(139 92 246 / .18)}',
+    '.gother{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px;padding:12px 16px;border:1px dashed var(--line);border-radius:16px;font-size:13px;color:var(--ink-soft)}.gother span{flex:1;min-width:200px}',
     '.navn{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--accent-2);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}',
     '.nav.dot::after{content:"";position:absolute;right:12px;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;background:var(--accent-2)}',
     '.ptitle{font-size:20px;font-weight:700;margin:0 0 14px}.pdesc{font-size:13px;font-weight:400;color:var(--ink-soft);margin-top:4px;line-height:1.4}',
@@ -1680,7 +1692,7 @@
         var acc = sent.reduce(function (a, u) { return a + (Number(u.accepted) || 0); }, 0);
         var where = function (u) { return u.c + ' · ' + langName(u.lang); };
         var srch = function (u, key) { return '/translate/' + u.p + '/' + u.c + '/' + u.lang + '/?q=' + encodeURIComponent('context:"' + key + '"'); };
-        if (!todo.length) box.appendChild(el('div', { class: 'line', text: 'Загружать нечего — причины в списке на вкладке «Загрузить обратно»' }));
+        if (!todo.length) box.appendChild(el('div', { class: 'line', text: 'Загружать нечего — причины в списке в «Загрузить переводы» → «Файл с компьютера»' }));
         else box.appendChild(el('div', { class: 'line' }, [el('b', { text: (failed.length ? '' : '✓ ') + 'Загружено ' + sent.length + ' из ' + todo.length }),
           document.createTextNode(' · строк принято ' + acc.toLocaleString('ru-RU') + ' · ' + took)]));
         box.appendChild(el('div', { class: 'bar' }, [el('div', { style: 'width:100%' })]));
@@ -1712,7 +1724,7 @@
           box.appendChild(el('details', {}, [el('summary', { text: 'По файлам — ' + todo.length }), ft]));
           box.appendChild(el('details', {}, [el('summary', { text: 'Полный отчёт' }), uploadReport(todo, opts || {}, took)]));
         }
-        box.appendChild(el('div', { class: 'row' }, [el('button', { class: 'b g s', text: 'Открыть на вкладке «Загрузить обратно»', onclick: function () { tab('imp'); } })]));
+        box.appendChild(el('div', { class: 'row' }, [el('button', { class: 'b g s', text: 'Открыть в «Загрузить переводы» → «Файл с компьютера»', onclick: function () { tab('imp'); } })]));
       }
     });
   }
@@ -1793,7 +1805,7 @@
       scImpMsg.className = bad ? 'red' : 'ok';
       if (upload) { inlineUpload(found); return; }
       scImpMsg.textContent = '✓ Забрала ' + (found.length - bad) + (bad ? ', не поняла куда: ' + bad : '') +
-        ' — проверь и нажми «Загрузить в Weblate» на вкладке «Загрузить обратно»' +
+        ' — проверь и нажми «Загрузить в Weblate» в «Загрузить переводы» → «Файл с компьютера»' +
         (bad ? '. Для нераспознанных выбери компонент в колонке «Куда»' : '');
       tab('imp');
     }).catch(function (e) { scImpMsg.className = 'red'; scImpMsg.textContent = '✗ ' + e.message; }).then(function () { btn.disabled = false; });
@@ -1915,7 +1927,16 @@
   var NAV_OLD = { home: 'send', exp: 'manual', sc: 'work', imp: 'accept' };
   var curNav = 'send', navPrev = 'send', navBtns = {}, navPanes = {};
   function tab(t) { nav(NAV_OLD[t] || t); }
+  /* «Загрузить переводы» — один пункт меню, внутри три вкладки: мои отправки, все проекты Smartcat, файл с компьютера */
+  var GET_SUB = { work: 1, projects: 1, accept: 1 }, getSub = HAS_EXT ? 'work' : 'accept', getTabs = {}, getBoxes = {};
+  function getShow(sub) {
+    getSub = sub;
+    Object.keys(getBoxes).forEach(function (x) { getBoxes[x].classList.toggle('hide', x !== sub); if (getTabs[x]) getTabs[x].classList.toggle('on', x === sub); });
+  }
+  /* шаги в меню отмечаются ✓, когда пройдены в этот раз */
+  function markStep(k) { if (navBtns[k]) navBtns[k].classList.add('done'); }
   function nav(k) {
+    if (GET_SUB[k]) { getShow(k); k = 'get'; }
     if (!navPanes[k]) k = 'send';
     if (k !== 'settings') navPrev = k;
     curNav = k;
@@ -1923,10 +1944,10 @@
     if (scroller) scroller.scrollTop = 0;
     if (k === 'send') homeRefreshSc();
     if (k === 'settings') fillScSettings();
-    if (k === 'msg' && navBtns.msg) navBtns.msg.classList.remove('dot');
+    if (k === 'msg' && navBtns.msg) { navBtns.msg.classList.remove('dot'); if (navBtns.send && navBtns.send.classList.contains('done')) markStep('msg'); }
     if (k === 'msg' && !homeMsgInfo) loadScConfig().then(function () { if (!homeMsgInfo) homeMessage({ links: {} }, true, true); }, function () { homeMessage({ links: {} }, true, true); });
     if (k === 'up') upScOpen();
-    if (k === 'projects') { if (scImpBody.classList.contains('hide')) scImpOpen.click(); scImpOpen.classList.add('hide'); }
+    if (k === 'get' && getSub === 'projects') { if (scImpBody.classList.contains('hide')) scImpOpen.click(); scImpOpen.classList.add('hide'); }
   }
 
   /* ----- настройки Smartcat (только в расширении) ----- */
@@ -2497,6 +2518,16 @@
     s.sub.textContent = sub || ''; s.sub.className = state === 'err' ? 'red' : 'muted';
     s.act.textContent = ''; if (act) s.act.appendChild(act);
   }
+  /* только определённые ключи: по одному на строку — уйдут только эти строки (например, 2–3 правки) */
+  var homeKeysOn = el('input', { type: 'checkbox' });
+  var homeKeys = el('textarea', { class: 'small hide', placeholder: 'Ключи по одному на строку, например:\nnotifications.dbs_permission_revoked\nnotifications.dbs_permission_granted' });
+  homeKeysOn.addEventListener('change', function () { homeKeys.classList.toggle('hide', !homeKeysOn.checked); if (homeKeysOn.checked) homeKeys.focus(); });
+  function homeKeySet() {
+    if (!homeKeysOn.checked) return null;
+    var k = {}, n = 0;
+    homeKeys.value.split(/\r?\n/).forEach(function (x) { x = x.trim(); if (x && !k[x]) { k[x] = 1; n++; } });
+    return n ? k : {};
+  }
   var homeBar = el('div'), homeProg = el('div', { class: 'bar hide' }, [homeBar]);
   var homeOut = el('div');
   var homeDetails = el('details', { class: 'hide' }, [el('summary', { text: 'Подробности' }), homeOut]);
@@ -2509,6 +2540,8 @@
     homeSteps.forEach(function (s, i) { homeStep(i, 'next', ''); });
     homeAssignOn = false;
     if (!parseLinks(text).length) { homeStep(0, 'err', 'Вставь ссылки на компоненты Weblate (…/projects/<проект>/…)'); return; }
+    var keys = homeKeySet();
+    if (keys && !Object.keys(keys).length) { homeStep(0, 'err', 'Включено «Только определённые ключи» — впиши ключи или сними галочку'); return; }
     if (homeMode === 'mob') { if (homePin.checked) sset('wlx_home_links_mob', text !== mobLinks() ? text : ''); }
     else { homeWebLinks = text; if (homePin.checked) { sset('wlx_home_links', text); if (HAS_EXT) patchSetup({ links: text }).catch(function () {}); } }
     homeGo.disabled = homeZip.disabled = true;
@@ -2534,7 +2567,7 @@
       var total = hcomps.reduce(function (a, x) { return a + map[x.p + '/' + x.c].length; }, 0), done = 0;
       if (!total) throw new Error('В компонентах нет языков из шаблона — проверь языки в ⚙ или выбери «Свои языки…»');
       homeStep(0, 'run', 'Скачиваю непереведённое… 0 из ' + total);
-      return exportCore(hcomps, union, { q: fuzzy.checked ? QUERY_ALL : QUERY_EMPTY, wantJson: pluralsJson.checked,
+      return exportCore(hcomps, union, { q: fuzzy.checked ? QUERY_ALL : QUERY_EMPTY, wantJson: pluralsJson.checked, keys: keys,
         langsFor: function (x) { return map[x.p + '/' + x.c]; } }, function () {
         done++; homeBar.style.width = Math.round(100 * Math.min(done, total) / total) + '%';
         homeStep(0, 'run', 'Скачиваю непереведённое… ' + Math.min(done, total) + ' из ' + total);
@@ -2690,7 +2723,7 @@
       if (scCfg.bandAuto && !refill && !quiet) homeSendMsg();
     }
     homeMsgCard.classList.remove('hide'); msgEmpty.classList.add('hide');
-    if (!quiet) { homeMsgNote.classList.remove('hide'); if (navBtns.msg && curNav !== 'msg') navBtns.msg.classList.add('dot'); }
+    if (!quiet) { homeMsgNote.classList.remove('hide'); markStep('send'); if (navBtns.msg && curNav !== 'msg') navBtns.msg.classList.add('dot'); }
   }
   function homeSendMsg() {
     var hook = scCfg && scCfg.bandHook;
@@ -3045,6 +3078,7 @@
     el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Шаблон' }), homeSeg, homeLangInfo]),
     el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Что выгружаем' }), homeLinks,
       el('div', { class: 'row', style: 'margin-top:6px' }, [el('label', { class: 'muted', title: 'Включено — ссылки подставятся сами в следующий раз. Выключено — поле каждый раз своё, а сохранённые ссылки сетапа забываются' }, [homePin, ' запомнить ссылки для этого сетапа']), homeClear])]),
+    el('div', { class: 'hblock' }, [el('label', { class: 'muted', title: 'Отправить не всё, а только строки с этими ключами' }, [homeKeysOn, ' только определённые ключи']), homeKeys]),
     el('div', { class: 'row' }, [homeGo, homeZip]),
     homeProg], 'homecard'),
     card('Что дальше', [el('div', { class: 'steps', style: 'margin-top:0;padding-top:0;border-top:0' }, homeSteps.map(function (s) { return s.row; })), homeDetails]),
@@ -3077,34 +3111,58 @@
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>' };
   var upPane = el('div', { class: 'upinline' }, [upSheet.firstChild]);
   var msgPane = el('div', {}, [msgEmpty, homeMsgCard]);
+  var getPane = el('div', {});
+  var getBar = el('div', { class: 'gtabs', role: 'tablist' });
+  (HAS_EXT ? [['work', 'Мои отправки', el('div', {}, [scBack, el('div', { class: 'gother' }, [
+      el('span', { text: 'Нужен другой проект — например, загрузили руками или делал коллега?' }),
+      el('button', { class: 'b g s', type: 'button', text: 'Все проекты Smartcat →', onclick: function () { nav('projects'); } })])])],
+    ['projects', 'Все проекты Smartcat', el('div', {}, [scImpBox])],
+    ['accept', 'Файл с компьютера', importPane]] : [['accept', 'Файл с компьютера', importPane]]).forEach(function (t) {
+    getTabs[t[0]] = el('button', { class: 'gtab', type: 'button', role: 'tab', onclick: function () { nav(t[0]); } }, [el('span', { text: t[1] }), el('span', { class: 'navn hide' })]);
+    getBoxes[t[0]] = t[2]; t[2].classList.add('hide');
+    if (HAS_EXT) getBar.appendChild(getTabs[t[0]]);
+    getPane.appendChild(t[2]);
+  });
+  getPane.insertBefore(getBar, getPane.firstChild);
+  getShow(getSub);
   var NAV = [
-    /* [ключ, пункт меню, панель, заголовок, что здесь делают] */
-    ['Перевод по шагам'],
-    ['send', '1. Отправить', homePane, 'Отправить на перевод', 'Выгрузить новые строки из Weblate: архивы для подрядчика, машперевод и английский — в Smartcat.'],
-    HAS_EXT ? ['msg', '2. Написать в чат', msgPane, 'Сообщения в чат', 'Готовые тексты для переводчиков со ссылками на Smartcat — вписать дедлайн и скопировать.'] : null,
-    HAS_EXT ? ['work', '3. Ждать перевод', el('div', {}, [scBack]), 'В работе', 'Что сейчас переводится в Smartcat. Готовое — кнопкой «В Weblate».'] : null,
-    ['accept', HAS_EXT ? '4. Принять файлы' : '2. Принять файлы', importPane, 'Принять файлы', 'Загрузить в Weblate файлы, которые прислал подрядчик (.po, .json, .zip), с проверкой.'],
-    ['Вручную'],
-    ['manual', 'Выгрузить вручную', el('div', {}, [exportPane, scPane]), 'Выгрузить из Weblate вручную', 'Свой набор языков и компонентов — когда стандартная отправка не подходит.'],
-    HAS_EXT ? ['up', 'Загрузить в Smartcat', upPane, 'Загрузить файлы в Smartcat', 'Любые свои файлы — в нужный проект и папку Smartcat.'] : null,
-    HAS_EXT ? ['projects', 'Проекты Smartcat', el('div', {}, [scImpBox]), 'Проекты Smartcat', 'Проекты → папки → файлы. Забрать в Weblate можно любые, даже загруженные руками.'] : null,
-    HAS_EXT ? [''] : null,
-    HAS_EXT ? ['settings', 'Настройки', settingsPane, 'Настройки', 'Сетап проекта, подключение к Smartcat, люди, сообщения, звук.'] : null
+    /* [ключ, пункт меню, панель, заголовок, что здесь делают, подпись под пунктом, номер шага] */
+    ['Перевод'],
+    ['send', 'Отправить', homePane, 'Отправить на перевод', 'Новые строки из Weblate — в Smartcat (и архивы для подрядчика).', 'Weblate → Smartcat', 1],
+    HAS_EXT ? ['msg', 'Сообщение', msgPane, 'Сообщение переводчикам', 'Готовый текст со ссылками на Smartcat — вписать срок и скопировать.', 'текст в чат', 2] : null,
+    ['get', 'Загрузить переводы', getPane, 'Загрузить переводы', HAS_EXT ? 'Что готово в Smartcat — одной кнопкой в Weblate. Перед загрузкой всё проверяется.' : 'Файлы от подрядчика (.po, .json, .zip) — в Weblate, с проверкой.', HAS_EXT ? 'Smartcat → Weblate' : 'файлы → Weblate', HAS_EXT ? 3 : 2],
+    ['-'],
+    ['manual', 'Выгрузить для подрядчиков', el('div', {}, [exportPane, scPane]), 'Выгрузить для подрядчиков', 'Строки из любого проекта Weblate: свои ссылки и языки, архивом.'],
+    ['+'],
+    HAS_EXT ? ['settings', 'Настройки', settingsPane, 'Настройки', 'Сетап проекта, подключение к Smartcat, люди, сообщения, звук.'] : null,
+    /* без пункта в меню: открывается только из кода */
+    HAS_EXT ? ['up', null, upPane, 'Загрузить файлы в Smartcat', 'Любые свои файлы — в нужный проект и папку Smartcat.'] : null
   ].filter(Boolean);
   var side = el('nav', { class: 'side' });
   var panesBox = el('div', {});
   NAV.forEach(function (n) {
-    if (n.length === 1) { side.appendChild(el('div', { class: 'navsec', text: n[0] })); return; }
-    var b = el('button', { class: 'nav', type: 'button', title: n[4] || n[1], onclick: function () { nav(n[0]); } }, [
-      svgEl('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + NAV_IC[n[0]] + '</svg>'),
-      el('span', { class: 'navt', text: n[1] }), el('span', { class: 'navn hide' })]);
-    navBtns[n[0]] = b; side.appendChild(b);
+    if (n.length === 1) {
+      side.appendChild(n[0] === '-' ? el('div', { class: 'navdiv' }) : n[0] === '+' ? el('div', { class: 'navgrow' }) : el('div', { class: 'navsec', text: n[0] }));
+      return;
+    }
+    if (n[1]) {
+      var b = n[6] ? el('button', { class: 'nav navstep', type: 'button', title: n[4] || n[1], onclick: function () { nav(n[0]); } }, [
+        el('span', { class: 'num', text: String(n[6]) }),
+        el('span', { class: 'navt' }, [document.createTextNode(n[1]), el('small', { text: n[5] })]), el('span', { class: 'navn hide' })])
+        : el('button', { class: 'nav', type: 'button', title: n[4] || n[1], onclick: function () { nav(n[0]); } }, [
+        svgEl('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + NAV_IC[n[0]] + '</svg>'),
+        el('span', { class: 'navt', text: n[1] }), el('span', { class: 'navn hide' })]);
+      navBtns[n[0]] = b; side.appendChild(b);
+    }
     n[2].classList.remove('hide');
     navPanes[n[0]] = el('div', { class: 'hide' }, [el('div', { class: 'ptitle' }, [document.createTextNode(n[3]), n[4] ? el('div', { class: 'pdesc', text: n[4] }) : null].filter(Boolean)), n[2]]);
     panesBox.appendChild(navPanes[n[0]]);
   });
   /* число на пункте меню (например, сколько отправок уже готово) */
-  function navCount(k, n) { var b = navBtns[k]; if (!b) return; var c = b.querySelector('.navn'); c.textContent = n || ''; c.classList.toggle('hide', !n); }
+  function navCount(k, n) {
+    var bs = [navBtns[GET_SUB[k] ? 'get' : k], getTabs[k]];
+    bs.forEach(function (b) { if (!b) return; var c = b.querySelector('.navn'); c.textContent = n || ''; c.classList.toggle('hide', !n); });
+  }
   var back = el('div', { class: 'back', onclick: function (e) { if (e.target === back) hide(); } }, [
     el('div', { class: 'box' }, [
       el('div', { class: 'top' }, [
@@ -3209,13 +3267,13 @@
               }
               return raw;
             }).then(function (raw) {
-              var r = filterPo(raw, false);
-              if (!r.plurals || !opts.wantJson) return r;
+              var r = filterPo(raw, false, opts.keys);
+              if (!r.plurals || !opts.wantJson || opts.keys) return r;
               return Promise.all([units(x.p, x.c, code, opts.q + ' AND has:plural'), componentFormat(x.p, x.c)]).then(function (a) {
                 var j = pluralJson(a[0], a[1], srcCode, code);
                 if (!j.strings) return r;
                 res.push({ component: x.c, p: x.p, language: code, src: srcCode, strings: j.strings, words: j.words, text: j.text, ext: 'json' });
-                return filterPo(raw, true);
+                return filterPo(raw, true, opts.keys);
               }, function (e) {
                 errs.push([x.c, code, 'плюралки не удалось выгрузить в .json, оставила их в .po: ' + friendly(e).split('\n')[0]]);
                 return r;
@@ -3560,7 +3618,7 @@
       var enFiles = files.filter(function (f) { return isEnglish(f.lang) && enTargets[scPlatform(f.p, f.c)]; });
       if (enFiles.length) info4.appendChild(el('p', { class: 'muted', text: 'Английский (' + enFiles.length + ' файл.) также уйдёт без папки в проекты для английского (' +
         enFiles.map(function (f) { return scPlatform(f.p, f.c); }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', ') +
-        ') с именем ' + ddmmyy() + '_' + enFiles[0].name + ' — когда переводчики закончат, будет в «В работе».' }));
+        ') с именем ' + ddmmyy() + '_' + enFiles[0].name + ' — когда переводчики закончат, будет в «Загрузить переводы» → «Мои отправки».' }));
       function sendEnglish() {
         var by = {};
         enFiles.forEach(function (f) { var pl = scPlatform(f.p, f.c); (by[pl] = by[pl] || []).push(f); });
@@ -4283,7 +4341,7 @@
     }, Promise.resolve()).then(function () {
       var mine = uploads.filter(function (u) { return keys.indexOf(u.scKey) >= 0 && !u.error && !u.skip && !u.sent; });
       if (!mine.length) { msg.className = 'red'; msg.textContent = 'Загружать нечего — у каждой отправки причина написана в строке'; return; }
-      msg.className = 'ok'; msg.textContent = '✓ Загружаю ' + mine.length + ' файл(ов) — результат на вкладке «Загрузить обратно»';
+      msg.className = 'ok'; msg.textContent = '✓ Загружаю ' + mine.length + ' файл(ов) — результат в «Загрузить переводы» → «Файл с компьютера»';
       keys.forEach(function (k) { delete scSel[k]; });
       tab('imp');
       runUpload(function (u) { return keys.indexOf(u.scKey) >= 0; });
@@ -4418,7 +4476,7 @@
           var mine = ours.filter(function (u) { return !u.error && !u.skip && !u.sent; }).length;
           if (mine) {
             st.textContent = '✓ Забрала ' + n + (ready.length < docs.length ? ' (ещё не готово в Smartcat: ' + (docs.length - ready.length) + ')' : '') +
-              ', загружаю ' + mine + ' в Weblate («только непереведённые») — результат на вкладке «Загрузить обратно»';
+              ', загружаю ' + mine + ' в Weblate («только непереведённые») — результат в «Загрузить переводы» → «Файл с компьютера»';
             tab('imp'); runUpload(function (u) { return u.scKey === prKey; });
             return;
           }
@@ -4427,7 +4485,7 @@
           ours.forEach(function (u) { var r = u.sent ? 'уже загружено' : (u.error || u.skip || '?'); why[r] = (why[r] || 0) + 1; });
           st.className = 'red';
           st.textContent = 'Забрала ' + n + ', но загружать нечего: ' + Object.keys(why).map(function (r) { return why[r] + ' × ' + r; }).join('; ') +
-            '. Подробности — на вкладке «Загрузить обратно».';
+            '. Подробности — в «Загрузить переводы» → «Файл с компьютера».';
           return;
         }
         st.textContent = '✓ Готово к загрузке: ' + n + (ready.length < docs.length ? ' (ещё не готово в Smartcat: ' + (docs.length - ready.length) + ')' : '') +
