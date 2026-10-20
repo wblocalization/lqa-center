@@ -1043,6 +1043,12 @@
     '.navstep.on .num{background:linear-gradient(135deg,var(--accent),var(--accent-2));border-color:transparent;color:#fff;box-shadow:var(--glow)}',
     '.navstep.done:not(.on) .num{background:var(--ok-soft);border-color:var(--ok);color:var(--ok);font-size:0}.navstep.done:not(.on) .num::after{content:"✓";font-size:13px}',
     '.navstep+.navstep::before{content:"";position:absolute;left:22px;top:-10px;height:16px;width:1.5px;background:var(--line)}',
+    '.sidecard{margin:14px 4px 0;padding:10px;border-radius:16px;border:1px solid var(--line);background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 10%,var(--card)),color-mix(in srgb,var(--accent-2) 8%,var(--card)));display:flex;flex-direction:column;gap:2px}',
+    '.sct{font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em;margin:2px 6px 4px}',
+    '.scs{display:flex;align-items:center;gap:8px;width:100%;padding:6px;border:0;border-radius:10px;background:transparent;font:inherit;font-size:12.5px;color:var(--ink);cursor:pointer;text-align:left}',
+    '.scs:hover{background:var(--card)}.scs .v{margin-left:auto;font-weight:700;color:var(--ink-soft)}.scs .v.hot{color:#fff;background:var(--accent-2);border-radius:999px;padding:0 7px}',
+    '.sidetip{margin:10px 4px;padding:10px 12px;border-radius:14px;background:var(--soft);font-size:12px;line-height:1.45;color:var(--ink-soft)}.sidetip b{display:block;color:var(--ink);margin-bottom:2px}',
+    '@media (max-width:820px){.sidecard,.sidetip{display:none}}',
     '.gtabs{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:14px;background:var(--soft);margin-bottom:14px}',
     '.gtab{font:inherit;font-size:13.5px;font-weight:600;border:0;border-radius:11px;padding:7px 14px;cursor:pointer;background:transparent;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px}',
     '.gtab:hover{color:var(--ink)}.gtab.on{background:var(--card);color:var(--accent);box-shadow:0 2px 8px rgb(139 92 246 / .18)}',
@@ -2756,6 +2762,7 @@
     var pending = scProjects().filter(function (pr) { return mySetupPr(pr) && !pr.uploaded && scDay(pr) >= wk; });
     var ready = pending.filter(function (pr) { return scReady[pr.key || pr.id]; });
     navCount('work', ready.length);
+    sideStatus(pending, ready);
     var check = el('button', { class: 'b g s', type: 'button', text: 'Проверить', onclick: function () {
       check.disabled = true;
       scCall('sc-watch-now').catch(function () {}).then(function () { return scCall('sc-ready-get'); }).then(function (r) { scReady = r || {}; renderScImport(); homeRefreshSc(); }, function () { check.disabled = false; });
@@ -3147,10 +3154,34 @@
     HAS_EXT ? ['up', null, upPane, 'Загрузить файлы в Smartcat', 'Любые свои файлы — в нужный проект и папку Smartcat.'] : null
   ].filter(Boolean);
   var side = el('nav', { class: 'side' });
+  /* в меню под пунктами: что сейчас с отправками этого сетапа + совет — чтобы было видно состояние, не открывая экраны */
+  var sideCard = el('div', { class: 'sidecard hide' });
+  var SIDE_TIPS = [
+    ['Пара строк вместо всего', 'На шаге 1 галочка «только определённые ключи» — уйдут только они.'],
+    ['Отправки пропали?', '«Загрузить переводы» → «Найти отправки» соберёт их из Smartcat заново.'],
+    ['Файл от подрядчика', 'Перетащи его в «Загрузить переводы» → «Файл с компьютера».'],
+    ['Проект загружали руками', '«Все проекты Smartcat» — там можно забрать любые файлы в Weblate.'],
+    ['Разовые ссылки', 'Сними «запомнить ссылки» — сетап не перезапишется.'],
+    ['Тёмная тема', 'Кнопка ☾ справа вверху.']
+  ];
+  var tip = SIDE_TIPS[Math.floor(Math.random() * SIDE_TIPS.length)];
+  var sideTip = el('div', { class: 'sidetip' }, [el('b', { text: '💡 ' + tip[0] }), el('span', { text: tip[1] })]);
+  function sideStatus(pending, ready) {
+    if (!HAS_EXT || !sideCard) return;
+    var mine = scProjects().filter(mySetupPr), last = 0;
+    mine.forEach(function (pr) { var t = new Date(pr.created || 0).getTime(); if (t > last) last = t; });
+    sideCard.textContent = ''; sideCard.classList.remove('hide');
+    sideCard.appendChild(el('div', { class: 'sct', text: 'Сейчас' }));
+    [['🔔', 'Готово к загрузке', ready.length, ready.length > 0], ['⏳', 'Переводится', pending.length - ready.length], ['📦', 'Последняя отправка', last ? fmtDate(new Date(last).toISOString()).slice(0, 5) : '—']].forEach(function (r) {
+      sideCard.appendChild(el('button', { class: 'scs', type: 'button', onclick: function () { nav('work'); } }, [
+        el('span', { text: r[0] }), el('span', { text: r[1] }), el('span', { class: 'v' + (r[3] ? ' hot' : ''), text: String(r[2]) })]));
+    });
+  }
   var panesBox = el('div', {});
   NAV.forEach(function (n) {
     if (n.length === 1) {
-      side.appendChild(n[0] === '-' ? el('div', { class: 'navdiv' }) : n[0] === '+' ? el('div', { class: 'navgrow' }) : el('div', { class: 'navsec', text: n[0] }));
+      if (n[0] === '+') { side.appendChild(sideCard); side.appendChild(el('div', { class: 'navgrow' })); side.appendChild(sideTip); return; }
+      side.appendChild(n[0] === '-' ? el('div', { class: 'navdiv' }) : el('div', { class: 'navsec', text: n[0] }));
       return;
     }
     if (n[1]) {
