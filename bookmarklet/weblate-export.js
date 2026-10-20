@@ -902,6 +902,11 @@
     '.opts label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:var(--ink-soft)}',
     '.flag{display:inline-block;width:24px;height:18px;flex:none;vertical-align:middle;border-radius:3px;overflow:hidden}',
     '.flag svg{width:24px;height:18px;display:block}',
+    '.lpwrap{display:flex;flex-direction:column;gap:6px;margin-top:10px;font-size:12.5px;font-weight:600;color:var(--ink-soft)}.lpwrap>.muted{font-weight:400}',
+    '.lpick{display:flex;flex-wrap:wrap;gap:6px}',
+    '.lpb{display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 5px;border-radius:999px;border:1px solid var(--line);background:var(--card);font:inherit;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer}',
+    '.lpb .flag{width:20px;height:15px;border-radius:50%/40%}.lpb .flag svg{width:20px;height:15px}.lpb small{color:var(--ink-soft);font-weight:500;font-size:11px}',
+    '.lpb:hover{border-color:var(--accent)}.lpb.on{background:var(--soft);border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 15%,transparent)}',
     '.lang{display:inline-flex;align-items:center;gap:8px}',
     '.layouts{display:grid;gap:6px}',
     '.layouts label{display:flex;gap:8px;align-items:baseline;padding:8px 11px;border:1px solid var(--line);border-radius:12px;cursor:pointer;background:var(--card)}',
@@ -1992,6 +1997,28 @@
   var scEnWeb = el('input', { type: 'text', placeholder: SC_EN_DEFAULTS.web });
   var scLangWeb = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg am az sw' });
   var scLangMob = el('input', { type: 'text', placeholder: 'en ka kk uz ky hy tg az' });
+  /* языки сетапа кнопками с флагами: нажал — язык добавился в поле с кодами, ещё раз — убрался; редкий язык — кодом в поле */
+  var LANG_PICK = ['en', 'kk', 'uz', 'ky', 'hy', 'ka', 'tg', 'az', 'am', 'sw', 'tr', 'zh', 'ar', 'be', 'he', 'fr'];
+  function langPick(inp) {
+    var box = el('div', { class: 'lpick' });
+    function codes() { return inp.value.trim().toLowerCase().split(/[\s,;]+/).filter(Boolean); }
+    function draw() {
+      box.textContent = '';
+      var cur = codes(), all = LANG_PICK.concat(cur.filter(function (c) { return LANG_PICK.indexOf(c) < 0; }));
+      all.forEach(function (c) {
+        var on = cur.indexOf(c) >= 0;
+        box.appendChild(el('button', { class: 'lpb' + (on ? ' on' : ''), type: 'button', title: c, onclick: function () {
+          var now = codes();
+          inp.value = (on ? now.filter(function (x) { return x !== c; }) : now.concat([c])).join(' ');
+          inp.dispatchEvent(new Event('input')); inp.dispatchEvent(new Event('change'));
+          draw();
+        } }, [flag(c), el('span', { text: langName(c) }), el('small', { text: c })]));
+      });
+    }
+    inp.addEventListener('input', draw);
+    inp._lpDraw = draw; draw();
+    return box;
+  }
   var scLinksMob = el('textarea', { class: 'small', placeholder: SC_DEFAULT_LINKS });
   /* сообщение в чат (Band): шаблон, вебхук, автоотправка — у каждого сетапа свои */
   var BAND_TPL_DEFAULT = 'Привет! Выгрузка {дата} · {проект}\n📦 Подрядчикам: {архивы}\n🤖 В Smartcat: {smartcat}\n🌍 Языки: {языки}\n🧩 Компоненты: {компоненты}\nСтрок: {строки}';
@@ -2270,6 +2297,7 @@
       scLangs.value = c.langMap; scExtra.value = c.extra; scProject.value = c.project === SC_PROJECT_DEFAULT ? '' : c.project;
       scEnAndroid.value = c.enAndroid; scEnIos.value = c.enIos; scEnWeb.value = c.enWeb || '';
       scLangWeb.value = c.langWeb || ''; scLangMob.value = c.langMob || ''; scLinksMob.value = c.linksMob || '';
+      if (scLangWeb._lpDraw) { scLangWeb._lpDraw(); scLangMob._lpDraw(); }
       bandTpl.value = c.bandTpl || ''; bandHook.value = c.bandHook || ''; bandAuto.checked = !!c.bandAuto;
       bandPeople.value = c.bandPeople || ''; bandTplWeb.value = c.bandTplWeb || ''; bandTplApp.value = c.bandTplApp || '';
       asgSel = (c.enAssign || []).slice(); edSel = (c.enEdit || []).slice(); asgOn.checked = c.enAssignOn !== false;
@@ -2366,7 +2394,7 @@
   var fWeb, fMob, fEnMob, fEnWeb, fPeople, fBandWeb, fBandApp, fSched, fShopParts, fMt, fWebTxt;
   function partsShow() {
     var shop = partKind.value === 'shop', w = !shop || partWeb.checked, m = shop && partMob.checked, e = partEn.value === 'staff';
-    [[fShopParts, shop], [fMt, !shop], [fWeb, w], [fMob, m], [fEnMob, m && e], [fEnWeb, w && e], [fPeople, e], [fBandWeb, w], [fBandApp, m], [fSched, m]].forEach(function (x) { if (x[0]) x[0].classList.toggle('hide', !x[1]); });
+    [[fShopParts, shop], [fMt, !shop], [fWeb, w], [fMob, m], [fEnMob, m && e], [fEnWeb, w && e], [fPeople, false], [fBandWeb, w], [fBandApp, m], [fSched, m]].forEach(function (x) { if (x[0]) x[0].classList.toggle('hide', !x[1]); });
     if (fWebTxt) fWebTxt.textContent = shop ? 'Языки веба (коды через пробел) — пусто = ' + LANG_TPL_DEFAULTS[0].bases.join(' ') : 'Языки проекта (коды Weblate через пробел)';
   }
   [partKind, partWeb, partMob, partEn, partMt].forEach(function (b) { b.addEventListener('change', partsShow); });
@@ -2384,12 +2412,13 @@
       fShopParts = el('div', { class: 'row', style: 'gap:18px;flex-wrap:wrap' }, [
         el('label', { class: 'blk' }, [partWeb, 'Веб']),
         el('label', { class: 'blk' }, [partMob, 'Android и iOS'])]),
-      fWeb = el('label', {}, [fWebTxt = el('span', { text: 'Языки веба (коды через пробел) — пусто = ' + LANG_TPL_DEFAULTS[0].bases.join(' ') }), scLangWeb]),
-      fMt = el('label', { class: 'blk' }, [partMt, 'отправлять все языки в Smartcat на машперевод (иначе — только архивы для подрядчика)']),
+      fWeb = el('div', { class: 'lpwrap' }, [fWebTxt = el('span', { text: 'Языки веба (коды через пробел) — пусто = ' + LANG_TPL_DEFAULTS[0].bases.join(' ') }), langPick(scLangWeb),
+        el('span', { class: 'muted', text: 'Нажми на язык, чтобы добавить или убрать. Нет нужного — впиши код в поле ниже.' }), scLangWeb]),
+      fMt = el('label', { class: 'blk' }, [partMt, 'отправлять в Smartcat — все языки в проект этого сетапа (иначе — только архивы для подрядчика)']),
       el('label', {}, ['Английский', partEn]),
-      fMob = el('div', {}, [el('label', {}, ['Языки android и iOS — пусто = ' + LANG_TPL_DEFAULTS[1].bases.join(' '), scLangMob]),
+      fMob = el('div', {}, [el('div', { class: 'lpwrap' }, [el('span', { text: 'Языки android и iOS — пусто = ' + LANG_TPL_DEFAULTS[1].bases.join(' ') }), langPick(scLangMob), scLangMob]),
         el('label', {}, ['Ссылки шаблона «Android и iOS» — пусто = android + ios_new', scLinksMob])]),
-      el('label', {}, ['Машперевод: проект в Smartcat (ссылка или название) — пусто = «' + SC_PROJECT_DEFAULT + '»', scProject]),
+      el('label', {}, ['Проект в Smartcat, куда отправлять (ссылка или название)' + ' — у Магазинки пусто = «' + SC_PROJECT_DEFAULT + '»', scProject]),
       fEnMob = el('div', {}, [el('label', {}, ['Английский android → проект — пусто = стандартный', scEnAndroid]),
         el('label', {}, ['Английский iOS → проект — пусто = стандартный', scEnIos])]),
       fEnWeb = el('label', {}, ['Английский веба → проект (папка «ДДММГГ web») — пусто = «' + SC_EN_DEFAULTS.web + '»', scEnWeb])], true),
@@ -2483,7 +2512,7 @@
     homeLinks.placeholder = homeMode === 'mob' ? 'Ссылки на android и iOS' : 'Ссылки на компоненты веба, категории или целый проект — можно вставить сообщение из чата целиком';
   }
   homeLoadLinks();
-  var homeSeg = el('div', { class: 'seg' });
+  var homeSeg = el('div', { class: 'seg' }), homeTplLbl = null;
   var homeLangInfo = el('div', { class: 'muted' });
   function homeRenderSeg() {
     homeSeg.textContent = '';
@@ -2504,7 +2533,33 @@
     });
     var w = tplByPlat('web'), mb = tplByPlat('android');
     var up = function (t) { return t ? t.bases.join(' ').toUpperCase() : '—'; };
-    homeLangInfo.textContent = 'Языки: ' + (homeMode === 'mob' ? up(mb) : up(w)) + ' · меняются в Настройках → Проект';
+    homeLangInfo.textContent = '';
+    if (pt.kind === 'shop') homeLangInfo.textContent = 'Языки: ' + (homeMode === 'mob' ? up(mb) : up(w)) + ' · меняются в Настройках → Проект';
+    else {
+      /* обычный сетап: без «шаблонов» Магазинки — только свои языки и ссылка поменять */
+      var own = scCfg && String(scCfg.langWeb || '').trim();
+      homeLangInfo.appendChild(document.createTextNode(own ? 'Языки: ' + up(w) + ' · ' : 'Языки этого сетапа не заданы — сейчас берутся стандартные (' + up(w) + ') · '));
+      homeLangInfo.appendChild(el('button', { class: 'lnk', type: 'button', text: own ? 'поменять' : 'задать свои', onclick: function () { showSettings(true); } }));
+      homeLangInfo.appendChild(document.createTextNode(' · '));
+      homeLangInfo.appendChild(el('button', { class: 'lnk', type: 'button', text: 'выбрать галочками разово', onclick: homeToManual }));
+    }
+    if (homeTplLbl) { homeTplLbl.textContent = pt.kind === 'shop' ? 'Шаблон' : 'Языки'; homeSeg.classList.toggle('hide', pt.kind !== 'shop'); }
+    homeTexts(pt);
+  }
+  /* тексты кнопки и шагов — по тому, что делает сетап (у обычного проекта нет «машперевода и английского» Магазинки) */
+  function homeTexts(pt) {
+    if (!homeGo || !HAS_EXT) return;
+    var proj = scCfg ? (activeSetup(scCfg).project || '') : '';
+    var shop = pt.kind === 'shop', sendSc = shop || pt.mt;
+    homeGo.firstChild.textContent = sendSc ? 'Выгрузить и отправить' : 'Выгрузить архивы';
+    homeGo.lastChild.textContent = shop ? 'архивы на компьютер · машперевод и английский в Smartcat'
+      : sendSc ? 'архивы на компьютер · все языки в Smartcat' + (pt.en === 'staff' ? ' · английский переводчикам' : '') : 'на компьютер, для подрядчика — без Smartcat';
+    homeZip.classList.toggle('hide', !sendSc);
+    homeSteps[1].row.classList.toggle('hide', !sendSc);
+    homeSteps[2].row.classList.toggle('hide', !sendSc);
+    homeSteps[2].t.textContent = shop ? 'Машинный перевод' : 'Перевод в Smartcat';
+    homeSteps[3].row.classList.toggle('hide', !sendSc);
+    if (!shop) homeSetupNote.textContent = !sendSc ? 'только архивы, без Smartcat' : proj ? 'Smartcat: ' + proj : 'проект Smartcat не выбран — ⚙';
   }
   /* свои языки — та же выгрузка с галочками на вкладке «Выгрузка вручную» */
   function homeToManual() {
@@ -2550,6 +2605,14 @@
   var homeZip = el('button', { class: 'b g s', type: 'button', text: 'Только архивы, без Smartcat', onclick: function () { homeRun(false); } });
   if (!HAS_EXT) { homeGo.firstChild.textContent = 'Выгрузить'; homeGo.lastChild.textContent = 'архивы на компьютер'; homeZip.classList.add('hide'); }
   function homeRun(send) {
+    var ptR = partsOf(scCfg);
+    if (ptR.kind !== 'shop' && !ptR.mt) send = false;   /* сетап «только архивы» — в Smartcat ничего не уходит */
+    /* обычный сетап отправляет в свой проект; без проекта не отправляем «по умолчанию» в проект Магазинки */
+    if (send && HAS_EXT && ptR.kind !== 'shop' && scCfg && !activeSetup(scCfg).project) {
+      homeSteps.forEach(function (st, i) { homeStep(i, 'next', ''); });
+      homeStep(1, 'err', 'Выбери проект Smartcat для этого сетапа: ⚙ → Проект → «Проект в Smartcat». Или нажми «Только архивы».');
+      return;
+    }
     var text = homeLinks.value.trim();
     homeSteps.forEach(function (s, i) { homeStep(i, 'next', ''); });
     homeAssignOn = false;
@@ -2793,7 +2856,7 @@
   function homeSetupFill(c) {
     if (!c) { homeSetup.parentNode && homeSetup.parentNode.classList.add('hide'); homeRenderSeg(); return; }
     homeSetupNote.textContent = 'Smartcat: ' + (c.project || SC_PROJECT_DEFAULT) + (c.enWeb ? ' · веб EN: ' + c.enWeb : '');
-    homeRenderSeg();
+    homeRenderSeg();   /* у обычного сетапа подпись перепишет homeTexts */
   }
   /* ----- «Загрузить в Smartcat»: свои файлы → проект (или новый) → папка (или новая) → языки ----- */
   var upSc = { files: [], pr: null, mode: 'old', folder: '', langs: null, q: '' };
@@ -2811,7 +2874,7 @@
   var upScLangBox = el('div', { class: 'chipsw' });
   var upScByName = el('input', { type: 'checkbox' }); upScByName.checked = sget('wlx_upsc_byname') !== '0';
   /* назначить людей из «Люди на английский» (перевод — этап 1, редактура — этап 2) на загруженные документы */
-  var upScAsg = el('input', { type: 'checkbox' }); upScAsg.checked = sget('wlx_upsc_asg') === '1';
+  var upScAsg = el('input', { type: 'checkbox' }); upScAsg.checked = false;   /* назначение людей выключено совсем */
   var upScAsgTxt = el('span', { text: 'назначить людей (Настройки → «Люди на английский»)' });
   upScAsg.addEventListener('change', function () { sset('wlx_upsc_asg', upScAsg.checked ? '1' : '0'); });
   function upScAsgLabel() {
@@ -2850,7 +2913,7 @@
         el('div', { class: 'step' }, [el('div', { class: 'stepn', text: '3' }), el('div', { class: 'stepb' }, [el('div', { class: 'stept', text: 'Папка' }), upScFolders, upScNewFolder])]),
         el('div', { class: 'step' }, [el('div', { class: 'stepn', text: '4' }), el('div', { class: 'stepb' }, [el('div', { class: 'stept', text: 'Языки' }), upScLangBox,
           el('label', { class: 'chk' }, [upScByName, 'если язык есть в имени файла (…_kk.po) — только на этот язык']),
-          el('label', { class: 'chk' }, [upScAsg, upScAsgTxt])])])
+          el('label', { class: 'chk hide' }, [upScAsg, upScAsgTxt])])])
       ]),
       el('div', { class: 'sheetfoot' }, [upScWhere, el('div', { class: 'row' }, [upScGo, upScMsg])])
     ])
@@ -3089,8 +3152,9 @@
   var homePane = el('div', {}, [
     card(null, [
     HAS_EXT ? el('div', { class: 'row hsetup', style: 'margin-top:0' }, [el('span', { class: 'lbl', text: 'Проект' }), homeSetup,
+      el('button', { class: 'b g s', type: 'button', text: '⚙', title: 'Настроить этот сетап: что выгружать, языки, проект Smartcat — у каждого свои', onclick: function () { showSettings(true); } }),
       el('button', { class: 'b g s', type: 'button', text: '＋', title: 'Новый сетап: свои ссылки, языки и проекты Smartcat', onclick: function () { showSettings(true); newSetup(); } }), homeSetupNote]) : null,
-    el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Шаблон' }), homeSeg, homeLangInfo]),
+    el('div', { class: 'hblock' }, [homeTplLbl = el('span', { class: 'lbl', text: 'Шаблон' }), homeSeg, homeLangInfo]),
     el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Что выгружаем' }), homeLinks,
       el('div', { class: 'row', style: 'margin-top:6px' }, [el('label', { class: 'muted', title: 'Включено — ссылки подставятся сами в следующий раз. Выключено — поле каждый раз своё, а сохранённые ссылки сетапа забываются' }, [homePin, ' запомнить ссылки для этого сетапа']), homeClear])]),
     el('div', { class: 'hblock' }, [el('label', { class: 'muted', title: 'Отправить не всё, а только строки с этими ключами' }, [homeKeysOn, ' только определённые ключи']), homeKeys]),
@@ -3786,30 +3850,10 @@
           enRes.forEach(function (x) {
             msg.appendChild(el('div', { class: x.ok ? 'ok' : 'red', text: (x.ok ? '✓ Английский: ' : '✗ Английский: ') + x.text }));
           });
-          /* назначить переводчиков на английские документы (EN android / EN ios / веб) */
-          var enDocIds = [].concat.apply([], enRes.filter(function (x) { return x.ok && x.docIds; }).map(function (x) { return x.docIds; }))
-            .concat([].concat.apply([], made.filter(function (p) { return p.enDocs && p.docIds; }).map(function (p) { return p.docIds; })));
-          var enProjIds = enRes.filter(function (x) { return x.ok && x.projectId; }).map(function (x) { return x.projectId; })
-            .concat(made.filter(function (p) { return p.enDocs; }).map(function (p) { return p.id; }));
-          var who = c.enAssign || [], eds = c.enEdit || [];
-          var roles = [{ stage: 1, label: 'перевод', list: who }, { stage: 2, label: 'редактура', list: eds }].filter(function (x) { return x.list.length; });
-          if (enDocIds.length && c.enAssignOn !== false && roles.length) {
-            roles.reduce(function (chain, ro) {
-              var am = el('div', { class: 'muted', text: 'Назначаю на английский (' + ro.label + '): ' + ro.list.map(function (x) { return x.name; }).join(', ') + '… (может занять пару минут — Smartcat считает слова)' });
-              msg.appendChild(am);
-              return chain.then(function () {
-                return scCall('sc-assign', { documentIds: enDocIds, projectIds: enProjIds, stage: ro.stage, userIds: ro.list.map(function (x) { return x.id; }) }).then(function (res) {
-                  am.className = 'ok'; am.textContent = '✓ Английский (' + enDocIds.length + ' док.), ' + ro.label + ' — назначены: ' + ro.list.map(function (x) { return x.name; }).join(', ') + (res && res.how === 'tasks' ? ' (на задачи проекта)' : ' (все, кто примет' + (res && res.how === 'myTeam' ? '; через приглашение «Моей команды»' : '') + ')');
-                  homeAssignNote('✓ ' + ro.label + ': ' + ro.list.length + ' чел.', true);
-                }, function (e) {
-                  am.className = 'red'; am.textContent = '✗ Не получилось назначить (' + ro.label + ', этап ' + ro.stage + '): ' + e.message + ' — назначь в Smartcat вручную';
-                  homeAssignNote('✗ ' + ro.label + ' не назначена — текст ошибки в «Подробностях»', false);
-                });
-              });
-            }, Promise.resolve());
-          } else if (enDocIds.length && !who.length && !eds.length) {
-            msg.appendChild(el('div', { class: 'muted', text: 'Переводчики на английский не назначены — выбрать их можно в ⚙ → «Назначать на английский».' }));
-          }
+          /* людей на английский расширение не назначает (раньше назначало «между всеми, кто принял» — убрано по просьбе команды):
+             исполнителей выбирают в Smartcat сами */
+          if (enRes.some(function (x) { return x.ok; }) || made.some(function (p) { return p.enDocs; }))
+            msg.appendChild(el('div', { class: 'muted', text: 'Исполнителей на английский назначь в Smartcat сама — расширение никого не назначает.' }));
           made.forEach(function (p) {
             (p.lost || []).forEach(function (t) {
               msg.appendChild(el('div', { class: 'red', text: /^языков нет/.test(t) ? p.name + ': ' + t : 'Не поняла, к какому компоненту/языку относится: ' + t }));
