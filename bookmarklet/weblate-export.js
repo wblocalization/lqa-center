@@ -1059,7 +1059,7 @@
     '.nav.on{background:var(--soft);color:var(--accent)}',
     '.navt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
     '.side .nav .navt{white-space:normal;line-height:1.3}.side{display:flex;flex-direction:column;width:236px}.side>*{flex-shrink:0}.navgrow{flex:1 0 12px}.navdiv{height:1px;background:var(--line);margin:12px 10px;flex:none}',
-    '.nav.navstep{align-items:flex-start;padding:8px 10px}.navstep .navt{white-space:normal}.navstep .navt small{display:block;font-weight:500;font-size:11.5px;color:var(--ink-soft);opacity:.85;margin-top:1px}',
+    '.nav.navstep{align-items:center;padding:8px 10px}.navstep .navt{white-space:normal}.navstep .navt small{display:block;font-weight:500;font-size:11.5px;color:var(--ink-soft);opacity:.85;margin-top:1px}',
     '.navstep .num{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);display:grid;place-items:center;font-size:12px;font-weight:700;color:var(--ink-soft);flex:none;position:relative;z-index:1}',
     '.navstep.on .num{background:linear-gradient(135deg,var(--accent),var(--accent-2));border-color:transparent;color:#fff;box-shadow:var(--glow)}',
     '.navstep.done:not(.on) .num{background:var(--ok-soft);border-color:var(--ok);color:var(--ok);font-size:0}.navstep.done:not(.on) .num::after{content:"✓";font-size:13px}',
@@ -1297,12 +1297,12 @@
     ]),
     tplHint,
     langsBox,
-    el('details', { class: 'more' }, [el('summary', { text: 'Ещё настройки: «требует правки», плюралки, раскладка архива' }),
+    el('details', { class: 'more' }, [el('summary', { text: 'Ещё настройки' }),
       el('label', { class: 'muted blk' }, [fuzzy, ' включать строки «требует правки»']),
-      el('label', { class: 'muted blk' }, [pluralsJson, ' плюралки (множественное число) — отдельным .json, как у нас принято']),
+      el('label', { class: 'muted blk' }, [pluralsJson, ' плюралки — отдельным .json']),
       el('div', { class: 'lbl', style: 'margin-top:12px', text: 'Внутри архива' }),
       layoutBox]),
-    el('p', { class: 'muted', text: 'Архивы сохранятся сами: ДДММГГ_web.zip / _iOS.zip / _android.zip, без английского.' }),
+    el('p', { class: 'muted', text: 'Архивы: ДДММГГ_web / _iOS / _android.zip' }),
     el('div', { class: 'row' }, [goBtn]),
     err2
   ], 'hide');
@@ -1358,7 +1358,7 @@
   });
 
   var exportPane = el('div', {}, [
-    el('p', { class: 'sub', text: 'Своя выгрузка: любые ссылки и языки галочками. Для обычной работы — 🏠 Главная.' }),
+    
     card('Ссылки', [exportPresets, links, el('div', { class: 'row' }, [loadBtn, clearBtn, restoreBtn, info]), err1, compList]),
     langSec,
     resSec
@@ -1373,7 +1373,7 @@
   }
   function savedOr(k, def) { var v = sget(k); return v === null ? def : v; }
   var fileInput = el('input', { type: 'file', multiple: '', accept: '.po,.json,.zip' });
-  var drop = el('label', { class: 'drop' }, [fileInput, el('div', { text: 'Перетащи сюда .po, .json (плюралки) или .zip от подрядчика — или нажми, чтобы выбрать' })]);
+  var drop = el('label', { class: 'drop' }, [fileInput, el('div', { text: 'Перетащи .po / .json / .zip или нажми' })]);
   var preview = el('div');
   var errU = el('div', { class: 'err' });
   var optMethod = select([['translate', 'Добавить как перевод'], ['suggest', 'Добавить как предложение'], ['fuzzy', 'Добавить перевод как «На правку»']], savedOr('wlx_m', 'translate'));
@@ -1398,21 +1398,21 @@
   [optMethod, optFuzzy, optConf].forEach(function (x) { x.addEventListener('change', modeSumUpd); });
   modeSumUpd();
   var upSec = card('Загрузка', [
-    el('label', { class: 'muted blk' }, [varSkip, ' строки с ошибкой (сломанная переменная, мусор от машперевода) не грузить как готовый перевод — остальное загрузится как обычно']),
-    el('label', { class: 'muted blk' }, [salvageOn, ' из «рассуждений» ИИ вытаскивать сам перевод и загружать его «На правку» — чтобы осталось только проверить']),
-    el('label', { class: 'muted blk' }, [brokenUp, ' остальные строки с ошибкой загружать «На правку» как есть — после загрузки будет список со ссылками прямо на них']),
+    el('label', { class: 'muted blk', title: 'Сломанная переменная, мусор от машперевода. Остальное загрузится как обычно.' }, [varSkip, ' строки с ошибкой — не как готовый перевод']),
+    el('label', { class: 'muted blk' }, [salvageOn, ' вытаскивать перевод из «рассуждений» ИИ → «На правку»']),
+    el('label', { class: 'muted blk' }, [brokenUp, ' остальные с ошибкой → «На правку» как есть']),
     el('details', { class: 'more' }, [modeSum,
       el('div', { class: 'opts' }, [
         el('label', {}, ['Режим загрузки файла', optMethod]),
         el('label', {}, ['Обработка строк, отмеченных «На правку»', optFuzzy]),
         el('label', {}, ['Разрешение конфликтов', optConf])
       ]),
-      el('p', { class: 'muted', text: 'Машинный перевод из Smartcat эти настройки не использует: он всегда идёт только в непереведённые строки. «Заменить файл» нет специально — в файлах только часть строк.' })]),
+      el('p', { class: 'muted', text: 'Для машперевода не действует — он всегда только в пустые строки.' })]),
     el('div', { class: 'row' }, [upBtn]),
     upResults
   ], 'hide');
   var importPane = el('div', { class: 'hide' }, [
-    el('p', { class: 'sub', text: 'Перетащи файлы от подрядчиков — компонент и язык определятся сами.' }),
+    el('p', { class: 'sub', text: 'Компонент и язык определятся сами.' }),
     card('Файлы от подрядчиков', [drop, errU, preview]),
     upSec
   ]);
@@ -1459,7 +1459,7 @@
   } });
   var scImpBox = el('div', { class: 'scimp card' }, [
     el('div', { class: 'head' }, [el('h3', { text: 'Все файлы в Smartcat → в Weblate' }), scImpOpen]),
-    el('p', { class: 'hint', text: 'Все проекты Smartcat → папки → файлы, даже если файлы грузили руками (например, веб). Можно и файлы, которые ещё в работе.' }),
+    el('p', { class: 'hint', text: 'Любой проект и папка — даже то, что грузили руками.' }),
     scImpBody
   ]);
   scImpProject.style.flex = '1'; scImpProject.style.minWidth = '240px'; scImpProject.style.margin = '0';
@@ -1469,7 +1469,7 @@
     el('div', { class: 'card' }, [
       HAS_EXT ? el('div', { class: 'setrow' }, ['Сетап:', scSetupQuick, scSetupNote]) : null,
       el('h3', { text: 'Только android + iOS на машперевод' }),
-      el('p', { class: 'hint', text: 'Непереведённое из android и iOS по языкам проекта (⚙ → Проект) → ZIP и Smartcat.' }),
+      el('p', { class: 'hint', text: 'Непереведённое android и iOS → ZIP и Smartcat.' }),
       el('div', { class: 'row' }, HAS_EXT ? [scRunSend, scRun] : [scRun]),
       el('details', {}, [el('summary', { text: 'Компоненты и наборы' }),
         scPresets,
@@ -2455,7 +2455,7 @@
   var scCustomLbl = el('label', {}, ['Адрес сервера', scCustom]);
   scServer.addEventListener('change', function () { scCustomLbl.classList.toggle('hide', scServer.value !== 'custom'); });
   var connFold = fold('Подключение к Smartcat', [
-    el('p', { class: 'muted', text: 'Ключ API: Smartcat → Настройки → API. Хранится только в расширении на этом компьютере.' }),
+    el('p', { class: 'muted', text: 'Smartcat → Настройки → API. Хранится только на этом компьютере.' }),
     el('label', {}, ['Сервер', scServer]),
     scCustomLbl,
     el('label', {}, ['Account ID', scAccount]),
@@ -2473,7 +2473,7 @@
   [partKind, partWeb, partMob, partEn, partMt].forEach(function (b) { b.addEventListener('change', partsShow); });
   var settingsPane = el('div', { class: 'settings hide' }, [
     fold('Проект (сетап)', [
-      el('p', { class: 'muted', text: 'У каждого проекта или команды — свои ссылки, языки и проекты Smartcat. Аккаунт и ключ общие.' }),
+      el('p', { class: 'muted', text: 'Свои ссылки, языки и проекты. Ключ общий.' }),
       el('div', { class: 'row' }, [scSetup,
         el('button', { class: 'b g s', text: '＋ Новый', onclick: newSetup }),
         el('button', { class: 'b g s', text: 'Удалить', onclick: deleteSetup })]),
@@ -2486,7 +2486,7 @@
         el('label', { class: 'blk' }, [partWeb, 'Веб']),
         el('label', { class: 'blk' }, [partMob, 'Android и iOS'])]),
       fWeb = el('div', { class: 'lpwrap' }, [fWebTxt = el('span', { text: 'Языки веба (коды через пробел) — пусто = ' + LANG_TPL_DEFAULTS[0].bases.join(' ') }), langPick(scLangWeb),
-        el('span', { class: 'muted', text: 'Нажми на язык, чтобы добавить или убрать. Нет нужного — впиши код в поле ниже.' }), scLangWeb]),
+        el('span', { class: 'muted', text: 'Нет нужного — впиши код ниже.' }), scLangWeb]),
       fMt = el('label', { class: 'blk' }, [partMt, 'отправлять в Smartcat — все языки в проект этого сетапа (иначе — только архивы для подрядчика)']),
       el('label', {}, ['Английский', partEn]),
       fMob = el('div', {}, [el('div', { class: 'lpwrap' }, [el('span', { text: 'Языки android и iOS — пусто = ' + LANG_TPL_DEFAULTS[1].bases.join(' ') }), langPick(scLangMob), scLangMob]),
@@ -2501,13 +2501,13 @@
         el('label', { class: 'blk' }, [partMerge, 'один файл на все языки']),
         el('label', {}, ['Название папки или файла в Smartcat', partName])])], true),
     fPeople = fold('Люди на английский', [
-      el('p', { class: 'muted', text: 'Назначаются сразу при отправке на английские документы (EN android, EN ios, веб). Перевод — этап 1, редактура — этап 2. Режим — все, кто примет.' }),
+      el('p', { class: 'muted', text: 'На английский: этап 1 — перевод, 2 — редактура. Берёт первый, кто примет.' }),
       el('label', { class: 'blk' }, [asgOn, 'назначать автоматически']),
       el('div', { class: 'row' }, [asgLoad, asgMsg]),
       asgList]),
     connFold,
     fold('Сообщения в чат (Band)', [
-      el('p', { class: 'muted', text: 'После «Выгрузить и отправить» на главной появятся готовые сообщения для веба и для приложений — со ссылками на Smartcat. Вписываешь дедлайн, копируешь, вставляешь в Band.' }),
+      el('p', { class: 'muted', text: 'Ссылки и срок подставятся сами после отправки.' }),
       el('label', {}, ['Кого тегнуть ({люди})', bandPeople]),
       fBandWeb = el('div', {}, [el('label', {}, [fBandWebLbl = el('span', { text: 'Сообщение для веба — пусто = стандартное' }), bandTplWeb]),
         tplChips(bandTplWeb, function () { return partKind.value === 'shop' ? BAND_TPL_WEB : BAND_TPL_GEN; }, ['люди', 'дедлайн', 'ссылка_папка', 'папка', 'ссылка_веб', 'слово_веб', 'дата', 'языки'])]),
@@ -2519,17 +2519,17 @@
         el('label', {}, ['Вебхук чата (Band / Mattermost / Slack)', bandHook]),
         el('label', { class: 'blk' }, [bandAuto, 'отправлять сводку в чат автоматически'])])]),
     fold('Папка для архивов', [
-      el('p', { class: 'muted', text: 'Куда сохранять zip для подрядчиков. Если папка недоступна — архив скачается в «Загрузки».' }),
+      el('p', { class: 'muted', text: 'Нет доступа к папке — скачается в «Загрузки».' }),
       el('div', { class: 'row' }, [dirPick, dirForget, dirInfo]),
       el('label', { class: 'blk' }, [dirUnzip, 'сохранять папками, без zip']),
       el('label', { class: 'blk' }, [dirDated, 'класть в подпапку с датой (ДДММГГ)'])]),
     fSched = fold('Отправка по расписанию', [
-      el('p', { class: 'muted', text: 'В это время (по Москве) расширение само выгружает android и iOS и отправляет в Smartcat. Chrome должен быть открыт, а ты — залогинена в Weblate. Включай только на одном компьютере.' }),
+      el('p', { class: 'muted', text: 'По Москве. Chrome открыт, Weblate залогинен. Только на одном компьютере.' }),
       el('label', { class: 'blk' }, [schOn, 'отправлять по расписанию']),
       el('label', {}, ['Когда (по Москве)', schText]),
       el('div', { class: 'row' }, [schRun, schNext])]),
     fold('Звук уведомлений', [
-      el('p', { class: 'muted', text: 'Каким звуком сообщать, что машперевод или переводчики закончили. «Системный» — как настроены уведомления в Windows / macOS.' }),
+      el('p', { class: 'muted', text: 'Когда перевод готов.' }),
       el('div', { class: 'row' }, [sndSel, sndTry])]),
     fold('Дополнительно', [
       el('label', {}, ['Коды языков для Smartcat (код_weblate=код_smartcat, по строке)', scLangs]),
@@ -2563,7 +2563,7 @@
   /* ================= ГЛАВНАЯ (вариант A): ссылки → языки → одна кнопка → шаги ================= */
   var homeSetup = el('select', { class: 'presel' });
   var homeSetupNote = el('span', { class: 'muted' });
-  var homeLinks = el('textarea', { class: 'small hlinks', placeholder: 'Ссылки на компоненты, категории или целый проект — можно вставить сообщение из чата целиком' });
+  var homeLinks = el('textarea', { class: 'small hlinks', placeholder: 'Ссылки на компоненты или проект — можно вставить сообщение из чата' });
   /* шаблоны: «Веб» — свои ссылки + языки веба; «Android и iOS» — ссылки и языки подставляются сами (⚙ → Проект) */
   var HOME_MODES = [['web', 'Веб'], ['mob', 'Android и iOS'], ['manual', 'Свои языки…']];
   var homeMode = sget('wlx_home_tpl') === 'mob' ? 'mob' : 'web';
@@ -2587,7 +2587,7 @@
   function homeLoadLinks() {
     homePin.checked = homePinOn();
     homeLinks.value = homeMode === 'mob' ? (sget('wlx_home_links_mob') || mobLinks()) : homeWebLinks;
-    homeLinks.placeholder = homeMode === 'mob' ? 'Ссылки на android и iOS' : 'Ссылки на компоненты веба, категории или целый проект — можно вставить сообщение из чата целиком';
+    homeLinks.placeholder = homeMode === 'mob' ? 'Ссылки на android и iOS' : 'Ссылки на веб — можно вставить сообщение из чата';
   }
   homeLoadLinks();
   var homeSeg = el('div', { class: 'seg' }), homeTplLbl = null;
@@ -2676,7 +2676,7 @@
       } }));
       line.appendChild(el('button', { class: 'lnk', type: 'button', text: '↺ как в сетапе', onclick: function () { homeLangSel = null; homeLangDraw(); } }));
     }
-    line.appendChild(el('button', { class: 'lnk', type: 'button', text: 'выбрать галочками разово', onclick: homeToManual }));
+    line.appendChild(el('button', { class: 'lnk', type: 'button', text: 'галочками разово', onclick: homeToManual }));
     homeLangInfo.appendChild(line);
   }
   /* шаги */
@@ -2781,8 +2781,8 @@
     homeTitleDate.textContent = ddmm();
     homeTitleRow.classList.toggle('hide', ptT.name !== 'custom' || homeTgtWeb());
     homeFoldRow.classList.toggle('hide', !ptT.folder && !homeTgtWeb());
-    homeTgtHint.textContent = ptT.kind !== 'shop' ? '' : homeTgtWeb() ? 'Веб: в Smartcat уходит только английский — переводчикам. Остальные языки — ' + (ptT.zip ? 'в архиве' + (ptT.zipFor === 'staff' ? ' для переводчиков.' : ' для подрядчика.') : 'в Smartcat не уходят (архив выключен).')
-      : 'Android и iOS: все языки — на машперевод сюда; английский — переводчикам в EN android / EN ios.';
+    homeTgtHint.textContent = ptT.kind !== 'shop' ? '' : homeTgtWeb() ? 'В Smartcat — только английский, остальное ' + (ptT.zip ? 'в архиве' : 'не уходит')
+      : 'Машперевод сюда, английский — в EN android / EN ios';
     if (scCfg && partsOf(scCfg).kind !== 'shop' && partsOf(scCfg).mt) homeSetupNote.textContent = homeTgt.proj ? 'в этот раз — «' + homeTgt.proj.name + '»' : d ? 'Smartcat: ' + d : 'проект Smartcat не выбран — выбери ниже или в ⚙';
     homeTgtDrawFolders();
   }
@@ -2866,7 +2866,6 @@
     homeZipChips.appendChild(chip(!homeZipOpt.checked, 'не сохранять', function () { homeZipOpt.checked = false; homeZipSave(); }));
     homeZipChips.appendChild(chip(homeZipOpt.checked && homeZipFor.value === 'contractor', '💾 для подрядчиков', function () { homeZipOpt.checked = true; homeZipFor.value = 'contractor'; homeZipSave(); }));
     homeZipChips.appendChild(chip(homeZipOpt.checked && homeZipFor.value === 'staff', '💾 для наших переводчиков', function () { homeZipOpt.checked = true; homeZipFor.value = 'staff'; homeZipSave(); }));
-    homeZipChips.appendChild(el('span', { class: 'muted', style: 'font-size:12px', text: 'запоминается для этого сетапа' }));
   }
   var homeZipRow = el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Архив на компьютер' }), homeZipChips]);
   var homeBar = el('div'), homeProg = el('div', { class: 'bar hide' }, [homeBar]);
@@ -3101,7 +3100,7 @@
       homeMsgBox.appendChild(el('div', { class: 'msgblk' }, [el('div', { class: 'lbl', text: b[0] }), ta,
         el('div', { class: 'row' }, [el('button', { class: 'b s', type: 'button', text: '📋 Скопировать', onclick: function () { copyText(ta, st); } }), st])]));
     });
-    if (none) homeMsgBox.insertBefore(el('p', { class: 'muted', text: 'Пока это просто шаблоны. Ссылки на Smartcat подставятся сами, когда английский уйдёт через «Отправить» или «Загрузить файлы».' }), homeMsgBox.firstChild);
+    if (none) homeMsgBox.insertBefore(el('p', { class: 'muted', text: 'Шаблон — ссылки появятся после отправки.' }), homeMsgBox.firstChild);
     /* сводка для вебхука — только если он настроен */
     var hook = scCfg && scCfg.bandHook;
     if (hook) {
@@ -3153,7 +3152,7 @@
   /* файлы подрядчиков: бросить прямо на главную */
   var homeFile = el('input', { type: 'file', multiple: '', accept: '.po,.json,.zip' });
   homeFile.addEventListener('change', function () { if (homeFile.files.length) { addFiles(homeFile.files); tab('imp'); } homeFile.value = ''; });
-  var homeDrop = el('label', { class: 'drop hdrop' }, [homeFile, el('div', { text: '⬆ Файлы от подрядчиков (.po, .json, .zip) — перетащи сюда или нажми' })]);
+  var homeDrop = el('label', { class: 'drop hdrop' }, [homeFile, el('div', { text: '⬆ Файлы от подрядчиков — перетащи или нажми' })]);
   ['dragover', 'dragenter'].forEach(function (ev) { homeDrop.addEventListener(ev, function (e) { e.preventDefault(); homeDrop.classList.add('over'); }); });
   ['dragleave', 'drop'].forEach(function (ev) { homeDrop.addEventListener(ev, function () { homeDrop.classList.remove('over'); }); });
   homeDrop.addEventListener('drop', function (e) { e.preventDefault(); if (e.dataTransfer.files.length) { addFiles(e.dataTransfer.files); tab('imp'); } });
@@ -3356,7 +3355,7 @@
     }, function (e) { upSc.folders = []; upScFolders.textContent = ''; upScFolders.appendChild(el('span', { class: 'red', text: '✗ ' + e.message })); });
   }
   function upScDrawFolders() {
-    if (upSc.mode === 'new') { upScFolders.textContent = ''; upScFolders.appendChild(el('span', { class: 'muted', text: 'В новом проекте папок ещё нет — впиши новую или оставь пустым' })); return; }
+    if (upSc.mode === 'new') { upScFolders.textContent = ''; upScFolders.appendChild(el('span', { class: 'muted', text: 'Папок нет — впиши новую или оставь пустым' })); return; }
     if (!upSc.pr) { upScFolders.textContent = ''; upScFolders.appendChild(el('span', { class: 'muted', text: 'Сначала выбери проект' })); return; }
     if (!upSc.folders) return;
     upScFolders.textContent = '';
@@ -3505,7 +3504,7 @@
   var getPane = el('div', {});
   var getBar = el('div', { class: 'gtabs', role: 'tablist' });
   (HAS_EXT ? [['work', 'Мои отправки', el('div', {}, [scBack, el('div', { class: 'gother' }, [
-      el('span', { text: 'Нужен другой проект — например, загрузили руками или делал коллега?' }),
+      el('span', { text: 'Нужен другой проект?' }),
       el('button', { class: 'b g s', type: 'button', text: 'Все проекты Smartcat →', onclick: function () { nav('projects'); } })])])],
     ['projects', 'Все проекты Smartcat', el('div', {}, [scImpBox])],
     ['accept', 'Файл с компьютера', importPane]] : [['accept', 'Файл с компьютера', importPane]]).forEach(function (t) {
@@ -3556,21 +3555,21 @@
   var panesBox = el('div', {});
   NAV.forEach(function (n) {
     if (n.length === 1) {
-      if (n[0] === '+') { side.appendChild(sideCard); side.appendChild(el('div', { class: 'navgrow' })); side.appendChild(sideTip); return; }
+      if (n[0] === '+') { side.appendChild(sideCard); side.appendChild(el('div', { class: 'navgrow' })); return; }
       side.appendChild(n[0] === '-' ? el('div', { class: 'navdiv' }) : el('div', { class: 'navsec', text: n[0] }));
       return;
     }
     if (n[1]) {
       var b = n[6] ? el('button', { class: 'nav navstep', type: 'button', title: n[4] || n[1], onclick: function () { nav(n[0]); } }, [
         el('span', { class: 'num', text: String(n[6]) }),
-        el('span', { class: 'navt' }, [document.createTextNode(n[1]), el('small', { text: n[5] })]), el('span', { class: 'navn hide' })])
+        el('span', { class: 'navt', text: n[1] }), el('span', { class: 'navn hide' })])
         : el('button', { class: 'nav', type: 'button', title: n[4] || n[1], onclick: function () { nav(n[0]); } }, [
         svgEl('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + NAV_IC[n[0]] + '</svg>'),
         el('span', { class: 'navt', text: n[1] }), el('span', { class: 'navn hide' })]);
       navBtns[n[0]] = b; side.appendChild(b);
     }
     n[2].classList.remove('hide');
-    navPanes[n[0]] = el('div', { class: 'hide' }, [el('div', { class: 'ptitle' }, [document.createTextNode(n[3]), n[4] ? el('div', { class: 'pdesc', text: n[4] }) : null].filter(Boolean)), n[2]]);
+    navPanes[n[0]] = el('div', { class: 'hide' }, [el('div', { class: 'ptitle' }, [document.createTextNode(n[3]), ].filter(Boolean)), n[2]]);
     panesBox.appendChild(navPanes[n[0]]);
   });
   /* число на пункте меню (например, сколько отправок уже готово) */
@@ -3937,7 +3936,7 @@
     (container || results).appendChild(box);
     return loadScConfig().then(function (c) {
       if (!c || !c.accountId || !c.hasKey) {
-        box.appendChild(el('p', { class: 'muted', text: 'Можно отправить эти строки в Smartcat одной кнопкой — подключи Smartcat в ⚙ вверху окна.' }));
+        box.appendChild(el('p', { class: 'muted', text: 'Подключи Smartcat в ⚙ — и отправляй одной кнопкой.' }));
         return;
       }
       var map = scLangMap(c.langMap);
@@ -4229,7 +4228,7 @@
           /* людей на английский расширение не назначает (раньше назначало «между всеми, кто принял» — убрано по просьбе команды):
              исполнителей выбирают в Smartcat сами */
           if (enRes.some(function (x) { return x.ok; }) || made.some(function (p) { return p.enDocs; }))
-            msg.appendChild(el('div', { class: 'muted', text: 'Исполнителей на английский назначь в Smartcat сама — расширение никого не назначает.' }));
+            msg.appendChild(el('div', { class: 'muted', text: 'Исполнителей на английский назначь в Smartcat.' }));
           made.forEach(function (p) {
             (p.lost || []).forEach(function (t) {
               msg.appendChild(el('div', { class: 'red', text: /^языков нет/.test(t) ? p.name + ': ' + t : 'Не поняла, к какому компоненту/языку относится: ' + t }));
@@ -4729,15 +4728,14 @@
     box.appendChild(el('div', { class: 'head' }, [el('h3', { text: 'Отправки в Smartcat' }), findBtn]));
     var shopNow = partsOf(scCfg).kind === 'shop';   /* пояснения про ИИ-перевод / МП веб / android / iOS — только у Магазинки */
     if (shopNow) box.appendChild(el('div', { class: 'legend' }, [
-      el('div', {}, [el('span', { class: 'pill k-mt', text: '🤖 ИИ-перевод' }), ' AI translation — готово через пару минут, в Weblate грузится только в пустые строки']),
-      el('div', {}, [el('span', { class: 'pill k-hu', text: '👤 Переводчики' }), ' МП веб / android / iOS — готово, когда люди закончат; в Weblate заменяет переведённые и одобренные']),
-      el('div', { class: 'muted', text: 'Когда готово — придёт уведомление 🔔 и появится «готово». Жми «В Weblate».' })]));
+      el('div', {}, [el('span', { class: 'pill k-mt', text: '🤖 ИИ-перевод', title: 'AI translation 4 MP — пара минут' }), ' только в пустые строки']),
+      el('div', {}, [el('span', { class: 'pill k-hu', text: '👤 Переводчики', title: 'МП веб / android / iOS' }), ' заменяет переведённые'])]));
     box.appendChild(el('div', { class: 'row listbar' }, [rangeSeg, findMsg]));
     if (list.length) box.appendChild(el('div', { class: 'row' }, [el('label', { class: 'chk' }, [selAll, 'все']), allBtn, selBtn, selDel, allMsg]));
     else box.appendChild(el('div', { class: 'bigempty' }, [
       el('div', { class: 'beic', text: all.length ? '🗓' : '📭' }),
       el('b', { text: all.length ? (scRange === '7' ? 'За неделю отправок нет' : 'За 2 дня отправок нет') : 'Пока ничего не отправлено' }),
-      el('span', { class: 'muted', text: all.length ? 'Старые отправки — кнопкой «Все» выше.' : 'Отправь строки на шаге 1 — здесь появятся папки с переводами, и их можно будет забрать в Weblate одной кнопкой.' }),
+      el('span', { class: 'muted', text: all.length ? 'Старые отправки — кнопкой «Все» выше.' : 'Отправь строки на шаге 1 — они появятся здесь.' }),
       el('div', { class: 'row', style: 'justify-content:center' }, [
         el('button', { class: 'b s', type: 'button', text: '1. Отправить на перевод', onclick: function () { nav('send'); } }),
         el('button', { class: 'b g s', type: 'button', text: 'Все проекты Smartcat', onclick: function () { nav('projects'); } }),
@@ -4787,7 +4785,7 @@
             el('div', { class: 'srt' }, [el('b', { text: shopNow ? scPlat(pr) : String(pr.name || '').split(' / ').pop() }),
               shopNow ? el('span', { class: 'pill ' + (kind === 'mt' ? 'k-mt' : 'k-hu'), text: kind === 'mt' ? '🤖 ИИ-перевод' : '👤 Переводчики' }) : null, st].filter(Boolean)),
             el('div', { class: 'muted' }, [String(pr.name || '').split(' / ').join(' › ') + (pr.created ? ' · ' + fmtDate(pr.created) : '') +
-              ' · в Weblate: ' + (pr.keys ? 'заменит перевод этих ключей' : kind === 'mt' ? 'только пустые строки' : 'заменит переведённые и одобренные')])]),
+              (pr.keys ? ' · по ключам' : '')])]),
           get, openSc, zip, del]));
       });
       box.appendChild(det);
@@ -5075,7 +5073,11 @@
       fixedU.forEach(function (u) { out.push('  ' + u.c + ' · ' + langName(u.lang) + ': ' + u.fixedKeys.join(', ')); });
     }
     var text = out.join('\n');
-    var pre = el('pre', { class: 'report', text: text });
+    /* ссылки в отчёте — кликабельные */
+    var pre = el('pre', { class: 'report' });
+    text.split(/(https?:\/\/\S+)/).forEach(function (part, i) {
+      pre.appendChild(i % 2 ? el('a', { href: part, target: '_blank', rel: 'noopener', text: part }) : document.createTextNode(part));
+    });
     var note = el('span', { class: 'muted' });
     var copy = el('button', { class: 'b g s', text: '📋 Скопировать отчёт', onclick: function () {
       var done = function () { note.textContent = 'Скопировано ✓'; };
@@ -5101,7 +5103,7 @@
     }).then(function () {
       box.textContent = '';
       box.appendChild(el('h2', { text: 'Какие строки не легли' }));
-      if (!groups.length) { box.appendChild(el('p', { class: 'muted', text: 'Всё, что не принято, уже было в Weblate с таким же переводом — смотреть нечего.' })); return; }
+      if (!groups.length) { box.appendChild(el('p', { class: 'muted', text: 'Остальное уже было в Weblate с тем же переводом.' })); return; }
       var txt = [];
       groups.sort(function (a, b) { return (a.u.c + a.u.lang).localeCompare(b.u.c + b.u.lang); }).forEach(function (g) {
         var head = g.u.c + ' · ' + langName(g.u.lang) + (/\.json$/i.test(g.u.name) ? ' (json)' : '');
