@@ -3785,17 +3785,33 @@
   var PLURAL_MARK = '_plural form';
   /* .po — как при ручном скачивании из Weblate: global_site-wb-ios_new-az_Latn.po */
   function poName(r) { return r.ext === 'json' ? fileKey(r.component) + '_' + r.language + PLURAL_MARK + '.json' : scFileName(r); }
+  /* в архиве — короткие имена: Windows не распаковывает пути длиннее ~260 символов.
+     Без проекта в начале и только хвост длинного компонента (компонент и язык при загрузке обратно берутся из файла, не из имени) */
+  function shortComp(c) {
+    var k = fileKey(c);
+    if (k.length <= 40) return k;
+    var parts = k.split('-'), out = '';
+    for (var i = parts.length - 1; i >= 0; i--) { var t = parts[i] + (out ? '-' + out : ''); if (t.length > 40) break; out = t; }
+    return out || k.slice(-40);
+  }
+  function archiveName(r) {
+    return r.ext === 'json' ? shortComp(r.component) + '_' + r.language + PLURAL_MARK + '.json' : shortComp(r.component) + '-' + r.language + '.po';
+  }
   function archivePath(r, layout, englishApart) {
     var folder = englishApart && isEnglish(r.language) ? ENGLISH_DIR
       : layout === 'language' ? langName(r.language)
       : layout === 'flat' ? ''
-      : fileKey(r.component);
-    return (folder ? folder + '/' : '') + poName(r);
+      : shortComp(r.component);
+    return (folder ? folder + '/' : '') + archiveName(r);
   }
   /* архивы для подрядчиков: отдельный zip на платформу, без английского, со своим summary.csv */
   function saveArchives(res) {
     var layout = currentLayout(), eng = englishApart.checked, byPlat = byPlatform.checked;
-    var files = res.filter(function (r) { return !(skipEnglish.checked && isEnglish(r.language)); }).map(function (r) { return { name: (byPlat ? platDir(r.p, r.component) + '/' : '') + archivePath(r, layout, eng), text: r.text }; });
+    var files = res.filter(function (r) { return !(skipEnglish.checked && isEnglish(r.language)); }).map(function (r) { return { name: (byPlat ? platDir(r.p, r.component) + '/' : '') + archivePath(r, layout, eng), text: r.text, r: r }; });
+    /* два компонента с одинаковым хвостом — у них короткое имя совпало бы: им полное */
+    var cnt = {};
+    files.forEach(function (f) { cnt[f.name] = (cnt[f.name] || 0) + 1; });
+    files.forEach(function (f) { if (cnt[f.name] > 1) f.name = f.name.replace(/[^/]+$/, poName(f.r)); delete f.r; });
     files.sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
     var csv = '﻿компонент;язык;код;формат;строк;слов\n' + res.map(function (r) {
       return [r.component, langName(r.language), r.language, r.ext || 'po', r.strings, r.words].join(';');
