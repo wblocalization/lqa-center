@@ -465,39 +465,44 @@ SC_HANDLERS['sc-deadline'] = async (m) => {
   if (!iso) throw new Error('срок не указан');
   const base = (id) => { id = String(id); const i = id.lastIndexOf('_'); return i > 0 ? id.slice(0, i) : id; };
   const hit = (str, id) => str.includes('"' + id + '"') || str.includes('"' + base(id) + '"');
-  let n = 0, found = 0; const errs = [];
+  const ids = [...new Set((m.documentIds || []).map(String))];
+  let n = 0, found = 0, noTasks = 0; const errs = [], doneTask = {}, covered = {};
   for (const pid of [...new Set(m.projectIds || [])]) {
-    const ids = (m.documentIds || []).map(String);
-    let mine = [];
-    for (let round = 0; round < 6; round++) {
+    /* задачи у файлов появляются не сразу и не все разом (у части языков — когда их возьмут) —
+       ждём до ~1 мин, пока задачи не найдутся у всех документов, ставим срок каждой новой */
+    let listed = false;
+    for (let round = 0; round < 12; round++) {
       let list = null;
       for (const cur of ['USD', 'RUB', 'EUR', '']) {
         try { list = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list' + (cur ? '?currency=' + cur : ''))).json(); break; }
         catch (e) { if (!/currency/i.test(String(e.message))) { errs.push(String(e.message).slice(0, 160)); break; } }
       }
       if (!list) break;
+      listed = true;
       list = Array.isArray(list) ? list : (list && (list.items || list.tasks || list.result || list.data)) || [];
-      mine = list.filter((t) => ids.some((id) => hit(JSON.stringify(t), id)));
-      if (mine.length) break;
+      for (const t of list) {
+        const js = JSON.stringify(t), mineIds = ids.filter((id) => hit(js, id));
+        const tid = t.id || t.taskId || t.projectTaskId;
+        if (!mineIds.length || !tid || doneTask[tid]) continue;
+        doneTask[tid] = 1; found++;
+        const path = '/projectTask/' + encodeURIComponent(pid) + '/' + encodeURIComponent(tid) + '/deadline';
+        const tries = [
+          [path + '?deadline=' + encodeURIComponent(iso), { method: 'PUT' }],
+          [path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deadline: iso }) }],
+          [path + '?deadline=' + encodeURIComponent(iso), { method: 'POST' }]
+        ];
+        let ok = false;
+        for (const [u, init] of tries) { try { await scFetch(u, init); ok = true; break; } catch (e) { errs.push(String(e.message).slice(0, 160)); } }
+        if (ok) { n++; mineIds.forEach((id) => { covered[id] = 1; }); }
+      }
+      if (ids.every((id) => covered[id])) break;
       await sleep(5000);
     }
-    found += mine.length;
-    for (const t of mine) {
-      const tid = t.id || t.taskId || t.projectTaskId;
-      if (!tid) continue;
-      const path = '/projectTask/' + encodeURIComponent(pid) + '/' + encodeURIComponent(tid) + '/deadline';
-      const tries = [
-        [path + '?deadline=' + encodeURIComponent(iso), { method: 'PUT' }],
-        [path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deadline: iso }) }],
-        [path + '?deadline=' + encodeURIComponent(iso), { method: 'POST' }]
-      ];
-      let ok = false;
-      for (const [u, init] of tries) { try { await scFetch(u, init); ok = true; break; } catch (e) { errs.push(String(e.message).slice(0, 160)); } }
-      if (ok) n++;
-    }
+    if (listed && !found) noTasks++;
   }
-  if (!n) throw new Error(found ? 'Smartcat не принял срок: ' + (errs[errs.length - 1] || '') : 'у этих файлов в Smartcat нет задач (срок ставится задачам) ' + (errs[0] || ''));
-  return { ok: true, tasks: n, of: found };
+  const left = ids.filter((id) => !covered[id]).length;
+  if (!n) throw new Error(found ? 'Smartcat не принял срок: ' + (errs[errs.length - 1] || '') : 'у этих файлов в Smartcat нет задач — в этом проекте срок ставится вручную ' + (errs[0] || ''));
+  return { ok: true, tasks: n, of: found, docs: ids.length, left: left };
 };
 SC_HANDLERS['sc-assign'] = async (m) => {
   const stage = m.stage || 1;
