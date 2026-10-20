@@ -1061,7 +1061,10 @@
     '.tgtf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex:1;min-width:0}.tgtnew{width:180px!important;padding:5px 10px!important;font-size:12.5px!important;border-radius:999px!important}',
     '.tgtlinks{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}a.b{text-decoration:none;display:inline-block}',
     '.howbox{margin-top:14px;padding:12px 14px;border-radius:14px;background:var(--soft);display:flex;flex-direction:column;gap:8px}.howbox label{margin:0}',
-    '.tgtdue{width:auto!important;padding:5px 10px!important;border-radius:10px!important}',
+    '.zipfor{width:auto!important;padding:3px 8px!important;font-size:12.5px!important;margin-left:4px}',
+    '.duechips{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}.duerow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}',
+    '.chipb.s{padding:4px 10px;font-size:12px}',
+    '.dueother{width:auto!important;padding:5px 10px!important;border-radius:999px!important;border:1px solid var(--accent)!important;font-size:12.5px!important;color:var(--ink);background:var(--card)}',
     '.tgtdate{font-weight:700;font-size:13.5px;color:var(--accent)}.tgttitle{flex:1;min-width:200px}',
     '.gtabs{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:14px;background:var(--soft);margin-bottom:14px}',
     '.gtab{font:inherit;font-size:13.5px;font-weight:600;border:0;border-radius:11px;padding:7px 14px;cursor:pointer;background:transparent;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px}',
@@ -2589,6 +2592,7 @@
     var proj = scCfg ? (activeSetup(scCfg).project || '') : '';
     var shop = pt.kind === 'shop', sendSc = shop || pt.mt;
     var zipT = pt.zip ? 'архивы на компьютер · ' : '';
+    homeZipOpt.checked = pt.zip; homeZipFor.value = pt.zipFor; homeZipFor.disabled = !pt.zip; homeZipDraw();
     homeSteps[0].t.textContent = pt.zip ? (pt.zipFor === 'staff' ? 'Архивы для переводчиков' : 'Архивы для подрядчиков') : 'Выгрузка из Weblate';
     homeGo.firstChild.textContent = sendSc ? (pt.zip ? 'Выгрузить и отправить' : 'Отправить в Smartcat') : 'Выгрузить архивы';
     homeGo.lastChild.textContent = shop ? zipT + (homeMode === 'web' ? 'английский в Smartcat переводчикам' : 'машперевод и английский в Smartcat')
@@ -2652,10 +2656,41 @@
     var t = dueText(homeDue.value);
     if (typeof homeDeadline !== 'undefined' && homeDeadline && (!homeDeadline.value.trim() || homeDeadline.value === homeDueAuto)) { homeDeadline.value = t; homeDueAuto = t; homeDeadline.dispatchEvent(new Event('input')); }
   });
-  var homeDueRow = el('div', { class: 'tgtrow' }, [el('span', { class: 'tgtk', text: 'Срок' }), homeDue,
-    el('button', { class: 'lnk', type: 'button', text: 'завтра 18:00', onclick: function () { var d = new Date(); d.setDate(d.getDate() + 1); d.setHours(18, 0, 0, 0);
-      homeDue.value = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + 'T18:00'; homeDue.dispatchEvent(new Event('change')); } }),
-    el('span', { class: 'muted', style: 'font-size:12px', text: 'необязательно · поставится задачам в Smartcat и в сообщение' })]);
+  /* срок кнопками в стиле окна: день (сегодня / завтра / ближайшие дни / свой) + время; в поле homeDue — итог для Smartcat */
+  var dueSt = { day: null, time: '18:00' }, homeDueChips = el('div', { class: 'duechips' }), homeDueOther = el('input', { type: 'date', class: 'dueother hide' });
+  var WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+  function dueIso(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function dueApply() {
+    homeDue.value = dueSt.day ? dueSt.day + 'T' + dueSt.time : '';
+    homeDue.dispatchEvent(new Event('change'));
+    dueDraw();
+  }
+  function dueDraw() {
+    homeDueChips.textContent = '';
+    var t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    var days = [0, 1, 2, 3, 4].map(function (k) { var d = new Date(t0); d.setDate(d.getDate() + k); return d; });
+    var row1 = el('div', { class: 'duerow' }), row2 = el('div', { class: 'duerow' });
+    row1.appendChild(el('button', { class: 'chipb' + (!dueSt.day ? ' on' : ''), type: 'button', text: 'без срока', onclick: function () { dueSt.day = null; homeDueOther.classList.add('hide'); dueApply(); } }));
+    days.forEach(function (d, k) {
+      var iso = dueIso(d), lbl = k === 0 ? 'сегодня' : k === 1 ? 'завтра' : WD[d.getDay()] + ' ' + d.getDate() + '.' + ('0' + (d.getMonth() + 1)).slice(-2);
+      row1.appendChild(el('button', { class: 'chipb' + (dueSt.day === iso ? ' on' : ''), type: 'button', text: lbl, onclick: function () { dueSt.day = iso; homeDueOther.classList.add('hide'); dueApply(); } }));
+    });
+    var other = dueSt.day && !days.some(function (d) { return dueIso(d) === dueSt.day; });
+    row1.appendChild(el('button', { class: 'chipb' + (other ? ' on' : ''), type: 'button', text: other ? '📅 ' + dueText(dueSt.day + 'T00:00').split(',')[0] : '📅 другой день', onclick: function () {
+      homeDueOther.classList.remove('hide'); try { homeDueOther.showPicker(); } catch (e) { homeDueOther.focus(); } } }));
+    row1.appendChild(homeDueOther);
+    homeDueChips.appendChild(row1);
+    if (dueSt.day) {
+      ['10:00', '12:00', '15:00', '18:00', '20:00'].forEach(function (t) {
+        row2.appendChild(el('button', { class: 'chipb s' + (dueSt.time === t ? ' on' : ''), type: 'button', text: t, onclick: function () { dueSt.time = t; dueApply(); } }));
+      });
+      row2.appendChild(el('span', { class: 'muted', style: 'font-size:12px', text: '→ ' + dueText(homeDue.value) + ' · поставится задачам в Smartcat и в сообщение' }));
+      homeDueChips.appendChild(row2);
+    }
+  }
+  homeDueOther.addEventListener('change', function () { if (homeDueOther.value) { dueSt.day = homeDueOther.value; homeDueOther.classList.add('hide'); dueApply(); } });
+  dueDraw();
+  var homeDueRow = el('div', { class: 'tgtrow', style: 'align-items:flex-start' }, [el('span', { class: 'tgtk', style: 'padding-top:6px', text: 'Срок' }), homeDueChips]);
   function homeTitle() { var t = homeTitleIn.value.trim(); return t ? ddmm() + ' ' + t : ''; }
   var homeTgtBox = el('div', { class: 'hblock tgt' }, [el('span', { class: 'lbl', text: 'Куда в Smartcat' }), homeTgtHint,
     el('div', { class: 'tgtrow' }, [el('span', { class: 'tgtk', text: 'Проект' }), homeTgtProj, homeTgtReset]), homeTgtPick,
@@ -2677,7 +2712,7 @@
     homeTitleDate.textContent = ddmm();
     homeTitleRow.classList.toggle('hide', ptT.name !== 'custom' || homeTgtWeb());
     homeFoldRow.classList.toggle('hide', !ptT.folder && !homeTgtWeb());
-    homeTgtHint.textContent = ptT.kind !== 'shop' ? '' : homeTgtWeb() ? 'Веб: в Smartcat уходит только английский — переводчикам. Остальные языки — в архиве для подрядчика.'
+    homeTgtHint.textContent = ptT.kind !== 'shop' ? '' : homeTgtWeb() ? 'Веб: в Smartcat уходит только английский — переводчикам. Остальные языки — ' + (ptT.zip ? 'в архиве' + (ptT.zipFor === 'staff' ? ' для переводчиков.' : ' для подрядчика.') : 'в Smartcat не уходят (архив выключен).')
       : 'Android и iOS: все языки — на машперевод сюда; английский — переводчикам в EN android / EN ios.';
     if (scCfg && partsOf(scCfg).kind !== 'shop' && partsOf(scCfg).mt) homeSetupNote.textContent = homeTgt.proj ? 'в этот раз — «' + homeTgt.proj.name + '»' : d ? 'Smartcat: ' + d : 'проект Smartcat не выбран — выбери ниже или в ⚙';
     homeTgtDrawFolders();
@@ -2745,6 +2780,26 @@
     homeKeys.value.split(/\r?\n/).forEach(function (x) { x = x.trim(); if (x && !k[x]) { k[x] = 1; n++; } });
     return n ? k : {};
   }
+  /* архив на компьютер — прямо на экране, запоминается для этого сетапа (то же, что ⚙ → «Как отправлять») */
+  var homeZipOpt = el('input', { type: 'checkbox' });
+  var homeZipFor = el('select', { class: 'zipfor' }, [['contractor', 'для подрядчиков'], ['staff', 'для наших переводчиков']].map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
+  function homeZipSave() {
+    homeZipFor.disabled = !homeZipOpt.checked; homeZipDraw();
+    if (!HAS_EXT || !scCfg) return;
+    var raw = Object.assign({ kind: partsOf(scCfg).kind }, scCfg.parts || {}, { zip: homeZipOpt.checked, zipFor: homeZipFor.value });
+    patchSetup({ parts: raw }).then(function () { homeRenderSeg(); toast(homeZipOpt.checked ? 'Архивы будут сохраняться — для этого сетапа' : 'Архивы на компьютер больше не сохраняю — для этого сетапа'); }, function () {});
+  }
+  homeZipOpt.addEventListener('change', homeZipSave); homeZipFor.addEventListener('change', homeZipSave);
+  var homeZipChips = el('div', { class: 'duerow' });
+  function homeZipDraw() {
+    homeZipChips.textContent = '';
+    var chip = function (on, text, fn) { return el('button', { class: 'chipb' + (on ? ' on' : ''), type: 'button', text: text, onclick: fn }); };
+    homeZipChips.appendChild(chip(!homeZipOpt.checked, 'не сохранять', function () { homeZipOpt.checked = false; homeZipSave(); }));
+    homeZipChips.appendChild(chip(homeZipOpt.checked && homeZipFor.value === 'contractor', '💾 для подрядчиков', function () { homeZipOpt.checked = true; homeZipFor.value = 'contractor'; homeZipSave(); }));
+    homeZipChips.appendChild(chip(homeZipOpt.checked && homeZipFor.value === 'staff', '💾 для наших переводчиков', function () { homeZipOpt.checked = true; homeZipFor.value = 'staff'; homeZipSave(); }));
+    homeZipChips.appendChild(el('span', { class: 'muted', style: 'font-size:12px', text: 'запоминается для этого сетапа' }));
+  }
+  var homeZipRow = el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Архив на компьютер' }), homeZipChips]);
   var homeBar = el('div'), homeProg = el('div', { class: 'bar hide' }, [homeBar]);
   var homeOut = el('div');
   var homeDetails = el('details', { class: 'hide' }, [el('summary', { text: 'Подробности' }), homeOut]);
@@ -3324,6 +3379,7 @@
       el('div', { class: 'row', style: 'margin-top:6px' }, [el('label', { class: 'muted', title: 'Включено — ссылки подставятся сами в следующий раз. Выключено — поле каждый раз своё, а сохранённые ссылки сетапа забываются' }, [homePin, ' запомнить ссылки для этого сетапа']), homeClear])]),
     HAS_EXT ? homeTgtBox : null,
     el('div', { class: 'hblock' }, [el('label', { class: 'muted', title: 'Отправить не всё, а только строки с этими ключами' }, [homeKeysOn, ' только определённые ключи']), homeKeys]),
+    HAS_EXT ? homeZipRow : null,
     el('div', { class: 'row' }, [homeGo, homeZip]),
     homeProg], 'homecard'),
     card('Что дальше', [el('div', { class: 'steps', style: 'margin-top:0;padding-top:0;border-top:0' }, homeSteps.map(function (s) { return s.row; })), homeDetails]),
@@ -3373,7 +3429,7 @@
   var NAV = [
     /* [ключ, пункт меню, панель, заголовок, что здесь делают, подпись под пунктом, номер шага] */
     ['Перевод'],
-    ['send', 'Отправить', homePane, 'Отправить на перевод', 'Новые строки из Weblate — в Smartcat (и архивы для подрядчика).', 'Weblate → Smartcat', 1],
+    ['send', 'Отправить', homePane, 'Отправить на перевод', 'Новые строки из Weblate — в Smartcat.', 'Weblate → Smartcat', 1],
     HAS_EXT ? ['msg', 'Сообщение', msgPane, 'Сообщение переводчикам', 'Готовый текст со ссылками на Smartcat — вписать срок и скопировать.', 'текст в чат', 2] : null,
     ['get', 'Загрузить переводы', getPane, 'Загрузить переводы', HAS_EXT ? 'Что готово в Smartcat — одной кнопкой в Weblate. Перед загрузкой всё проверяется.' : 'Файлы от подрядчика (.po, .json, .zip) — в Weblate, с проверкой.', HAS_EXT ? 'Smartcat → Weblate' : 'файлы → Weblate', HAS_EXT ? 3 : 2],
     ['-'],
