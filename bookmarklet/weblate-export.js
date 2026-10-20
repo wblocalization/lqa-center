@@ -263,12 +263,20 @@
     return out;
   }
   /* keys — «только определённые ключи»: оставить строки, у которых ключ (msgctxt) или исходник совпадает с одним из списка */
+  /* ключ можно писать полностью (debitsDrawer.supply-detail.debits.goodsQty) или только хвост (goodsQty); или исходный текст.
+     Найденные отмечаются в keys.__hit — чтобы сказать, каких ключей нет */
+  function keyHit(keys, e) {
+    var ctx = e.ctx || '', tail = ctx.split(/[.:\/]/).pop(), k = keys[ctx] ? ctx : keys[tail] ? tail : keys[e.msgid] ? e.msgid : null;
+    if (!k) return false;
+    (keys.__hit = keys.__hit || {})[k] = 1;
+    return true;
+  }
   function filterPo(text, dropPlurals, keys) {
     var keep = [], n = 0, words = 0, plurals = 0;
     poEntries(text).forEach(function (e) {
       if (e.header) { keep.push(e.lines.join('\n')); return; }
       if (e.obsolete || (e.done && !keys)) return;      /* ключи, названные вручную, уходят, даже если уже переведены */
-      if (keys && !keys[e.ctx] && !keys[e.msgid]) return;
+      if (keys && !keyHit(keys, e)) return;
       if (e.plural) { plurals++; if (dropPlurals) return; }
       keep.push(e.lines.join('\n'));
       n++;
@@ -2822,12 +2830,12 @@
   }
   /* только определённые ключи: по одному на строку — уйдут только эти строки (например, 2–3 правки) */
   var homeKeysOn = el('input', { type: 'checkbox' });
-  var homeKeys = el('textarea', { class: 'small hide', placeholder: 'Ключи по одному на строку, например:\nnotifications.dbs_permission_revoked\nnotifications.dbs_permission_granted' });
+  var homeKeys = el('textarea', { class: 'small hide', placeholder: 'Ключи через запятую или по одному на строку — полностью или только конец ключа, например:\ngoodsQty, shipmentDate, notifications.dbs_permission_revoked' });
   homeKeysOn.addEventListener('change', function () { homeKeys.classList.toggle('hide', !homeKeysOn.checked); if (homeKeysOn.checked) homeKeys.focus(); });
   function homeKeySet() {
     if (!homeKeysOn.checked) return null;
     var k = {}, n = 0;
-    homeKeys.value.split(/\r?\n/).forEach(function (x) { x = x.trim(); if (x && !k[x]) { k[x] = 1; n++; } });
+    homeKeys.value.split(/[\r\n,;]+/).forEach(function (x) { x = x.trim().replace(/^["'«]+|["'»]+$/g, ''); if (x && !k[x]) { k[x] = 1; n++; } });   /* по строке или через запятую */
     return n ? k : {};
   }
   /* архив на компьютер — прямо на экране, запоминается для этого сетапа (то же, что ⚙ → «Как отправлять») */
@@ -2916,7 +2924,12 @@
         homeOut.appendChild(el('div', {}, [el('b', { class: 'red', text: 'Проблемы: ' + errs.length }), et]));
         homeDetails.classList.remove('hide'); homeDetails.open = true;
       }
-      if (!res.length) { homeStep(0, 'ok', 'Непереведённого нет — всё переведено 🎉' + (errs.length ? ' (есть проблемы — ниже)' : '')); return; }
+      var miss = keys ? Object.keys(keys).filter(function (k) { return k !== '__hit' && !(keys.__hit || {})[k]; }) : [];
+      if (!res.length) {
+        if (keys) { homeStep(0, 'err', 'Ни один ключ не нашёлся в этих компонентах и языках — проверь ключи и ссылки' + (miss.length ? ': ' + miss.slice(0, 8).join(', ') + (miss.length > 8 ? '…' : '') : '')); return; }
+        homeStep(0, 'ok', 'Непереведённого нет — всё переведено 🎉' + (errs.length ? ' (есть проблемы — ниже)' : '')); return;
+      }
+      if (miss.length) { homeOut.appendChild(el('div', { class: 'red', text: 'Не нашлись ключи (' + miss.length + '): ' + miss.join(', ') })); homeDetails.classList.remove('hide'); homeDetails.open = true; }
       var strings = res.reduce(function (a, x) { return a + x.strings; }, 0);
       var a = ptR.zip || !send ? saveArchives(res) : { files: 0, zips: [], off: true };   /* архивы на компьютер — если включено в сетапе (или «Только скачать архив») */
       var uniq = function (l) { return l.filter(function (x, i, arr) { return arr.indexOf(x) === i; }); };
