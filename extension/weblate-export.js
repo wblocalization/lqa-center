@@ -2563,7 +2563,7 @@
   /* ================= ГЛАВНАЯ (вариант A): ссылки → языки → одна кнопка → шаги ================= */
   var homeSetup = el('select', { class: 'presel' });
   var homeSetupNote = el('span', { class: 'muted' });
-  var homeLinks = el('textarea', { class: 'small hlinks', placeholder: 'Ссылки на компоненты или проект — можно вставить сообщение из чата' });
+  var homeLinks = el('textarea', { class: 'small hlinks', placeholder: 'Ссылки на компоненты — можно несколько, каждую с новой строки' });
   /* шаблоны: «Веб» — свои ссылки + языки веба; «Android и iOS» — ссылки и языки подставляются сами (⚙ → Проект) */
   var HOME_MODES = [['web', 'Веб'], ['mob', 'Android и iOS'], ['manual', 'Свои языки…']];
   var homeMode = sget('wlx_home_tpl') === 'mob' ? 'mob' : 'web';
@@ -2587,7 +2587,7 @@
   function homeLoadLinks() {
     homePin.checked = homePinOn();
     homeLinks.value = homeMode === 'mob' ? (sget('wlx_home_links_mob') || mobLinks()) : homeWebLinks;
-    homeLinks.placeholder = homeMode === 'mob' ? 'Ссылки на android и iOS' : 'Ссылки на веб — можно вставить сообщение из чата';
+    homeLinks.placeholder = homeMode === 'mob' && partsOf(scCfg).kind === 'shop' ? 'Ссылки на android и iOS' : 'Ссылки на компоненты — можно несколько, каждую с новой строки';
   }
   homeLoadLinks();
   var homeSeg = el('div', { class: 'seg' }), homeTplLbl = null;
