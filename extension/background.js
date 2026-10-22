@@ -178,6 +178,10 @@ const WATCH_DAYS = 3, WATCH_DAYS_HUMAN = 14;
 function scKind(pr, sc) {
   if (pr.kind) return pr.kind;
   const proj = String(pr.name || '').split(' / ')[0], ref = String(sc.project || 'AI translation 4 MP');
+  if (/ai translation|машперевод|machine/i.test(proj)) return 'mt';
+  /* обычный сетап (не Магазинка): переводят люди */
+  const sname = pr.setup || 'Магазинка', so = (sc.setups || []).find((x) => x.name === sname);
+  if (sname !== 'Магазинка' && !(so && so.parts && so.parts.kind === 'shop')) return 'human';
   const idm = /([0-9a-f]{8}-[0-9a-f-]{27,})/i.exec(ref);
   return (idm ? pr.id === idm[1] : proj === ref) || /ai translation|машперевод|machine/i.test(proj) ? 'mt' : 'human';
 }

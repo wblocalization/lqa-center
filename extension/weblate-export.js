@@ -267,11 +267,15 @@
      Найденные отмечаются в keys.__hit — чтобы сказать, каких ключей нет */
   /* ключ — полностью, или окончание из одной или нескольких частей (goodsQty, debits.goodsQty), или исходный текст;
      keys.__hit[ключ] — какие полные ключи нашлись (больше одного — предупреждаем, что уйдут все) */
+  /* «prefix*» или «prefix.» — все ключи группы; возвращает сам префикс (без *) или '' */
+  function keyPrefix(k) { return /\*$/.test(k) ? k.replace(/\*+$/, '') : /[.:\/]$/.test(k) ? k : ''; }
   function keyHit(keys, e) {
     var ctx = e.ctx || '', hit = false;
     Object.keys(keys).forEach(function (k) {
       if (k === '__hit' || k === '__seen') return;
-      var ok = ctx === k || e.msgid === k ||
+      var pre = keyPrefix(k), ok;
+      if (pre) ok = ctx.indexOf(pre) === 0 || ['.', ':', '/'].some(function (s) { return ctx.indexOf(s + pre) >= 0; });   /* префикс: debitsDrawer.* или SMARTPVZ_* */
+      else ok = ctx === k || e.msgid === k ||
         (ctx.length > k.length && ctx.slice(-k.length) === k && /[.:\/]/.test(ctx.charAt(ctx.length - k.length - 1)));   /* окончание по границе части ключа */
       if (!ok) return;
       hit = true;
@@ -2135,7 +2139,7 @@
     });
   }
   var bandTpl = el('textarea', { class: 'small', placeholder: BAND_TPL_DEFAULT });
-  var bandPeople = el('input', { type: 'text', placeholder: '@ник1 @ник2 @ник3' });
+  var bandPeople = el('input', { type: 'text', placeholder: '@ник1 @ник2:tg @ник3:kk,ky', title: '@ник — тегается всегда; @ник:tg — только если в отправке есть таджикский (можно несколько языков через запятую)' });
   bandPeople.addEventListener('input', function () { tplRedraw(); });
   bandPeople.addEventListener('input', function () { [bandTplWeb, bandTplApp, bandTpl].forEach(function (t) { t.dispatchEvent(new Event('input')); }); });
   var bandTplWeb = el('textarea', { class: 'small', placeholder: BAND_TPL_WEB });
@@ -2508,7 +2512,7 @@
     connFold,
     fold('Сообщения в чат (Band)', [
       el('p', { class: 'muted', text: 'Ссылки и срок подставятся сами после отправки.' }),
-      el('label', {}, ['Кого тегнуть ({люди})', bandPeople]),
+      el('label', {}, ['Кого тегнуть ({люди}) · @ник:tg — только когда есть этот язык', bandPeople]),
       fBandWeb = el('div', {}, [el('label', {}, [fBandWebLbl = el('span', { text: 'Сообщение для веба — пусто = стандартное' }), bandTplWeb]),
         tplChips(bandTplWeb, function () { return partKind.value === 'shop' ? BAND_TPL_WEB : BAND_TPL_GEN; }, ['люди', 'дедлайн', 'ссылка_папка', 'папка', 'ссылка_веб', 'слово_веб', 'дата', 'языки'])]),
       fBandApp = el('div', {}, [el('label', {}, ['Сообщение для приложений — пусто = стандартное', bandTplApp]),
@@ -2841,7 +2845,7 @@
   }
   /* только определённые ключи: через запятую или по одному на строку — уйдут только эти строки */
   var homeKeysOn = el('input', { type: 'checkbox' });
-  var homeKeys = el('textarea', { class: 'small hide', placeholder: 'Ключи через запятую или по одному на строку — полностью или только конец ключа, например:\ngoodsQty, shipmentDate, notifications.dbs_permission_revoked' });
+  var homeKeys = el('textarea', { class: 'small hide', placeholder: 'Ключи через запятую или по одному на строку — полностью, концом ключа или префиксом со *, например:\ngoodsQty, notifications.dbs_permission_revoked, debitsDrawer.*' });
   homeKeysOn.addEventListener('change', function () { homeKeys.classList.toggle('hide', !homeKeysOn.checked); if (homeKeysOn.checked) homeKeys.focus(); });
   function homeKeySet() {
     if (!homeKeysOn.checked) return null;
@@ -2941,7 +2945,7 @@
       }
       if (miss.length) { homeOut.appendChild(el('div', { class: 'red', text: 'Не нашлись ключи (' + miss.length + '): ' + miss.join(', ') })); homeDetails.classList.remove('hide'); homeDetails.open = true; }
       /* короткий ключ подошёл к нескольким разным ключам — уйдут все, подсказываем написать точнее */
-      var many = keys ? Object.keys(keys.__hit || {}).filter(function (k) { return Object.keys(keys.__hit[k]).length > 1; }) : [];
+      var many = keys ? Object.keys(keys.__hit || {}).filter(function (k) { return !keyPrefix(k) && Object.keys(keys.__hit[k]).length > 1; }) : [];
       if (many.length) {
         homeOut.appendChild(el('div', { class: 'warnbox' }, many.map(function (k) {
           var full = Object.keys(keys.__hit[k]);
@@ -2954,7 +2958,8 @@
       var uniq = function (l) { return l.filter(function (x, i, arr) { return arr.indexOf(x) === i; }); };
       info = { 'дата': ddmmyy(), 'проект': scCfg ? activeSetup(scCfg).name : '', 'архивы': a.zips.length ? a.zips.map(function (z) { return z + '.zip'; }).join(', ') : '—',
         'smartcat': send && HAS_EXT ? '…' : 'не отправляли', 'языки': uniq(res.map(function (x) { return langName(x.language); })).join(', '),
-        'компоненты': uniq(res.map(function (x) { return x.component; })).join(', '), 'строки': String(strings) };
+        'компоненты': uniq(res.map(function (x) { return x.component; })).join(', '), 'строки': String(strings),
+        __langs: uniq(res.map(function (x) { return baseLang(x.language); })) };
       homeStep(0, 'ok', strings + ' строк · ' + (a.off ? 'архив на компьютер не сохраняю (так в ⚙)' : a.zips.length ? 'сохранены ' + a.zips.map(function (z) { return z + '.zip'; }).join(', ') : 'только английский — архивов нет'),
         el('button', { class: 'b g s', type: 'button', text: '⬇ ещё раз', onclick: function () { saveArchives(res); } }));
       if (!send || !HAS_EXT) { homeStep(1, 'next', send ? '' : 'пропущено — выбрано «Только архивы»'); return; }
@@ -3017,10 +3022,19 @@
     el('label', { class: 'lbl', text: 'Дедлайн' }), homeDeadline,
     homeMsgBox], 'hide');
   homeDeadline.addEventListener('input', function () { if (homeMsgInfo) homeMessage(homeMsgInfo, true, true); });
+  /* {люди}: «@ник» — всегда, «@ник:tg» или «@ник:kk,ky» — только если в отправке есть этот язык */
+  function peopleFor(raw, langs) {
+    return String(raw || '').split(/\s+/).filter(Boolean).map(function (t) {
+      var m = /^(.+?):([a-z_,-]+)$/i.exec(t);
+      if (!m) return t;
+      if (!langs) return m[1];
+      return m[2].split(',').some(function (l) { return langs.indexOf(baseLang(l)) >= 0; }) ? m[1] : '';
+    }).filter(Boolean).join(' ');
+  }
   function chatFill(tpl, info) {
     var L = info.links || {}, md = function (t, x) { return x ? '[' + t + '](' + x.url + ')' : '—'; };
     var v = {
-      'люди': info.people != null ? info.people : (scCfg && scCfg.bandPeople) || '', 'дедлайн': info.deadline || homeDeadline.value.trim() || '[дедлайн]',
+      'люди': peopleFor(info.people != null ? info.people : (scCfg && scCfg.bandPeople) || '', info.__langs || null), 'дедлайн': info.deadline || homeDeadline.value.trim() || '[дедлайн]',
       'ссылка_веб': L.web ? md(L.web.folder, L.web) : '—', 'папка_веб': L.web ? L.web.folder : '—',
       'ссылка_папка': L.web ? md(L.web.folder, L.web) : '—', 'папка': L.web ? L.web.folder : '—',
       'ссылка_android': L.android ? md(L.android.file, L.android) : '—', 'ссылка_ios': L.ios ? md(L.ios.file, L.ios) : '—',
@@ -4647,7 +4661,12 @@
      «human» — переводчики (МП web / android / iOS): грузим с заменой переведённых и одобренных */
   function scKind(pr) {
     if (pr.kind) return pr.kind;
-    var proj = String(pr.name || '').split(' / ')[0], ref = String((scCfg && scCfg.project) || SC_PROJECT_DEFAULT);
+    var proj = String(pr.name || '').split(' / ')[0];
+    if (/ai translation|машперевод|machine/i.test(proj)) return 'mt';
+    /* обычный сетап (не Магазинка): в его проекте переводят люди — готово, когда закончены все этапы */
+    var sname = pr.setup || 'Магазинка', so = scCfg ? setupsOf(scCfg).filter(function (x) { return x.name === sname; })[0] : null;
+    if (sname !== 'Магазинка' && !(so && so.parts && so.parts.kind === 'shop')) return 'human';
+    var ref = String((scCfg && scCfg.project) || SC_PROJECT_DEFAULT);
     var idm = /([0-9a-f]{8}-[0-9a-f-]{27,})/i.exec(ref);
     return (idm ? pr.id === idm[1] : proj === ref) || /ai translation|машперевод|machine/i.test(proj) ? 'mt' : 'human';
   }
@@ -4825,10 +4844,11 @@
     var folder = String(pr.name || '').split(' / ').pop() || ddmmyy();
     scCall('sc-project', { id: pr.id }).then(function (proj) {
       var docs = (proj.documents || []).filter(function (d) { return !pr.docs || pr.docs[d.id]; });
+      var human = scKind(pr) === 'human';
       var ready = docs.filter(function (d) {
-        return (!d.documentDisassemblingStatus || d.documentDisassemblingStatus === 'success') && d.pretranslateCompleted !== false;
+        return human ? docReady(d) : (!d.documentDisassemblingStatus || d.documentDisassemblingStatus === 'success') && d.pretranslateCompleted !== false;
       });
-      if (!ready.length) { st.textContent = docs.length ? 'Smartcat ещё переводит (готово 0 из ' + docs.length + ') — попробуй позже' : 'В проекте больше нет этих документов'; return; }
+      if (!ready.length) { st.textContent = docs.length ? (human ? 'Переводчики ещё работают' : 'Smartcat ещё переводит') + ' (готово 0 из ' + docs.length + ') — попробуй позже' : 'В проекте больше нет этих документов'; return; }
       var files = [], n = 0;
       st.textContent = 'Скачиваю ' + ready.length + ' из ' + docs.length + '…';
       return pool(ready, 3, function (d) {
@@ -5017,11 +5037,14 @@
   }
   /* отправки Smartcat, у которых всё загрузилось, помечаем «загружено» */
   function markScUploaded(todo) {
-    var keys = {};
-    todo.forEach(function (u) { if (u.fromSc && u.scKey) keys[u.scKey] = 1; });
+    var keys = {}, impIds = {};
+    todo.forEach(function (u) { if (u.fromSc && u.scKey) keys[u.scKey] = 1; if (u.scImp && u.sent && u.scDocId) impIds[u.scDocId] = 1; });
     var now = new Date().toISOString(), changed = false;
     var list = scProjects().map(function (pr) {
       var k = pr.key || pr.id;
+      /* загрузили через «Все проекты Smartcat» все файлы этой отправки — она тоже «загружено» */
+      var ids = pr.docs ? Object.keys(pr.docs) : [];
+      if (!pr.uploaded && ids.length && ids.every(function (id) { return impIds[id]; })) { pr.uploaded = now; changed = true; return pr; }
       if (!keys[k]) return pr;
       var items = uploads.filter(function (u) { return u.scKey === k && !u.error && !u.skip; });
       if (items.length && items.every(function (u) { return u.sent; })) { pr.uploaded = now; changed = true; }
