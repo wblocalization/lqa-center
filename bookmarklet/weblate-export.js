@@ -2139,7 +2139,7 @@
     });
   }
   var bandTpl = el('textarea', { class: 'small', placeholder: BAND_TPL_DEFAULT });
-  var bandPeople = el('input', { type: 'text', placeholder: '@ник1 @ник2:tg @ник3:kk,ky', title: '@ник — тегается всегда; @ник:tg — только если в отправке есть таджикский (можно несколько языков через запятую)' });
+  var bandPeople = el('input', { type: 'text', placeholder: '@rg-translators=kk,uz,hy,ka,tg @ник:tg @ник2:kk', title: '@ник — всегда; @ник:tg — только если в отправке есть таджикский; @группа=kk,uz,hy,ka,tg — только когда есть все эти языки (тогда ники этих языков не тегаются)' });
   bandPeople.addEventListener('input', function () { tplRedraw(); });
   bandPeople.addEventListener('input', function () { [bandTplWeb, bandTplApp, bandTpl].forEach(function (t) { t.dispatchEvent(new Event('input')); }); });
   var bandTplWeb = el('textarea', { class: 'small', placeholder: BAND_TPL_WEB });
@@ -2512,7 +2512,7 @@
     connFold,
     fold('Сообщения в чат (Band)', [
       el('p', { class: 'muted', text: 'Ссылки и срок подставятся сами после отправки.' }),
-      el('label', {}, ['Кого тегнуть ({люди}) · @ник:tg — только когда есть этот язык', bandPeople]),
+      el('label', {}, ['Кого тегнуть ({люди}) · @ник:tg — при этом языке, @группа=kk,uz… — когда есть все', bandPeople]),
       fBandWeb = el('div', {}, [el('label', {}, [fBandWebLbl = el('span', { text: 'Сообщение для веба — пусто = стандартное' }), bandTplWeb]),
         tplChips(bandTplWeb, function () { return partKind.value === 'shop' ? BAND_TPL_WEB : BAND_TPL_GEN; }, ['люди', 'дедлайн', 'ссылка_папка', 'папка', 'ссылка_веб', 'слово_веб', 'дата', 'языки'])]),
       fBandApp = el('div', {}, [el('label', {}, ['Сообщение для приложений — пусто = стандартное', bandTplApp]),
@@ -3022,14 +3022,21 @@
     el('label', { class: 'lbl', text: 'Дедлайн' }), homeDeadline,
     homeMsgBox], 'hide');
   homeDeadline.addEventListener('input', function () { if (homeMsgInfo) homeMessage(homeMsgInfo, true, true); });
-  /* {люди}: «@ник» — всегда, «@ник:tg» или «@ник:kk,ky» — только если в отправке есть этот язык */
+  /* {люди}: «@ник» — всегда; «@ник:tg» или «@ник:kk,ky» — только если в отправке есть этот язык;
+     «@группа=kk,uz,hy,ka,tg» — общий тег, только когда в отправке есть ВСЕ эти языки: тогда ники с этими языками не тегаем */
   function peopleFor(raw, langs) {
-    return String(raw || '').split(/\s+/).filter(Boolean).map(function (t) {
-      var m = /^(.+?):([a-z_,-]+)$/i.exec(t);
-      if (!m) return t;
-      if (!langs) return m[1];
-      return m[2].split(',').some(function (l) { return langs.indexOf(baseLang(l)) >= 0; }) ? m[1] : '';
-    }).filter(Boolean).join(' ');
+    var toks = String(raw || '').split(/\s+/).filter(Boolean).map(function (t) {
+      var g = /^(.+?)=([a-z_,-]+)$/i.exec(t), m = /^(.+?):([a-z_,-]+)$/i.exec(t);
+      return g ? { tag: g[1], group: g[2].split(',').map(baseLang) } : m ? { tag: m[1], ls: m[2].split(',').map(baseLang) } : { tag: t };
+    });
+    var has = function (l) { return !langs || langs.indexOf(l) >= 0; }, covered = {};
+    toks.forEach(function (t) { if (t.group && t.group.every(has)) { t.on = true; t.group.forEach(function (l) { covered[l] = 1; }); } });
+    return toks.filter(function (t) {
+      if (t.group) return t.on;
+      if (!t.ls) return true;
+      var mine = t.ls.filter(has);
+      return mine.length > 0 && mine.some(function (l) { return !covered[l]; });
+    }).map(function (t) { return t.tag; }).join(' ');
   }
   function chatFill(tpl, info) {
     var L = info.links || {}, md = function (t, x) { return x ? '[' + t + '](' + x.url + ')' : '—'; };
