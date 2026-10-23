@@ -5287,6 +5287,18 @@
     });
     scCall('sc-ready-get').then(function (r) { scReady = r || {}; homeRefreshSc(); }, function () { homeRefreshSc(); });
   } else homeRefreshSc();
+  /* фон каждые пару минут проверяет Smartcat и пишет scReady в storage —
+     ловим это и перерисовываем статусы в открытом окне, без перезагрузки страницы */
+  if (HAS_EXT && chrome.storage && chrome.storage.onChanged && !window.__wlScLive) {
+    window.__wlScLive = true;
+    chrome.storage.onChanged.addListener(function (ch, area) {
+      /* только scReady: scProjects пишем сами из окна, иначе была бы петля sync → set → onChanged */
+      if (area !== 'local' || !ch.scReady) return;
+      scReady = ch.scReady.newValue || {};
+      try { renderScImport(); } catch (e) {}
+      try { homeRefreshSc(); } catch (e) {}
+    });
+  }
   window.__wlExport = { show: show, autoSend: autoSend, openTab: function (t) {
     show(); tab(t);
     if (HAS_EXT) syncScProjects().then(function () { return scCall('sc-ready-get'); }).then(function (r) { scReady = r || {}; renderScImport(); }, function () {});
