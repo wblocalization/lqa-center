@@ -4794,7 +4794,8 @@
       g.items.forEach(function (pr) {
         var kind = scKind(pr);
         var st = el('span', { class: pr.uploaded ? 'ok' : 'muted',
-          text: pr.uploaded ? '✓ в Weblate ' + fmtDate(pr.uploaded) : (scReady[keyOf(pr)] ? '🔔 перевод готов' : '') });
+          text: pr.uploaded ? '✓ в Weblate ' + fmtDate(pr.uploaded) : (scReady[keyOf(pr)] ? '🔔 перевод готов' : '') +
+            (pr.sentDocs && pr.docs ? (scReady[keyOf(pr)] ? ' · ' : '') + 'в Weblate ' + Object.keys(pr.sentDocs).length + ' из ' + Object.keys(pr.docs).length + ' — остальные ещё переводятся' : '') });
         var get = el('button', { class: 'b s', text: 'В Weblate', title: kind === 'mt' ? 'Забрать машперевод и загрузить в Weblate — только в пустые строки' : 'Забрать перевод переводчиков и загрузить в Weblate — с заменой переведённых и одобренных строк',
           onclick: function () { fetchSc(pr, st, get, auto); } });
         var zip = el('button', { class: 'b g s', text: 'ZIP', title: 'Скачать готовые переводы из Smartcat архивом (в Weblate ничего не загружается)',
@@ -4965,7 +4966,7 @@
         var key = scDocKey(d.name), comp = pr.docs ? pr.docs[d.id] : pr.files[key];
         var lang = (pr.docs && pr.docs[d.id].lang) || pr.langs[String(d.targetLanguage || '').toLowerCase()] ||
           Object.keys(pr.langs).map(function (k) { return pr.langs[k]; }).filter(function (l) { return baseLang(l) === baseLang(d.targetLanguage || ''); })[0];
-        var u = { name: 'Smartcat/' + key + '.po', text: '', filled: 0, total: 0, fromSc: true, scKey: prKey, opts: human || pr.keys ? HUMAN_OPTS : undefined };   /* отправка ключами — перевод заменяет и уже переведённые строки */
+        var u = { name: 'Smartcat/' + key + '.po', text: '', filled: 0, total: 0, fromSc: true, scKey: prKey, scDocId: d.id, opts: human || pr.keys ? HUMAN_OPTS : undefined };   /* отправка ключами — перевод заменяет и уже переведённые строки */
         if (!comp || !lang) { u.error = 'не понимаю, куда это: документ «' + d.name + '», язык ' + d.targetLanguage; uploads.push(u); return Promise.resolve(); }
         u.p = comp.p; u.c = comp.c; u.lang = lang;
         return scCall('sc-export', { documentId: d.id }).then(function (r) {
@@ -5044,14 +5045,24 @@
   }
   /* отправки Smartcat, у которых всё загрузилось, помечаем «загружено» */
   function markScUploaded(todo) {
-    var keys = {}, impIds = {};
-    todo.forEach(function (u) { if (u.fromSc && u.scKey) keys[u.scKey] = 1; if (u.scImp && u.sent && u.scDocId) impIds[u.scDocId] = 1; });
+    var keys = {};
+    todo.forEach(function (u) { if (u.fromSc && u.scKey) keys[u.scKey] = 1; });
     var now = new Date().toISOString(), changed = false;
     var list = scProjects().map(function (pr) {
       var k = pr.key || pr.id;
-      /* загрузили через «Все проекты Smartcat» все файлы этой отправки — она тоже «загружено» */
       var ids = pr.docs ? Object.keys(pr.docs) : [];
-      if (!pr.uploaded && ids.length && ids.every(function (id) { return impIds[id]; })) { pr.uploaded = now; changed = true; return pr; }
+      if (ids.length) {
+        /* какие файлы отправки уже в Weblate (копится между загрузками); «загружено» — только когда все,
+           а не когда загрузились те, что были готовы (часть языков ещё переводится) */
+        var got = Object.assign({}, pr.sentDocs || {}), add = false;
+        todo.forEach(function (u) {
+          if (!u.sent || !u.scDocId || !pr.docs[u.scDocId] || got[u.scDocId]) return;
+          if ((u.fromSc && u.scKey === k) || u.scImp) { got[u.scDocId] = 1; add = true; }
+        });
+        if (add) { pr.sentDocs = got; changed = true; }
+        if (!pr.uploaded && ids.every(function (id) { return got[id]; })) { pr.uploaded = now; changed = true; }
+        return pr;
+      }
       if (!keys[k]) return pr;
       var items = uploads.filter(function (u) { return u.scKey === k && !u.error && !u.skip; });
       if (items.length && items.every(function (u) { return u.sent; })) { pr.uploaded = now; changed = true; }
