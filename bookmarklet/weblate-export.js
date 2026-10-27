@@ -443,7 +443,8 @@
     }
     take(/\{\{\s*([^{}]+?)\s*\}\}/g, 'i18n', function (m, x) { return '{{' + x.replace(/\s+/g, '') + '}}'; });
     take(/\$t\([^)]*\)/g, 'nest', function (m) { return m.replace(/\s+/g, ''); });
-    if (kinds.printf) take(/%(\d+\$)?[-+0#]?\d*(?:\.\d+)?[sdif@]/g, 'printf');
+    /* «%%» — просто знак процента: убираем до разбора, иначе «%d%%-dək» читается как переменная «%-d» */
+    if (kinds.printf) { rest = rest.replace(/%%/g, '  '); take(/%(\d+\$)?[-+0#]?\d*(?:\.\d+)?[sdif@]/g, 'printf'); }
     if (kinds.single) take(/\{[A-Za-z_][\w.]*\}/g, 'single');
     String(s || '').replace(/<\/?([a-zA-Z][\w-]*)[^>]*>/g, function (m, n) { tags.push(n.toLowerCase()); return m; });
     return { toks: toks, tags: tags.sort().join(','), stray: /[{}]/.test(rest), kinds: found };
@@ -538,7 +539,68 @@
     }
     var nl = fixNewlines(u.text);
     if (nl.n) { u.text = nl.text; notes.push('убрала лишние переносы строк: ' + nl.n); }
+    if (curSetup() === 'Магазинка') {
+      var bf = fixBrands(u.text, u.lang);
+      if (bf.n || bf.fuzzy) u.text = bf.text;
+      if (bf.n) { u.brandFixed = bf.keys; notes.push('поправила бренд / юрлицо: ' + bf.n + ' стр. (' + bf.keys.slice(0, 5).join(', ') + (bf.keys.length > 5 ? '…' : '') + ')'); }
+      if (bf.fuzzy) notes.push('сняла «требует правки» с машперевода: ' + bf.fuzzy);
+    }
     if (notes.length) u.note = (u.note ? u.note + ' · ' : '') + notes.join(' · ');
+  }
+  /* Магазинка: бренды и юрлица — как требует проверка бренда в iOS/Android (CI).
+     Строки в экранированном виде, как в файле: кавычка внутри — \" */
+  var BR_Q = '(?:\\\\"|[«»“”\'’])';
+  var AZ_SUF = [[/^(?:n?[ıiuü]n)$/, 'nin'], [/^(?:n?[ıiuü])$/, 'ni'], [/^(?:y?[aə])$/, 'yə'], [/^(?:[dt][aə])$/, 'də'],
+    [/^(?:[dt][aə]n)$/, 'dən'], [/^(?:[ıiuü]?m)$/, 'm']];
+  var AZ_OK = ['nin', 'ni', 'yə', 'də', 'dən', 'm'];
+  function brandFixStr(s, src, lang) {
+    var b = baseLang(lang || ''), legal = /ООО|МКК|\bАО\b|ПАО/.test(src);
+    if (b === 'ru' || !s) return s;
+    /* «ВБ Клуб», «ՎԲ Ակումբ», «VB Klub» — бренд пишется латиницей WB (кроме названий юрлиц) */
+    if (!legal) {
+      s = s.replace(/(^|[^\p{L}\d])(?:ВБ|ՎԲ)(?=[\s \-]|$)/gu, '$1WB');
+      s = s.replace(/(^|[^\p{L}\d.\/@_-])VB(?=[\s ]|$)/gu, '$1WB');
+    }
+    /* «WB საფულის WB-ის ფასდაკლება» — лишний второй WB, если в исходнике он один */
+    var cnt = function (x) { return (x.match(/(^|[^\w.\/@-])(WB|ВБ)(?![\w.])/g) || []).length; };
+    if (cnt(s) > cnt(src)) s = s.replace(/(\bWB[\s ]+[^\s ]+[\s ]+)WB(?:-[^\s ]+)?[\s ]+/, '$1');
+    if (b === 'az') {
+      /* окончания только из таблицы: -nin -ni -yə -də -dən -m, через дефис или сразу за кавычкой */
+      s = s.replace(new RegExp('(^|[^\\p{L}\\d.\\/@_-])(WB|Wildberries)(' + BR_Q + '?)(-?)(\\p{L}+)', 'giu'), function (all, pre, br, q, dash, suf) {
+        if (!q && !dash) return all;                                  /* WBClub, Wildberriesdə — слитно не трогаем */
+        if (dash && /^\p{Lu}/u.test(suf)) return pre + br + q + ' ' + suf;  /* WB-Klub → WB Klub */
+        if (AZ_OK.indexOf(suf.toLowerCase()) >= 0) return all;
+        for (var i = 0; i < AZ_SUF.length; i++) if (AZ_SUF[i][0].test(suf.toLowerCase())) return pre + br + q + (q ? '' : '-') + AZ_SUF[i][1];
+        return all;
+      });
+      /* юрлица — ровно как в справочнике */
+      s = s.replace(new RegExp(BR_Q + '?\\s*VB[\\s\\u00a0]+[ÇC]ASTYAM[İIiı]\\s*' + BR_Q + '?', 'giu'), '«VB Çastyami»')
+        .replace(new RegExp(BR_Q + '?\\s*VAYLDBERR[İI]Z[\\s\\u00a0]+BANK\\s*' + BR_Q + '?', 'giu'), '«Vayldberriz Bank»')
+        .replace(/\bVB[\s ]+BANK[\s ]+MMC\b/gi, 'VB Bank MMC')
+        .replace(/\b(MMC|MKK)\b/gi, function (m) { return m.toUpperCase(); });
+    }
+    if (b === 'en' && /ЧАСТЯМИ|Частями/.test(src) && legal)
+      s = s.replace(new RegExp('(?:\\bLLC[\\s\\u00a0]+)?' + BR_Q + '?WB[\\s\\u00a0]+(?:Pay[\\s\\u00a0]+)?in[\\s\\u00a0]+Parts' + BR_Q + '?(?:[\\s\\u00a0]+LLC\\b)?', 'gi'), 'WB In Parts LLC');
+    return s;
+  }
+  function fixBrands(text, lang) {
+    var es = poEntries(text), n = 0, fz = 0, keys = [];
+    if (!lang) { var hd = es.filter(function (e) { return e.header; })[0]; var m = hd && /Language:\s*([\w@-]+)/.exec(hd.strs.join('')); lang = m ? m[1] : ''; }
+    var parts = es.map(function (e) {
+      if (e.header || e.obsolete || !e.strs.some(Boolean)) return e.lines.join('\n');
+      var src = e.msgid + ' ' + (e.plural || ''), strs = e.strs.map(function (x) { return brandFixStr(x, src, lang); });
+      var ch = strs.some(function (x, i) { return x !== e.strs[i]; });
+      if (ch) { n++; keys.push((e.ctx || e.msgid.slice(0, 30)).split('.').slice(-2).join('.')); }
+      var lines = ch ? setPoStrs(e, strs).split('\n') : e.lines;
+      /* машперевод из Smartcat приходит с fuzzy — снимаем, иначе строки не считаются переведёнными */
+      if (e.fuzzy && strs.every(Boolean)) {
+        fz++;
+        lines = lines.map(function (l) { return l.indexOf('#,') === 0 ? l.replace(/\bfuzzy\b,?\s*/, '').replace(/,\s*$/, '') : l; })
+          .filter(function (l) { return !/^#,?\s*$/.test(l); });
+      }
+      return lines.join('\n');
+    });
+    return n || fz ? { text: parts.join('\n\n') + '\n', n: n, fuzzy: fz, keys: keys } : { text: text, n: 0, fuzzy: 0, keys: [] };
   }
   /* заменить msgstr у записи (строки в экранированном виде, как в файле) */
   function setPoStrs(e, strs) {
