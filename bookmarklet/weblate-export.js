@@ -275,8 +275,11 @@
       if (k === '__hit' || k === '__seen') return;
       var pre = keyPrefix(k), ok;
       if (pre) ok = ctx.indexOf(pre) === 0 || ['.', ':', '/'].some(function (s) { return ctx.indexOf(s + pre) >= 0; });   /* префикс: debitsDrawer.* или SMARTPVZ_* */
-      else ok = ctx === k || e.msgid === k ||
-        (ctx.length > k.length && ctx.slice(-k.length) === k && /[.:\/]/.test(ctx.charAt(ctx.length - k.length - 1)));   /* окончание по границе части ключа */
+      else {
+        var tail = function (q) { return ctx === q || (ctx.length > q.length && ctx.slice(-q.length) === q && /[.:\/]/.test(ctx.charAt(ctx.length - q.length - 1))); };   /* окончание по границе части ключа */
+        var kb = k.replace(/_(?:plural_)?(?:zero|one|two|few|many|other)$/, '');   /* форма плюралки: KEY_plural_few → сама строка KEY */
+        ok = tail(k) || e.msgid === k || (kb !== k && (tail(kb) || tail(kb + '_plural')));
+      }
       if (!ok) return;
       hit = true;
       var h = (keys.__hit = keys.__hit || {}); (h[k] = h[k] || {})[ctx || e.msgid] = 1;
@@ -989,6 +992,7 @@
     '.lpb{display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 5px;border-radius:999px;border:1px solid var(--line);background:var(--card);font:inherit;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer}',
     '.lpb .flag{width:20px;height:15px;border-radius:50%/40%}.lpb .flag svg{width:20px;height:15px}.lpb small{color:var(--ink-soft);font-weight:500;font-size:11px}',
     '.lpb:hover{border-color:var(--accent)}.lpb.on{background:var(--soft);border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 15%,transparent)}',
+    '.lpb.arc{background:var(--card);border-style:dashed}.lpb.arc.on{background:#fff4e5;border-color:#d9822b;color:#a85d12;box-shadow:none}',
     '.lang{display:inline-flex;align-items:center;gap:8px}',
     '.layouts{display:grid;gap:6px}',
     '.layouts label{display:flex;gap:8px;align-items:baseline;padding:8px 11px;border:1px solid var(--line);border-radius:12px;cursor:pointer;background:var(--card)}',
@@ -2334,7 +2338,7 @@
     }, function () { return null; });
   }
   /* ----- сетапы: свой проект / английские проекты / коды языков; аккаунт и ключ общие ----- */
-  var SETUP_FIELDS = ['project', 'enAndroid', 'enIos', 'enWeb', 'langMap', 'extra', 'langWeb', 'langMob', 'enAssign', 'enEdit', 'links', 'bandTpl', 'bandHook', 'bandAuto', 'bandPeople', 'bandTplWeb', 'bandTplApp', 'linksMob', 'parts'];
+  var SETUP_FIELDS = ['project', 'enAndroid', 'enIos', 'enWeb', 'langMap', 'extra', 'langWeb', 'langMob', 'enAssign', 'enEdit', 'links', 'bandTpl', 'bandHook', 'bandAuto', 'bandPeople', 'bandTplWeb', 'bandTplApp', 'linksMob', 'parts', 'arcWeb', 'arcMob'];
   var scSetup = el('select', { class: 'presel' });
   function setupsOf(c) {
     var list = (c.setups || []).slice();
@@ -2382,7 +2386,7 @@
       });
       return scCall('sc-set-config', { config: cfg }).then(loadScConfig);
     }).then(function (c) {
-      homeLangSel = null; homeMsgInfo = null;
+      homeLangSel = null; homeArcSel = null; homeMsgInfo = null;
       fillScSettings(); if (c) fillSetupSelects(c); renderScImport(); homeRefreshSc(); homeRenderSeg();
       homeMessage({ links: {} }, true, true);   /* сообщения и их последние ссылки — этого сетапа */
       return c;
@@ -2672,7 +2676,7 @@
       homeSeg.appendChild(el('button', { class: 'chipb' + (homeMode === m[0] ? ' on' : ''), type: 'button', text: m[1], onclick: function () {
         if (m[0] === 'manual') { homeToManual(); return; }
         if (homeMode === 'web') homeWebLinks = homeLinks.value;
-        homeMode = m[0]; sset('wlx_home_tpl', homeMode); homeLangSel = null; homeTgt.proj = null; homeTgt.folder = ''; homeTgtNew.value = ''; homeLoadLinks(); homeRenderSeg();
+        homeMode = m[0]; sset('wlx_home_tpl', homeMode); homeLangSel = null; homeArcSel = null; homeTgt.proj = null; homeTgt.folder = ''; homeTgtNew.value = ''; homeLoadLinks(); homeRenderSeg();
       } }));
     });
     var w = tplByPlat('web'), mb = tplByPlat('android');
@@ -2716,6 +2720,13 @@
   }
   /* языки прямо на экране отправки: кнопки с флагами; меняют языки этой отправки, «запомнить» — для сетапа */
   var homeLangSel = null, homeLangMore = false;
+  /* языки «только архивом, без Smartcat» — часть языков в Smartcat, часть подрядчику архивом; запоминается для сетапа */
+  var homeArcSel = null;
+  function homeArcField() { return partsOf(scCfg).kind === 'shop' && homeMode === 'mob' ? 'arcMob' : 'arcWeb'; }
+  function homeArcBase() { return String((scCfg && activeSetup(scCfg)[homeArcField()]) || '').split(/\s+/).filter(Boolean); }
+  function homeArc() { return homeArcSel || homeArcBase(); }
+  /* у веба Магазинки и так в Smartcat только английский; у сетапа «только архивы» Smartcat нет вовсе */
+  function homeArcAllowed() { var pt = partsOf(scCfg); return HAS_EXT && (pt.kind === 'shop' ? homeMode === 'mob' : !!pt.mt); }
   function homeLangBase() { var t = tplByPlat(partsOf(scCfg).kind === 'shop' && homeMode === 'mob' ? 'android' : 'web'); return t ? t.bases.slice() : []; }
   function homeLangDraw() {
     homeLangInfo.textContent = '';
@@ -2733,14 +2744,28 @@
     });
     if (!homeLangMore) box.appendChild(el('button', { class: 'lpb more', type: 'button', text: '＋ ещё языки', onclick: function () { homeLangMore = true; homeLangDraw(); } }));
     homeLangInfo.appendChild(box);
-    var changed = homeLangSel && homeLangSel.join(' ') !== base.join(' ');
+    var arc = homeArc().filter(function (c) { return cur.indexOf(c) >= 0; });
+    if (homeArcAllowed() && cur.length > 1) {
+      var abox = el('div', { class: 'lpick', style: 'margin-top:8px;align-items:center' }, [el('span', { class: 'muted', style: 'font-size:12px', text: 'Только архивом, без Smartcat:' })]);
+      cur.forEach(function (c) {
+        var on = arc.indexOf(c) >= 0;
+        abox.appendChild(el('button', { class: 'lpb arc' + (on ? ' on' : ''), type: 'button', title: on ? 'уйдёт только в архив — нажми, чтобы отправить в Smartcat' : 'нажми, чтобы не отправлять в Smartcat, а выгрузить архивом',
+          onclick: function () { var now = arc.slice(); homeArcSel = on ? now.filter(function (x) { return x !== c; }) : now.concat([c]); homeLangDraw(); } }, [flag(c), el('span', { text: langName(c) })]));
+      });
+      if (arc.length) abox.appendChild(el('span', { class: 'muted', style: 'font-size:12px', text: arc.length === cur.length ? '— в Smartcat ничего не уйдёт' : '— остальные в Smartcat' }));
+      homeLangInfo.appendChild(abox);
+    }
+    var arcChanged = homeArcSel && homeArcSel.slice().sort().join(' ') !== homeArcBase().slice().sort().join(' ');
+    var changed = (homeLangSel && homeLangSel.join(' ') !== base.join(' ')) || arcChanged;
     var line = el('div', { class: 'row', style: 'gap:10px;margin-top:6px' }, [el('span', { class: 'muted', style: 'font-size:12px', text: changed ? 'только для этой отправки' : 'как в сетапе' })]);
     if (changed && HAS_EXT) {
       line.appendChild(el('button', { class: 'lnk', type: 'button', text: '✓ запомнить для сетапа', onclick: function () {
-        var f = {}; f[partsOf(scCfg).kind === 'shop' && homeMode === 'mob' ? 'langMob' : 'langWeb'] = homeLangSel.join(' ');
-        patchSetup(f).then(function () { homeLangSel = null; homeRenderSeg(); toast('Языки сохранены для этого сетапа'); }, function () {});
+        var f = {};
+        if (homeLangSel) f[partsOf(scCfg).kind === 'shop' && homeMode === 'mob' ? 'langMob' : 'langWeb'] = homeLangSel.join(' ');
+        if (homeArcSel) f[homeArcField()] = homeArcSel.join(' ');
+        patchSetup(f).then(function () { homeLangSel = null; homeArcSel = null; homeRenderSeg(); toast('Языки сохранены для этого сетапа'); }, function () {});
       } }));
-      line.appendChild(el('button', { class: 'lnk', type: 'button', text: '↺ как в сетапе', onclick: function () { homeLangSel = null; homeLangDraw(); } }));
+      line.appendChild(el('button', { class: 'lnk', type: 'button', text: '↺ как в сетапе', onclick: function () { homeLangSel = null; homeArcSel = null; homeLangDraw(); } }));
     }
     line.appendChild(el('button', { class: 'lnk', type: 'button', text: 'галочками разово', onclick: homeToManual }));
     homeLangInfo.appendChild(line);
@@ -2912,7 +2937,16 @@
   function homeKeySet() {
     if (!homeKeysOn.checked) return null;
     var k = {}, n = 0;
-    homeKeys.value.split(/[\r\n,;]+/).forEach(function (x) { x = x.trim().replace(/^["'«]+|["'»]+$/g, ''); if (x && !k[x]) { k[x] = 1; n++; } });   /* по строке или через запятую */
+    var addK = function (x) { x = x.trim().replace(/^["'«`]+|["'»`]+$/g, ''); if (x && !k[x]) { k[x] = 1; n++; } };
+    homeKeys.value.split(/\r?\n/).forEach(function (line) {
+      /* список из заметок: «* `KEY`: `текст`» или «KEY: текст» — берём только ключ */
+      line = line.replace(/^\s*(?:[*•·–—-]|\d+[.)])\s+/, '');
+      var bt = /`([^`]+)`/.exec(line);
+      if (bt) { addK(bt[1]); return; }
+      var m = /^\s*([\w.:\/@-]+)\s*(?::\s|\t|\s[—–-]\s|=)/.exec(line);
+      if (m) { addK(m[1]); return; }
+      line.split(/[,;]+/).forEach(addK);   /* по строке или через запятую */
+    });
     return n ? k : {};
   }
   /* архив на компьютер — прямо на экране, запоминается для этого сетапа (то же, что ⚙ → «Как отправлять») */
@@ -3016,19 +3050,25 @@
         homeDetails.classList.remove('hide'); homeDetails.open = true;
       }
       var strings = res.reduce(function (a, x) { return a + x.strings; }, 0);
-      var a = ptR.zip || !send ? saveArchives(res) : { files: 0, zips: [], off: true };   /* архивы на компьютер — если включено в сетапе (или «Только скачать архив») */
+      /* языки «только архивом» — в архив подрядчику, в Smartcat не уходят */
+      var arcL = send && homeArcAllowed() ? homeArc() : [];
+      var isArc = function (x) { return arcL.indexOf(x.language) >= 0 || arcL.indexOf(baseLang(x.language)) >= 0; };
+      var resArc = res.filter(isArc), resSc = res.filter(function (x) { return !isArc(x); });
+      var a = ptR.zip || !send ? saveArchives(res) : resArc.length ? saveArchives(resArc) : { files: 0, zips: [], off: true };   /* архивы на компьютер — если включено в сетапе (или «Только скачать архив») */
       var uniq = function (l) { return l.filter(function (x, i, arr) { return arr.indexOf(x) === i; }); };
       info = { 'дата': ddmmyy(), 'проект': scCfg ? activeSetup(scCfg).name : '', 'архивы': a.zips.length ? a.zips.map(function (z) { return z + '.zip'; }).join(', ') : '—',
         'smartcat': send && HAS_EXT ? '…' : 'не отправляли', 'языки': uniq(res.map(function (x) { return langName(x.language); })).join(', '),
         'компоненты': uniq(res.map(function (x) { return x.component; })).join(', '), 'строки': String(strings),
-        __langs: uniq(res.map(function (x) { return baseLang(x.language); })) };
-      homeStep(0, 'ok', strings + ' строк · ' + (a.off ? 'архив на компьютер не сохраняю (так в ⚙)' : a.zips.length ? 'сохранены ' + a.zips.map(function (z) { return z + '.zip'; }).join(', ') : 'только английский — архивов нет'),
-        el('button', { class: 'b g s', type: 'button', text: '⬇ ещё раз', onclick: function () { saveArchives(res); } }));
+        __langs: uniq((send ? resSc : res).map(function (x) { return baseLang(x.language); })) };
+      var arcNote = resArc.length ? ' · только архивом: ' + uniq(resArc.map(function (x) { return langName(x.language); })).join(', ') : '';
+      homeStep(0, 'ok', strings + ' строк · ' + (a.off ? 'архив на компьютер не сохраняю (так в ⚙)' : a.zips.length ? 'сохранены ' + a.zips.map(function (z) { return z + '.zip'; }).join(', ') : 'только английский — архивов нет') + arcNote,
+        el('button', { class: 'b g s', type: 'button', text: '⬇ ещё раз', onclick: function () { saveArchives(ptR.zip || !send ? res : resArc); } }));
       if (!send || !HAS_EXT) { homeStep(1, 'next', send ? '' : 'пропущено — выбрано «Только архивы»'); return; }
+      if (!resSc.length) { if (info) info.smartcat = 'не отправляли'; homeStep(1, 'next', 'пропущено — все языки отмечены «только архивом»'); return; }
       homeStep(1, 'run', 'Готовлю отправку…');
       var box = el('div'); homeOut.appendChild(box);
       homeTgt.forWeb = homeTgtWeb(); homeTgt.title = homeTitle(); homeTgt.keys = !!keys;
-      return Promise.resolve(renderSmartcat(res, box, homeTgt)).then(function (btn) {
+      return Promise.resolve(renderSmartcat(resSc, box, homeTgt)).then(function (btn) {
         if (!btn) {
           if (info) info.smartcat = 'не отправляли';
           homeStep(1, 'err', scCfg && scCfg.accountId && scCfg.hasKey ? 'Отправлять в Smartcat нечего' : 'Smartcat не подключён — открой ⚙');
