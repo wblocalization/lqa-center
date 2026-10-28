@@ -564,6 +564,14 @@
       s = s.replace(/(^|[^\p{L}\d])(?:ВБ|ՎԲ)(?=[\s \-]|$)/gu, '$1WB');
       s = s.replace(/(^|[^\p{L}\d.\/@_-])VB(?=[\s ]|$)/gu, '$1WB');
     }
+    /* N11 → WB: пишем WB, приложение N11 само подставит своё. Юрлица N11 (N11 Bank, N11 Hissə-hissə, N11 Ödəniş…) не трогаем */
+    if (!/N11/i.test(src)) {
+      var N11_AZ = { 'in': 'nin', 'ın': 'nin', 'un': 'nin', 'ün': 'nin', 'i': 'ni', 'ı': 'ni', 'u': 'ni', 'ü': 'ni', 'ə': 'yə', 'a': 'yə', 'də': 'də', 'da': 'də', 'dən': 'dən', 'dan': 'dən', 'im': 'm', 'ım': 'm', 'um': 'm', 'üm': 'm' };
+      s = s.replace(new RegExp('(^|[^\\p{L}\\d.\\/@_-])N11(' + BR_Q + '?)(-?)(\\p{L}*)(?![\\s\\u00a0]*(?:Bank|Hiss|Ödəniş|Odeniş|bank)|' + BR_Q + '?[\\s\\u00a0]*(?:MMC|MKK|OOO|LLC))', 'giu'), function (all, pre, q, dash, suf) {
+        if (b === 'az' && suf && (q || dash)) return pre + 'WB' + q + (q ? '' : '-') + (N11_AZ[suf.toLowerCase()] || suf);
+        return pre + 'WB' + q + dash + suf;
+      });
+    }
     /* «WB საფულის WB-ის ფასდაკლება» — лишний второй WB, если в исходнике он один */
     var cnt = function (x) { return (x.match(/(^|[^\w.\/@-])(WB|ВБ)(?![\w.])/g) || []).length; };
     if (cnt(s) > cnt(src)) s = s.replace(/(\bWB[\s ]+[^\s ]+[\s ]+)WB(?:-[^\s ]+)?[\s ]+/, '$1');
