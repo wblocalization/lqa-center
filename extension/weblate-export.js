@@ -328,6 +328,8 @@
     for (var i = 0; i < n; i++) idx.push('_' + i);
     if (fmt === 'i18next') return n === 2 ? ['', '_plural'] : idx;
     var cats = fitCats(pluralCats(code), n);
+    /* браузер не знает язык (таджикский) — две формы в Weblate это one/other */
+    if (!cats && n === 2) cats = ['one', 'other'];
     return cats ? cats.map(function (c) { return '_' + c; }) : idx;
   }
   /* непереведённые плюралки → { "ключ_one": "…", "ключ_other": "…" }; где перевода нет — русский исходник нужной формы */
@@ -4497,6 +4499,18 @@
       var srcT = trs.filter(function (t) { return t.is_source; })[0], srcCode = srcT ? srcT.language.code : 'ru';
       var anySrc = {}, drop = {}, owned = {};
       list.forEach(function (x) { (x.source || []).forEach(function (s) { anySrc[s] = 1; }); });
+      /* формы в файле названы не так, как ждёт Weblate (…_0/_1 вместо …_one/_other и т.п.) — переименовываем по порядку форм */
+      var renamed = 0;
+      list.forEach(function (x) {
+        if (!x.context) return;
+        var n = x.target && x.target.length > 1 ? x.target.length : pluralCats(u.lang).length;
+        var want = pluralSuffixes(fmt, u.lang, n).map(function (sf) { return x.context + sf; });
+        var have = Object.keys(u.obj).filter(function (k) { return k.indexOf(x.context + '_') === 0 && /^_(?:\d+|zero|one|two|few|many|other|plural)$/.test(k.slice(x.context.length)); });
+        if (!have.length || have.length !== want.length || have.every(function (k) { return want.indexOf(k) >= 0; })) return;
+        var rank = function (k) { var sf = k.slice(x.context.length + 1); return /^\d+$/.test(sf) ? +sf : sf === 'plural' ? 99 : CAT_ORDER.indexOf(sf); };
+        have.sort(function (a, b) { return rank(a) - rank(b); }).forEach(function (k, i) { var v = u.obj[k]; delete u.obj[k]; u.obj[want[i]] = v; renamed++; });
+      });
+      if (renamed) keys = Object.keys(u.obj);
       list.forEach(function (x) {
         if (!x.context) return;
         var ph = pluralPlaceholders(x, fmt, srcCode, u.lang);
@@ -4515,6 +4529,7 @@
       u.text = JSON.stringify(kept, null, 2) + '\n';
       if (!u.filled) u.skip = 'всё ещё на русском — похоже, не переведено, пропущу';
       else if (dropped) u.note = dropped + ' ещё на русском — их не отправлю';
+      if (renamed) u.note = (u.note ? u.note + ' · ' : '') + 'формы плюралок переименовала под Weblate: ' + renamed;
       return u;
     }, function () { u.note = 'не смогла сверить с исходником'; return u; });
   }
