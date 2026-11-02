@@ -1001,6 +1001,7 @@
     '.lpb .flag{width:20px;height:15px;border-radius:50%/40%}.lpb .flag svg{width:20px;height:15px}.lpb small{color:var(--ink-soft);font-weight:500;font-size:11px}',
     '.lpb:hover{border-color:var(--accent)}.lpb.on{background:var(--soft);border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 15%,transparent)}',
     '.lpb.arc{background:var(--card);border-style:dashed}.lpb.arc.on{background:#fff4e5;border-color:#d9822b;color:#a85d12;box-shadow:none}',
+    '.keyrev{margin-top:8px;padding:10px 12px;border:1px solid var(--accent);border-radius:12px;background:var(--soft);display:grid;gap:6px;font-size:13px}.keyrev .keylist{white-space:pre-line;max-height:180px;overflow:auto;font-family:ui-monospace,monospace;font-size:12px;color:var(--ink-soft)}',
     '.lang{display:inline-flex;align-items:center;gap:8px}',
     '.layouts{display:grid;gap:6px}',
     '.layouts label{display:flex;gap:8px;align-items:baseline;padding:8px 11px;border:1px solid var(--line);border-radius:12px;cursor:pointer;background:var(--card)}',
@@ -2940,8 +2941,9 @@
   }
   /* только определённые ключи: через запятую или по одному на строку — уйдут только эти строки */
   var homeKeysOn = el('input', { type: 'checkbox' });
+  var homeReview = el('div', { class: 'keyrev hide' });
   var homeKeys = el('textarea', { class: 'small hide', placeholder: 'Ключи через запятую или по одному на строку — полностью, концом ключа или префиксом со *, например:\ngoodsQty, notifications.dbs_permission_revoked, debitsDrawer.*' });
-  homeKeysOn.addEventListener('change', function () { homeKeys.classList.toggle('hide', !homeKeysOn.checked); if (homeKeysOn.checked) homeKeys.focus(); });
+  homeKeysOn.addEventListener('change', function () { homeKeys.classList.toggle('hide', !homeKeysOn.checked); if (!homeKeysOn.checked) homeReview.classList.add('hide'); if (homeKeysOn.checked) homeKeys.focus(); });
   function homeKeySet() {
     if (!homeKeysOn.checked) return null;
     var k = {}, n = 0;
@@ -3001,6 +3003,7 @@
       homeStep(1, 'err', 'Впиши название в «Куда в Smartcat» → «Название» (дата подставится сама)'); homeTitleIn.focus(); return;
     }
     var keys = homeKeySet();
+    homeReview.classList.add('hide'); homeReview.textContent = '';
     if (keys && !Object.keys(keys).length) { homeStep(0, 'err', 'Включено «Только определённые ключи» — впиши ключи или сними галочку'); return; }
     if (homeMode === 'mob') { if (homePin.checked) sset('wlx_home_links_mob', text !== mobLinks() ? text : ''); }
     else { homeWebLinks = text; if (homePin.checked) { sset('wlx_home_links', text); if (HAS_EXT) patchSetup({ links: text }).catch(function () {}); } }
@@ -3057,6 +3060,10 @@
         })));
         homeDetails.classList.remove('hide'); homeDetails.open = true;
       }
+      /* «только определённые ключи»: сначала показываем, что нашлось, — поправить список или отправить */
+      var gate = keys && send && HAS_EXT ? keysReview(keys, res, miss, many) : Promise.resolve(true);
+      return gate.then(function (go) {
+      if (!go) return;
       var strings = res.reduce(function (a, x) { return a + x.strings; }, 0);
       /* языки «только архивом» — в архив подрядчику, в Smartcat не уходят */
       var arcL = send && homeArcAllowed() ? homeArc() : [];
@@ -3109,11 +3116,37 @@
           btn.click();
         });
       });
+      });
     }).catch(function (e) {
       homeProg.classList.add('hide');
       var cur = homeSteps.filter(function (s) { return /d-run/.test(s.dot.className); })[0];
       homeStep(cur ? homeSteps.indexOf(cur) : 0, 'err', friendly(e));
     }).then(function () { homeGo.disabled = homeZip.disabled = false; homeRefreshSc(); if (info) homeMessage(info); });
+  }
+  /* проверка ключей: что нашлось в Weblate, чего нет — дальше «Отправить в Smartcat» или поправить список и проверить ещё раз */
+  function keysReview(keys, res, miss, many) {
+    return new Promise(function (resolve) {
+      var uq = function (l) { return l.filter(function (x, i, a) { return a.indexOf(x) === i; }); };
+      var hit = keys.__hit || {}, found = Object.keys(hit);
+      var strings = res.reduce(function (a, x) { return a + x.strings; }, 0);
+      var langs = uq(res.map(function (x) { return langName(x.language); })), comps = uq(res.map(function (x) { return x.component; }));
+      homeReview.textContent = ''; homeReview.classList.remove('hide');
+      homeReview.appendChild(el('b', { text: 'Проверь ключи перед отправкой в Smartcat' }));
+      homeReview.appendChild(el('div', { class: 'ok', text: '✓ Нашла ' + found.length + ' из ' + (found.length + miss.length) + ' · строк ' + strings + ' · языков ' + langs.length + ' · компонентов ' + comps.length + ' (' + comps.join(', ') + ')' }));
+      homeReview.appendChild(el('div', { class: 'keylist', text: found.map(function (k) {
+        var full = Object.keys(hit[k]);
+        return full.length === 1 && full[0] === k ? k : k + ' → ' + full.slice(0, 5).join(', ') + (full.length > 5 ? '…' : '');
+      }).join('\n') }));
+      if (miss.length) homeReview.appendChild(el('div', { class: 'red', text: '✗ Не нашла (' + miss.length + '): ' + miss.join(', ') }));
+      if (many.length) homeReview.appendChild(el('div', { class: 'warnbox', text: 'Подошли к нескольким ключам: ' + many.join(', ') + ' — уйдут все, если нужен один, впиши точнее' }));
+      var finish = function (v) { go.disabled = again.disabled = cancel.disabled = true; resolve(v); };
+      var go = el('button', { class: 'b s', type: 'button', text: '➜ Отправить в Smartcat (' + strings + ' строк)', onclick: function () { homeReview.classList.add('hide'); finish(true); } });
+      var again = el('button', { class: 'b g s', type: 'button', text: '↻ Проверить ещё раз', title: 'Поправь список ключей выше и проверь снова', onclick: function () { finish(false); setTimeout(function () { homeRun(true); }, 0); } });
+      var cancel = el('button', { class: 'b g s', type: 'button', text: 'Отмена', onclick: function () { homeReview.classList.add('hide'); finish(false); homeStep(0, 'next', 'Отменено — ничего не отправлено'); } });
+      homeReview.appendChild(el('div', { class: 'row', style: 'gap:8px;margin-top:8px;flex-wrap:wrap' }, [go, again, cancel]));
+      homeStep(0, 'run', 'Проверь ключи под списком: поправь и «Проверить ещё раз» или «Отправить в Smartcat»');
+      try { homeReview.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {}
+    });
   }
   /* готовые сообщения в чат (Band): для веба и для приложений — по шаблонам из ⚙ → «Сообщения в чат» */
   var homeMsgText = el('textarea', { class: 'small' });   // сводка (для вебхука)
@@ -3600,7 +3633,7 @@
     el('div', { class: 'hblock' }, [el('span', { class: 'lbl', text: 'Что выгружаем' }), homeLinks,
       el('div', { class: 'row', style: 'margin-top:6px' }, [el('label', { class: 'muted', title: 'Включено — ссылки подставятся сами в следующий раз. Выключено — поле каждый раз своё, а сохранённые ссылки сетапа забываются' }, [homePin, ' запомнить ссылки для этого сетапа']), homeClear])]),
     HAS_EXT ? homeTgtBox : null,
-    el('div', { class: 'hblock' }, [el('label', { class: 'muted', title: 'Отправить не всё, а только строки с этими ключами' }, [homeKeysOn, ' только определённые ключи']), homeKeys]),
+    el('div', { class: 'hblock' }, [el('label', { class: 'muted', title: 'Отправить не всё, а только строки с этими ключами' }, [homeKeysOn, ' только определённые ключи']), homeKeys, homeReview]),
     HAS_EXT ? homeZipRow : null,
     el('div', { class: 'row' }, [homeGo, homeZip]),
     homeProg], 'homecard'),
@@ -4041,8 +4074,11 @@
   function curSetup() { return (scCfg && scCfg.setup) || 'Магазинка'; }
   function mySetupPr(pr) { return (pr.setup || 'Магазинка') === curSetup(); }
   function scProjects() { try { return JSON.parse(sget('wlx_sc_projects') || '[]'); } catch (e) { return []; } }
+  var scRefreshT = 0;
   function saveScProjects(list) {
     list = list.slice(0, 40);
+    /* загрузили / убрали отправку — карточка «Сейчас» и счётчик «готово к загрузке» обновляются сразу */
+    clearTimeout(scRefreshT); scRefreshT = setTimeout(function () { try { homeRefreshSc(); } catch (e) {} }, 0);
     sset('wlx_sc_projects', JSON.stringify(list));
     if (HAS_EXT) scCall('sc-list-set', { list: list }).catch(function () {});
   }
@@ -5402,9 +5438,14 @@
   if (HAS_EXT && chrome.storage && chrome.storage.onChanged && !window.__wlScLive) {
     window.__wlScLive = true;
     chrome.storage.onChanged.addListener(function (ch, area) {
-      /* только scReady: scProjects пишем сами из окна, иначе была бы петля sync → set → onChanged */
-      if (area !== 'local' || !ch.scReady) return;
-      scReady = ch.scReady.newValue || {};
+      if (area !== 'local' || !(ch.scReady || ch.scProjects)) return;
+      if (ch.scReady) scReady = ch.scReady.newValue || {};
+      /* список отправок поменяли в другой вкладке (загрузили, убрали) — кладём копию на страницу, обратно в storage не пишем */
+      if (ch.scProjects) {
+        var nv = JSON.stringify((ch.scProjects.newValue || []).slice(0, 40));
+        if (nv === sget('wlx_sc_projects')) { if (!ch.scReady) return; }   /* это наша же запись — окно уже обновлено */
+        else sset('wlx_sc_projects', nv);
+      }
       try { renderScImport(); } catch (e) {}
       try { homeRefreshSc(); } catch (e) {}
     });
