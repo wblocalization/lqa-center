@@ -562,11 +562,6 @@
   function brandFixStr(s, src, lang) {
     var b = baseLang(lang || ''), legal = /ООО|МКК|\bАО\b|ПАО/.test(src);
     if (b === 'ru' || !s) return s;
-    /* «ВБ Клуб», «ՎԲ Ակումբ», «VB Klub» — бренд пишется латиницей WB (кроме названий юрлиц) */
-    if (!legal) {
-      s = s.replace(/(^|[^\p{L}\d])(?:ВБ|ՎԲ)(?=[\s \-]|$)/gu, '$1WB');
-      s = s.replace(/(^|[^\p{L}\d.\/@_-])VB(?=[\s ]|$)/gu, '$1WB');
-    }
     /* N11 → WB: пишем WB, приложение N11 само подставит своё. Юрлица N11 (N11 Bank, N11 Hissə-hissə, N11 Ödəniş…) не трогаем */
     if (!/N11/i.test(src)) {
       var N11_AZ = { 'in': 'nin', 'ın': 'nin', 'un': 'nin', 'ün': 'nin', 'i': 'ni', 'ı': 'ni', 'u': 'ni', 'ü': 'ni', 'ə': 'yə', 'a': 'yə', 'də': 'də', 'da': 'də', 'dən': 'dən', 'dan': 'dən', 'im': 'm', 'ım': 'm', 'um': 'm', 'üm': 'm' };
