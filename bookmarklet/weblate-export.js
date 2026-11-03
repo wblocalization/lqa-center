@@ -570,9 +570,6 @@
         return pre + 'WB' + q + dash + suf;
       });
     }
-    /* «WB საფულის WB-ის ფასდაკლება» — лишний второй WB, если в исходнике он один */
-    var cnt = function (x) { return (x.match(/(^|[^\w.\/@-])(WB|ВБ)(?![\w.])/g) || []).length; };
-    if (cnt(s) > cnt(src)) s = s.replace(/(\bWB[\s ]+[^\s ]+[\s ]+)WB(?:-[^\s ]+)?[\s ]+/, '$1');
     if (b === 'az') {
       /* окончания только из таблицы: -nin -ni -yə -də -dən -m, через дефис или сразу за кавычкой */
       s = s.replace(new RegExp('(^|[^\\p{L}\\d.\\/@_-])(WB|Wildberries)(' + BR_Q + '?)(-?)(\\p{L}+)', 'giu'), function (all, pre, br, q, dash, suf) {
