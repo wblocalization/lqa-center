@@ -547,7 +547,8 @@
     if (curSetup() === 'Магазинка') {
       var bf = fixBrands(u.text, u.lang);
       if (bf.n || bf.fuzzy) u.text = bf.text;
-      if (bf.n) { u.brandFixed = bf.keys; notes.push('поправила бренд / юрлицо: ' + bf.n + ' стр. (' + bf.keys.slice(0, 5).join(', ') + (bf.keys.length > 5 ? '…' : '') + ')'); }
+      if (bf.n) { u.brandFixed = bf.keys; u.noteTitle = 'Ключи:\n' + bf.keys.join('\n');
+        notes.push('поправила бренд / юрлицо: ' + bf.n + ' стр. (' + bf.what.slice(0, 3).join('; ') + (bf.what.length > 3 ? '…' : '') + ')'); }
       if (bf.fuzzy) notes.push('сняла «требует правки» с машперевода: ' + bf.fuzzy);
     }
     if (notes.length) u.note = (u.note ? u.note + ' · ' : '') + notes.join(' · ');
@@ -596,14 +597,24 @@
       s = s.replace(new RegExp('(?:\\bLLC[\\s\\u00a0]+)?' + BR_Q + '?WB[\\s\\u00a0]+(?:Pay[\\s\\u00a0]+)?in[\\s\\u00a0]+Parts' + BR_Q + '?(?:[\\s\\u00a0]+LLC\\b)?', 'gi'), 'WB In Parts LLC');
     return s;
   }
+  /* «ВБ ұпайлары» → «WB ұпайлары»: короткое «ВБ → WB» для отчёта */
+  function brandDiff(a, b) {
+    var x = a.split(/(\s+)/), y = b.split(/(\s+)/), i = 0, j = x.length - 1, k = y.length - 1;
+    while (i < x.length && i < y.length && x[i] === y[i]) i++;
+    while (j > i && k > i && x[j] === y[k]) { j--; k--; }
+    var f = x.slice(i, j + 1).join('').replace(/\\"/g, '"'), g = y.slice(i, k + 1).join('').replace(/\\"/g, '"');
+    if (f.length > 40 || g.length > 40) return 'юрлицо по справочнику';
+    return (f || '∅') + ' → ' + (g || '∅');
+  }
   function fixBrands(text, lang) {
-    var es = poEntries(text), n = 0, fz = 0, keys = [];
+    var es = poEntries(text), n = 0, fz = 0, keys = [], kinds = {};
     if (!lang) { var hd = es.filter(function (e) { return e.header; })[0]; var m = hd && /Language:\s*([\w@-]+)/.exec(hd.strs.join('')); lang = m ? m[1] : ''; }
     var parts = es.map(function (e) {
       if (e.header || e.obsolete || !e.strs.some(Boolean)) return e.lines.join('\n');
       var src = e.msgid + ' ' + (e.plural || ''), strs = e.strs.map(function (x) { return brandFixStr(x, src, lang); });
       var ch = strs.some(function (x, i) { return x !== e.strs[i]; });
-      if (ch) { n++; keys.push((e.ctx || e.msgid.slice(0, 30)).split('.').slice(-2).join('.')); }
+      if (ch) { n++; keys.push((e.ctx || e.msgid.slice(0, 30)).split('.').slice(-2).join('.'));
+        strs.forEach(function (x, i) { if (x !== e.strs[i]) { var d = brandDiff(e.strs[i], x); kinds[d] = (kinds[d] || 0) + 1; } }); }
       var lines = ch ? setPoStrs(e, strs).split('\n') : e.lines;
       /* машперевод из Smartcat приходит с fuzzy — снимаем, иначе строки не считаются переведёнными */
       if (e.fuzzy && strs.every(Boolean)) {
@@ -613,7 +624,9 @@
       }
       return lines.join('\n');
     });
-    return n || fz ? { text: parts.join('\n\n') + '\n', n: n, fuzzy: fz, keys: keys } : { text: text, n: 0, fuzzy: 0, keys: [] };
+    var what = Object.keys(kinds).sort(function (a, b) { return kinds[b] - kinds[a]; })
+      .map(function (k) { return k + (kinds[k] > 1 ? ' ×' + kinds[k] : ''); });
+    return n || fz ? { text: parts.join('\n\n') + '\n', n: n, fuzzy: fz, keys: keys, what: what } : { text: text, n: 0, fuzzy: 0, keys: [], what: [] };
   }
   /* заменить msgstr у записи (строки в экранированном виде, как в файле) */
   function setPoStrs(e, strs) {
@@ -4784,7 +4797,7 @@
     var t = el('table', {}, [el('tr', {}, [el('th', { text: 'Файл' }), el('th', { text: 'Куда' }),
       el('th', { class: 'n', text: 'С переводом' }), el('th', { text: 'Статус' })])]);
     uploads.forEach(function (u) {
-      u.row = el('td', { class: u.error ? 'red' : (u.sent ? 'ok' : 'muted'), text: u.error || u.status || u.skip || (u.note ? 'готов · ' + u.note : 'готов') });
+      u.row = el('td', { class: u.error ? 'red' : (u.sent ? 'ok' : 'muted'), style: 'overflow-wrap:anywhere', title: u.noteTitle || '', text: u.error || u.status || u.skip || (u.note ? 'готов · ' + u.note : 'готов') });
       t.appendChild(el('tr', {}, [
         (function () {
           var vr = varScan(u), hn = vr ? vr.filter(function (x) { return x.hard; }).length : 0;
