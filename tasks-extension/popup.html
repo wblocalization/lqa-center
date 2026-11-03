@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Мои задачи</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<header>
+  <div class="logo">✓</div>
+  <h1>Мои задачи</h1>
+  <button id="menuBtn" class="icon" title="Ещё" aria-label="Ещё">⋯</button>
+  <div id="menu" class="menu" hidden>
+    <button id="backupBtn">Сохранить копию всех задач (.json)</button>
+    <label class="as-btn">Восстановить из копии…<input id="restoreInp" type="file" accept=".json,application/json" hidden></label>
+  </div>
+</header>
+
+<form id="form" autocomplete="off">
+  <textarea id="title" rows="2" placeholder="Например: Перевод текстов возвратов в приложении к запуску в Эфиопии" required></textarea>
+  <div>
+    <div class="lbl">Языки <button type="button" id="allLangs" class="ghost sm">все</button><button type="button" id="noLangs" class="ghost sm">сбросить</button></div>
+    <div id="langs" class="chips"></div>
+  </div>
+  <div class="row">
+    <input id="link" type="url" placeholder="Ссылка на задачу в Бэнде">
+    <button type="button" id="tabLink" class="ghost" title="Подставить ссылку открытой вкладки">эта вкладка</button>
+  </div>
+  <div class="row">
+    <input id="date" type="date" required>
+    <button type="button" id="cancelEdit" class="ghost" hidden>Отмена</button>
+    <button type="submit" id="save" class="primary">Добавить</button>
+  </div>
+</form>
+
+<section class="month">
+  <div class="row mbar">
+    <button id="prevM" class="icon" aria-label="Предыдущий месяц">‹</button>
+    <div id="mLabel" class="mlabel"></div>
+    <button id="nextM" class="icon" aria-label="Следующий месяц">›</button>
+  </div>
+  <div id="list" class="list"></div>
+  <button id="copyBtn" class="primary wide">Скопировать список за месяц</button>
+  <div id="toast" class="toast" hidden></div>
+</section>
+<script src="popup.js"></script>
+</body>
+</html>
