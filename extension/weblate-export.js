@@ -286,11 +286,11 @@
     });
     return hit;
   }
-  function filterPo(text, dropPlurals, keys) {
+  function filterPo(text, dropPlurals, keys, all) {
     var keep = [], n = 0, words = 0, plurals = 0;
     poEntries(text).forEach(function (e) {
       if (e.header) { keep.push(e.lines.join('\n')); return; }
-      if (e.obsolete || (e.done && !keys)) return;      /* ключи, названные вручную, уходят, даже если уже переведены */
+      if (e.obsolete || (e.done && !keys && !all)) return;      /* ключи, названные вручную, и режим «все строки» — уходят, даже если уже переведены */
       if (keys && !keyHit(keys, e)) return;
       if (e.plural) { plurals++; if (dropPlurals) return; }
       keep.push(e.lines.join('\n'));
@@ -1250,6 +1250,11 @@
   var err1 = el('div', { class: 'err' });
   var langsBox = el('div', { class: 'langs' });
   var fuzzy = el('input', { type: 'checkbox' }); fuzzy.checked = true;
+  /* какие строки выгружать подрядчикам: непереведённые / + «требует правки» / все (вместе с переведёнными) */
+  var scopeSel = select([['fuzzy', 'непереведённые и «требует правки»'], ['empty', 'только непереведённые'], ['all', 'все строки, включая переведённые']], sget('wlx_scope') || 'fuzzy');
+  function scopeSync() { fuzzy.checked = scopeSel.value !== 'empty'; }
+  scopeSync();
+  scopeSel.addEventListener('change', function () { sset('wlx_scope', scopeSel.value); scopeSync(); });
   var pluralsJson = el('input', { type: 'checkbox' });
   pluralsJson.checked = sget('wlx_pj') !== '0';
   pluralsJson.addEventListener('change', function () { sset('wlx_pj', pluralsJson.checked ? '1' : '0'); });
@@ -1384,7 +1389,7 @@
     tplHint,
     langsBox,
     el('details', { class: 'more' }, [el('summary', { text: 'Ещё настройки' }),
-      el('label', { class: 'muted blk' }, [fuzzy, ' включать строки «требует правки»']),
+      el('label', { class: 'muted blk' }, ['Какие строки: ', scopeSel]),
       el('label', { class: 'muted blk' }, [pluralsJson, ' плюралки — отдельным .json']),
       el('div', { class: 'lbl', style: 'margin-top:12px', text: 'Внутри архива' }),
       layoutBox]),
@@ -3847,7 +3852,7 @@
             var expect = st && st.total != null && st.translated != null ? st.total - st.translated : 0;
             return downloadPo(x.p, x.c, code, opts.q).then(function (raw) {
               /* Weblate говорит, что непереведённое есть, а файл пустой — пробуем скачать как через интерфейс Weblate */
-              if (expect > 0 && !filterPo(raw, false).strings) {
+              if (!opts.all && expect > 0 && !filterPo(raw, false).strings) {
                 var dbg = { c: x.c, p: x.p, lang: code, q: opts.q, expect: expect, api: raw };
                 EXPORT_DEBUG.push(dbg);
                 return downloadPo(x.p, x.c, code, opts.q, true).then(function (t) { dbg.ui = t; return t; }, function (e) { dbg.ui = 'ОШИБКА: ' + e.message; return raw; });
@@ -3855,13 +3860,13 @@
               return raw;
             }).then(function (raw) {
               if (opts.keys) opts.keys.__seen = (opts.keys.__seen || 0) + poEntries(raw).filter(function (e) { return !e.header; }).length;
-              var r = filterPo(raw, false, opts.keys);
+              var r = filterPo(raw, false, opts.keys, opts.all);
               if (!r.plurals || !opts.wantJson || opts.keys) return r;
               return Promise.all([units(x.p, x.c, code, opts.q + ' AND has:plural'), componentFormat(x.p, x.c)]).then(function (a) {
                 var j = pluralJson(a[0], a[1], srcCode, code);
                 if (!j.strings) return r;
                 res.push({ component: x.c, p: x.p, language: code, src: srcCode, strings: j.strings, words: j.words, text: j.text, ext: 'json' });
-                return filterPo(raw, true, opts.keys);
+                return filterPo(raw, true, opts.keys, opts.all);
               }, function (e) {
                 errs.push([x.c, code, 'плюралки не удалось выгрузить в .json, оставила их в .po: ' + friendly(e).split('\n')[0]]);
                 return r;
@@ -3887,7 +3892,8 @@
     function tick() { done++; barFill.style.width = Math.round(100 * done / total) + '%'; progText.textContent = 'Скачиваю… ' + done + ' из ' + total; }
     goBtn.disabled = true; resSec.classList.remove('hide'); results.textContent = '';
     barFill.style.width = '0%'; progText.textContent = 'Скачиваю… 0 из ' + total;
-    exportCore(comps, langs, { q: fuzzy.checked ? QUERY_ALL : QUERY_EMPTY, wantJson: pluralsJson.checked, langsFor: tplLangsFor }, tick).then(function (r) {
+    var all = scopeSel.value === 'all';
+    exportCore(comps, langs, { q: all ? '' : fuzzy.checked ? QUERY_ALL : QUERY_EMPTY, all: all, wantJson: pluralsJson.checked && !all, langsFor: tplLangsFor }, tick).then(function (r) {
       goBtn.disabled = false;
       progText.textContent = 'Готово!';
       barFill.style.width = '100%';
@@ -3923,7 +3929,7 @@
       var odd = stat.filter(function (c) { return mine[c] > 0 && !got[c]; });
       if (odd.length) results.insertBefore(el('div', { class: 'err', text: 'Странно: по данным Weblate непереведённое есть (' +
         odd.map(function (c) { return langName(c) + ' — ' + mine[c] + ' стр'; }).join(', ') +
-        '), а в выгрузке пусто. ' + (fuzzy.checked ? '' : 'Попробуй включить «включать строки «требует правки»». ') }, [
+        '), а в выгрузке пусто. ' + (fuzzy.checked ? '' : 'Попробуй в «Ещё настройки» → «Какие строки» выбрать «непереведённые и «требует правки»». ') }, [
           EXPORT_DEBUG.length ? el('button', { class: 'b g s', text: '⬇ Скачать ответ Weblate для разбора', onclick: function () {
             var files = [];
             EXPORT_DEBUG.forEach(function (d) {
