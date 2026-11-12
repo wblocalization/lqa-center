@@ -3984,7 +3984,7 @@
       : shortComp(r.component);
     return (folder ? folder + '/' : '') + archiveName(r);
   }
-  /* архивы для подрядчиков: отдельный zip на платформу, без английского, со своим summary.csv */
+  /* архивы для подрядчиков: отдельный zip на платформу, без английского; summary.csv больше не кладём */
   function saveArchives(res) {
     var layout = currentLayout(), eng = englishApart.checked, byPlat = byPlatform.checked;
     var files = res.filter(function (r) { return !(skipEnglish.checked && isEnglish(r.language)); }).map(function (r) { return { name: (byPlat ? platDir(r.p, r.component) + '/' : '') + archivePath(r, layout, eng), text: r.text, r: r }; });
@@ -3993,20 +3993,6 @@
     files.forEach(function (f) { cnt[f.name] = (cnt[f.name] || 0) + 1; });
     files.forEach(function (f) { if (cnt[f.name] > 1) f.name = f.name.replace(/[^/]+$/, poName(f.r)); delete f.r; });
     files.sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
-    var csv = '﻿компонент;язык;код;формат;строк;слов\n' + res.map(function (r) {
-      return [r.component, langName(r.language), r.language, r.ext || 'po', r.strings, r.words].join(';');
-    }).join('\n') + '\n';
-    if (!byPlat) files.push({ name: 'summary.csv', text: csv });
-    else {
-      /* summary — свой в каждой папке платформы */
-      var plats = {};
-      res.filter(function (r) { return !(skipEnglish.checked && isEnglish(r.language)); }).forEach(function (r) { (plats[platDir(r.p, r.component)] = plats[platDir(r.p, r.component)] || []).push(r); });
-      Object.keys(plats).forEach(function (d) {
-        files.push({ name: d + '/summary.csv', text: '\ufeffкомпонент;язык;код;формат;строк;слов\n' + plats[d].map(function (r) {
-          return [r.component, langName(r.language), r.language, r.ext || 'po', r.strings, r.words].join(';');
-        }).join('\n') + '\n' });
-      });
-    }
     var real = files.filter(function (f) { return !/summary\.csv$/.test(f.name); });
     if (real.length) saveFiles(files, 'weblate_all_' + today() + '.zip');
     else toast('В архив класть нечего — только английский, он уходит в Smartcat');
@@ -4049,7 +4035,7 @@
         var l = currentLayout();
         layoutHint.textContent = (byPlatform.checked ? (unzipToDir() ? 'папки ' : 'отдельный zip на платформу: ') + ddmmyy() + (partsOf(scCfg).kind === 'generic' ? '_<проект Weblate>' : '_web / _iOS / _android') + ', внутри ' : '') +
           (l === 'language' ? 'папки по языкам' : l === 'flat' ? 'все файлы в одной папке' : 'папки по компонентам') +
-          (skipEnglish.checked ? ', без английского (он — в Smartcat)' : englishApart.checked ? ', английский — в «' + ENGLISH_DIR + '»' : '') + ' + summary.csv' +
+          (skipEnglish.checked ? ', без английского (он — в Smartcat)' : englishApart.checked ? ', английский — в «' + ENGLISH_DIR + '»' : '') +
           (unzipToDir() ? ' → сразу папками в «' + dirHandle.name + '»' : '') + ' (раскладку можно поменять выше)';
       }
       updateHint();
