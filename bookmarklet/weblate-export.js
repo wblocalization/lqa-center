@@ -2640,7 +2640,7 @@
   var fProjLbl, fBandWebLbl, fWeb, fMob, fEnMob, fEnWeb, fPeople, fBandWeb, fBandApp, fSched, fShopParts, fMt, fWebTxt;
   function partsShow() {
     var shop = partKind.value === 'shop', w = !shop || partWeb.checked, m = shop && partMob.checked, e = partEn.value === 'staff';
-    [[fShopParts, shop], [fMt, !shop], [fWeb, w], [fMob, m], [fEnMob, m && e], [fEnWeb, w && e], [fPeople, false], [fBandWeb, w], [fBandApp, m], [fSched, m]].forEach(function (x) { if (x[0]) x[0].classList.toggle('hide', !x[1]); });
+    [[fShopParts, shop], [fMt, !shop], [fWeb, w], [fMob, m], [fEnMob, m && e], [fEnWeb, w && e], [fPeople, shop && e], [fBandWeb, w], [fBandApp, m], [fSched, m]].forEach(function (x) { if (x[0]) x[0].classList.toggle('hide', !x[1]); });
     bandTplWeb.placeholder = shop ? BAND_TPL_WEB : BAND_TPL_GEN; tplRedraw();
     if (fProjLbl) fProjLbl.textContent = shop ? 'Машперевод: проект в Smartcat (ссылка или название) — пусто = «' + SC_PROJECT_DEFAULT + '»' : 'Проект в Smartcat, куда отправлять (ссылка или название)';
     scProject.placeholder = shop ? 'ссылка на проект или название; пусто = ' + SC_PROJECT_DEFAULT : 'ссылка на проект Smartcat или его название';
