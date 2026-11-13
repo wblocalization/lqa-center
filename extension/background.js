@@ -628,66 +628,6 @@ SC_HANDLERS['sc-assign'] = async (m) => {
   return { ok: true, how, docs: done.length, mode: typeof taskMode_ !== 'undefined' ? taskMode_ : '', diag: typeof taskDiag_ !== 'undefined' ? taskDiag_ : '',
     crowd: typeof taskCrowd_ !== 'undefined' ? taskCrowd_ : null, tasks: typeof taskN_ !== 'undefined' ? taskN_ : 0 };
 };
-/* ===== ВРЕМЕННО: тестовый прогон назначения (Настройки → «Люди на английский»). Убрать блок целиком, когда отладим ===== */
-const asgTestErr = (e) => String(e.message).replace(/Error processing request\.|Correlation id: [\w-]+,?|Trace id: \w+/g, '').trim().slice(0, 220);
-const asgTestTask = (pid, tid) => '/projectTask/' + encodeURIComponent(pid) + '/' + encodeURIComponent(tid);
-async function asgTestTasks(pid) {
-  let list, lastErr = null;
-  for (const cur of ['USD', 'RUB', 'EUR', '']) {
-    try { list = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list' + (cur ? '?currency=' + cur : ''))).json(); lastErr = null; break; }
-    catch (e) { lastErr = e; if (!/currency/i.test(String(e.message))) break; }
-  }
-  if (lastErr) throw lastErr;
-  return Array.isArray(list) ? list : (list && (list.items || list.tasks || list.result || list.data)) || [];
-}
-/* задачи проекта: этап, язык, документы, статус, режим, кто уже приглашён */
-SC_HANDLERS['sc-asgtest-list'] = async (m) => {
-  const pr = await SC_HANDLERS['sc-resolve-project']({ ref: m.ref });
-  const card = await (await scFetch('/project/' + encodeURIComponent(pr.id))).json();
-  const names = {};
-  (card.documents || []).forEach((d) => { names[d.id] = d.name; names[String(d.id).replace(/_[^_]*$/, '')] = d.name; });
-  const list = await asgTestTasks(pr.id);
-  return { project: { id: pr.id, name: pr.name }, tasks: list.map((t) => ({
-    id: t.id || t.taskId || t.projectTaskId, stage: taskStage(t), stageType: String(t.stageType || ''), lang: t.targetLanguage || '',
-    status: String(t.status || ''), mode: String(t.invitationStrategyType != null ? t.invitationStrategyType : ''),
-    docs: (t.documentIds || []).map((id) => names[id] || names[String(id).replace(/_[^_]*$/, '')] || id),
-    people: (t.individualAssignments || []).length, created: t.createDate || ''
-  })) };
-};
-/* по каждой задаче: режим «все, кто примет» → приглашение → режим ещё раз → перечитать, что реально стоит. Ничего не откатывает само */
-SC_HANDLERS['sc-asgtest-run'] = async (m) => {
-  const out = [];
-  for (const x of m.tasks || []) {
-    const base = asgTestTask(m.projectId, x.id), steps = [];
-    const crowdUrl = base + '/set-invitation-strategy-type?invitationStrategyType=crowd';
-    const step = async (name, fn) => { try { await fn(); steps.push({ name, ok: true }); return true; } catch (e) { steps.push({ name, ok: false, err: asgTestErr(e) }); return false; } };
-    await step('режим «все, кто примет» — до приглашения', () => scFetch(crowdUrl, { method: 'PUT', timeout: 30000 }));
-    const invited = await step('приглашение: ' + x.userIds.length + ' чел.', () => scFetch(base + '/individual-assignment',
-      { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: x.userIds }), timeout: 30000 }));
-    await step('режим «все, кто примет» — после приглашения', () => scFetch(crowdUrl, { method: 'PUT', timeout: 30000 }));
-    let real = '', people = null, status = '';
-    try {
-      const tj = await (await scFetch(base + '?currency=USD', { timeout: 30000 })).json();
-      real = String(tj.invitationStrategyType != null ? tj.invitationStrategyType : ''); people = (tj.individualAssignments || []).length; status = String(tj.status || '');
-    } catch (e) { steps.push({ name: 'перечитать задачу', ok: false, err: asgTestErr(e) }); }
-    out.push({ id: x.id, invited, steps, mode: real, people, status });
-  }
-  return out;
-};
-/* отозвать приглашения этих людей с задач */
-SC_HANDLERS['sc-asgtest-undo'] = async (m) => {
-  const out = [];
-  for (const x of m.tasks || []) {
-    let ok = 0; const errs = [];
-    for (const uid of x.userIds) {
-      try { await scFetch(asgTestTask(m.projectId, x.id) + '/individual-assignment?userId=' + encodeURIComponent(uid), { method: 'DELETE', timeout: 30000 }); ok++; }
-      catch (e) { errs.push(asgTestErr(e)); }
-    }
-    out.push({ id: x.id, ok, of: x.userIds.length, err: errs[0] || '' });
-  }
-  return out;
-};
-/* ===== конец временного блока ===== */
 /* сообщение в рабочий чат по вебхуку (Band / Mattermost / Slack-совместимый: JSON {"text": …}).
    «простой» запрос без предварительной проверки: ответ чата не читается, поэтому успех не гарантирован */
 SC_HANDLERS['band-send'] = async (m) => {

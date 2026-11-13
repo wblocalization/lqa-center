@@ -2340,92 +2340,6 @@
     asgList.appendChild(t);
   }
   asgOn.addEventListener('change', function () { asgSave(); });
-  /* ===== ВРЕМЕННО: тестовый прогон назначения. Убрать блок целиком (и asgTestBox из «Люди на английский»), когда отладим ===== */
-  var asgTestRef = el('input', { type: 'text', placeholder: 'ссылка на проект Smartcat или его точное название' });
-  var asgTestFilter = el('input', { type: 'text', placeholder: 'фильтр по имени файла (необязательно)' });
-  var asgTestOut = el('div'), asgTestLog = el('div'), asgTestMsg = el('span', { class: 'muted' });
-  var asgTestState = { project: null, tasks: [], picked: {} };
-  var ASG_MODE = { crowd: 'все, кто примет', rocket: 'первый, кто принял' };
-  function asgTestDraw() {
-    asgTestOut.textContent = '';
-    var f = asgTestFilter.value.trim().toLowerCase();
-    var list = asgTestState.tasks.filter(function (t) { return !f || t.docs.join(' ').toLowerCase().indexOf(f) >= 0; });
-    if (!asgTestState.project) return;
-    if (!list.length) { asgTestOut.appendChild(el('p', { class: 'muted', text: 'Задач не нашлось' + (f ? ' по фильтру' : '') + '.' })); return; }
-    var tb = el('table', {}, [el('tr', {}, ['', 'Этап', 'Язык', 'Файлы', 'Статус', 'Режим', 'Приглашено'].map(function (h) { return el('th', { text: h }); }))]);
-    list.slice(0, 80).forEach(function (t) {
-      var cb = el('input', { type: 'checkbox', style: 'width:auto;display:inline;margin:0' });
-      cb.checked = !!asgTestState.picked[t.id];
-      cb.addEventListener('change', function () { if (cb.checked) asgTestState.picked[t.id] = 1; else delete asgTestState.picked[t.id]; });
-      tb.appendChild(el('tr', {}, [el('td', {}, [cb]),
-        el('td', { text: t.stage === 1 ? 'перевод' : t.stage === 2 ? 'редактура' : (t.stageType || '?') }), el('td', { text: t.lang }),
-        el('td', { style: 'overflow-wrap:anywhere', text: t.docs.slice(0, 3).join(', ') + (t.docs.length > 3 ? ' … ещё ' + (t.docs.length - 3) : '') }),
-        el('td', { text: t.status }), el('td', { text: ASG_MODE[String(t.mode).toLowerCase()] || t.mode || '—' }), el('td', { text: String(t.people) })]));
-    });
-    asgTestOut.appendChild(tb);
-    if (list.length > 80) asgTestOut.appendChild(el('p', { class: 'muted', text: 'Показаны первые 80 из ' + list.length + ' — сузь фильтром.' }));
-  }
-  asgTestFilter.addEventListener('input', asgTestDraw);
-  function asgTestLoad() {
-    asgTestMsg.className = 'muted'; asgTestMsg.textContent = 'Смотрю задачи…';
-    return scCall('sc-asgtest-list', { ref: asgTestRef.value.trim() }).then(function (r) {
-      r.tasks.sort(function (a, b) { return String(b.created).localeCompare(String(a.created)); });
-      asgTestState.project = r.project; asgTestState.tasks = r.tasks;
-      asgTestMsg.textContent = 'Проект «' + r.project.name + '»: задач ' + r.tasks.length + ' (сверху — новые). Отметь нужные.';
-      asgTestDraw();
-    }, function (e) { asgTestMsg.className = 'red'; asgTestMsg.textContent = '✗ ' + e.message; });
-  }
-  function asgTestPicked() {
-    return asgTestState.tasks.filter(function (t) { return asgTestState.picked[t.id]; }).map(function (t) {
-      var who = t.stage === 2 ? edSel : asgSel;
-      return { id: t.id, t: t, who: who, userIds: who.map(function (p) { return p.id; }) };
-    });
-  }
-  var asgTestShow = el('button', { class: 'b g s', type: 'button', text: 'Показать задачи', onclick: function () {
-    if (!asgTestRef.value.trim()) { asgTestMsg.className = 'red'; asgTestMsg.textContent = 'Вставь ссылку на проект'; return; }
-    asgTestState.picked = {}; asgTestLog.textContent = ''; asgTestLoad();
-  } });
-  var asgTestRun = el('button', { class: 'b s', type: 'button', text: 'Назначить на отмеченные', onclick: function () {
-    var list = asgTestPicked();
-    if (!list.length) { asgTestMsg.className = 'red'; asgTestMsg.textContent = 'Отметь хотя бы одну задачу'; return; }
-    var empty = list.filter(function (x) { return !x.userIds.length; });
-    if (empty.length) { asgTestMsg.className = 'red'; asgTestMsg.textContent = 'Для этапа «' + (empty[0].t.stage === 2 ? 'редактура' : 'перевод') + '» никто не отмечен в таблице выше'; return; }
-    if (!confirm('Отправить приглашения?\n\n' + list.map(function (x) { return (x.t.stage === 2 ? 'Редактура' : 'Перевод') + ' · ' + (x.t.docs[0] || x.t.id) + ' → ' + x.who.map(function (p) { return p.name; }).join(', '); }).join('\n') +
-      '\n\nЛюди получат уведомления от Smartcat.')) return;
-    asgTestRun.disabled = true; asgTestMsg.className = 'muted'; asgTestMsg.textContent = 'Назначаю…';
-    scCall('sc-asgtest-run', { projectId: asgTestState.project.id, tasks: list.map(function (x) { return { id: x.id, userIds: x.userIds }; }) }).then(function (res) {
-      asgTestLog.textContent = '';
-      res.forEach(function (r) {
-        var x = list.filter(function (y) { return y.id === r.id; })[0], md = String(r.mode).toLowerCase();
-        var good = r.invited && md === 'crowd';
-        var box = el('div', { class: 'qa', style: 'margin-top:8px;padding:8px 10px' }, [
-          el('div', { class: good ? 'ok' : 'red', text: (good ? '✓ ' : '✗ ') + (x.t.stage === 2 ? 'Редактура' : 'Перевод') + ' · ' + (x.t.docs[0] || r.id) +
-            ' — режим в Smartcat: ' + (ASG_MODE[md] || r.mode || 'не удалось узнать') + (r.people != null ? ', приглашено: ' + r.people : '') + (r.status ? ', статус: ' + r.status : '') })]);
-        r.steps.forEach(function (s) { box.appendChild(el('div', { class: s.ok ? 'muted' : 'red', text: (s.ok ? '  ✓ ' : '  ✗ ') + s.name + (s.err ? ' — ' + s.err : '') })); });
-        asgTestLog.appendChild(box);
-      });
-      return asgTestLoad().then(function () { asgTestMsg.className = 'muted'; asgTestMsg.textContent = 'Готово. Проверь в Smartcat, что у задачи стоит «все, кто примет», и что людям пришли приглашения.'; });
-    }, function (e) { asgTestMsg.className = 'red'; asgTestMsg.textContent = '✗ ' + e.message; }).then(function () { asgTestRun.disabled = false; });
-  } });
-  var asgTestUndo = el('button', { class: 'b g s', type: 'button', text: 'Отозвать приглашения с отмеченных', onclick: function () {
-    var list = asgTestPicked().filter(function (x) { return x.userIds.length; });
-    if (!list.length) { asgTestMsg.className = 'red'; asgTestMsg.textContent = 'Отметь задачи, с которых снять приглашения'; return; }
-    if (!confirm('Отозвать приглашения отмеченных людей с задач: ' + list.length + '?')) return;
-    asgTestUndo.disabled = true; asgTestMsg.className = 'muted'; asgTestMsg.textContent = 'Отзываю…';
-    scCall('sc-asgtest-undo', { projectId: asgTestState.project.id, tasks: list.map(function (x) { return { id: x.id, userIds: x.userIds }; }) }).then(function (res) {
-      asgTestLog.textContent = '';
-      res.forEach(function (r) {
-        var x = list.filter(function (y) { return y.id === r.id; })[0];
-        asgTestLog.appendChild(el('div', { class: r.ok === r.of ? 'ok' : 'red', text: (r.ok === r.of ? '✓ ' : '✗ ') + (x.t.docs[0] || r.id) + ': отозвано ' + r.ok + ' из ' + r.of + (r.err ? ' — ' + r.err : '') }));
-      });
-      return asgTestLoad().then(function () { asgTestMsg.className = 'muted'; asgTestMsg.textContent = 'Готово, приглашения отозваны.'; });
-    }, function (e) { asgTestMsg.className = 'red'; asgTestMsg.textContent = '✗ ' + e.message; }).then(function () { asgTestUndo.disabled = false; });
-  } });
-  var asgTestBox = el('details', { class: 'more', style: 'margin-top:12px' }, [el('summary', { text: '🧪 Тестовый прогон назначения (временно)' }),
-    el('p', { class: 'muted', text: 'Проверка на любом проекте: отметь людей в таблице выше, найди задачу и назначь. На задачи перевода уйдут отмеченные в «Перевод», на редактуру — в «Редактура». Приглашения можно отозвать этой же кнопкой.' }),
-    asgTestRef, el('div', { class: 'row' }, [asgTestShow, asgTestMsg]), asgTestFilter, asgTestOut,
-    el('div', { class: 'row' }, [asgTestRun, asgTestUndo]), asgTestLog]);
-  /* ===== конец временного блока ===== */
   var asgLoad = el('button', { class: 'b g s', text: 'Загрузить команду из Smartcat', onclick: function () {
     asgMsg.textContent = 'Загружаю…'; asgLoad.disabled = true;
     scCall('sc-team').then(function (team) {
@@ -2681,8 +2595,7 @@
       el('p', { class: 'muted', text: 'Английский Магазинки (веб, Android, iOS): на перевод и на редактуру приглашаются все отмеченные, работают все, кто примет приглашение.' }),
       el('label', { class: 'blk' }, [asgOn, 'назначать автоматически после отправки английского в Smartcat']),
       el('div', { class: 'row' }, [asgLoad, asgMsg]),
-      asgList,
-      asgTestBox]),
+      asgList]),
     connFold,
     fold('Сообщения в чат (Band)', [
       el('p', { class: 'muted', text: 'Ссылки и срок подставятся сами после отправки.' }),
