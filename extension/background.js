@@ -69,7 +69,7 @@ const SC_HANDLERS = {
     const c = await scConfig();
     return { server: c.server || 'eu', customUrl: c.customUrl || '', accountId: c.accountId || '', hasKey: !!c.apiKey,
       langMap: c.langMap || '', extra: c.extra || '', project: c.project || '',
-      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', enAssign: c.enAssign || [], enEdit: c.enEdit || [], langWeb: c.langWeb || '', langMob: c.langMob || '', links: c.links || '', bandTpl: c.bandTpl || '', bandHook: c.bandHook || '', bandAuto: !!c.bandAuto, bandPeople: c.bandPeople || '', bandTplWeb: c.bandTplWeb || '', bandTplApp: c.bandTplApp || '', linksMob: c.linksMob || '', enAssignOn: c.enAssignOn !== false, schedOn: !!c.schedOn, sched: c.sched || SCHED_DEFAULT, sound: c.sound || SOUND_DEFAULT, parts: c.parts || null, base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
+      enAndroid: c.enAndroid || '', enIos: c.enIos || '', enWeb: c.enWeb || '', enAssign: c.enAssign || [], enEdit: c.enEdit || [], langWeb: c.langWeb || '', langMob: c.langMob || '', links: c.links || '', bandTpl: c.bandTpl || '', bandHook: c.bandHook || '', bandAuto: !!c.bandAuto, bandPeople: c.bandPeople || '', bandTplWeb: c.bandTplWeb || '', bandTplApp: c.bandTplApp || '', linksMob: c.linksMob || '', enAssignOn: c.enAssignOn !== false, enAsgAuto: !!c.enAsgAuto, schedOn: !!c.schedOn, sched: c.sched || SCHED_DEFAULT, sound: c.sound || SOUND_DEFAULT, parts: c.parts || null, base: scBase(c), setups: c.setups || [], setup: c.setup || '' };
   },
   async 'sc-set-config'(m) {
     const c = await scConfig();
@@ -396,6 +396,12 @@ function taskStage(t) {
 async function assignByTasks(projectIds, docIds, stage, userIds) {
   const json = (o) => ({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
   const done = new Set(), info = [], tasksDone = [], modes = new Set(), diag = [];
+  /* режим «все, кто примет» (crowd) ставится задаче отдельной командой; в каком порядке с приглашением — в API не сказано,
+     поэтому пробуем до приглашения и после него и запоминаем, что сработало */
+  const crowd = { ok: 0, fail: 0, when: '', err: '' };
+  const cleanErr = (e) => String(e.message).replace(/Error processing request\.|Correlation id: [\w-]+,?|Trace id: \w+/g, '').trim().slice(0, 160);
+  const setCrowd = (pid, tid) => scFetch('/projectTask/' + encodeURIComponent(pid) + '/' + encodeURIComponent(tid) +
+    '/set-invitation-strategy-type?invitationStrategyType=crowd', { method: 'PUT', timeout: 30000 });
   /* id документа Smartcat — «<документ>_<язык>»; в задаче может быть полный id или только «<документ>» */
   const base = (id) => { id = String(id); const i = id.lastIndexOf('_'); return i > 0 ? id.slice(0, i) : id; };
   const hit = (str, id) => str.includes('"' + id + '"') || str.includes('"' + base(id) + '"');
@@ -426,6 +432,8 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
           const variants = [['userIds', { userIds }]].concat(userIds.length === 1 ? [['userId', { userId: userIds[0] }]] : []);
           const vErr = [];
           let ok = null;
+          let before = false, beforeErr = '';
+          try { await setCrowd(pid, tid); before = true; } catch (e) { beforeErr = cleanErr(e); }
           for (const [name, body] of variants) {
             try { await scFetch(path, json(body)); ok = name; break; } catch (e) {
               if (/zero volume/i.test(String(e.message))) throw e;
@@ -434,9 +442,29 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
           }
           if (!ok) throw new Error(vErr.join(' | '));
           if (vErr.length) diag.push('этап ' + stage + ': прошёл «' + ok + '» (до этого: ' + vErr.join(' | ').slice(0, 400) + ')');
+          let after = false, afterErr = '';
+          try { await setCrowd(pid, tid); after = true; } catch (e) { afterErr = cleanErr(e); }
+          /* проверяем, какой режим реально стоит у задачи: «все, кто примет» — обязательное условие */
+          let real = '';
+          try {
+            const tj = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/' + encodeURIComponent(tid) + '?currency=USD', { timeout: 30000 })).json();
+            real = String(tj && tj.invitationStrategyType != null ? tj.invitationStrategyType : '').toLowerCase();
+          } catch (e) { /* не смогли перечитать — судим по ответам команд */ }
+          const isCrowd = real === 'crowd' || (real !== 'rocket' && (before || after));
+          if (isCrowd) { crowd.ok++; crowd.when = after ? (before ? 'до и после приглашения' : 'после приглашения') : 'до приглашения'; if (real) modes.add(real); }
+          else {
+            /* режим не встал — приглашения «первый, кто принял» не оставляем: отзываем */
+            crowd.fail++; crowd.err = (real === 'rocket' ? 'у задачи остался режим «первый, кто принял»' : '') + (afterErr || beforeErr ? ' ' + (afterErr || beforeErr) : '');
+            let undone = 0;
+            for (const uid of userIds) {
+              try { await scFetch(path + '?userId=' + encodeURIComponent(uid), { method: 'DELETE', timeout: 30000 }); undone++; } catch (e) { /* уже нет */ }
+            }
+            const er = new Error('режим «все, кто примет» поставить не получилось (' + crowd.err.trim() + '). Приглашения отозвала: ' + undone + ' из ' + userIds.length + ' — назначь в Smartcat вручную');
+            er.crowdFail = true; throw er;
+          }
           break;
         } catch (e) {
-          if (!/zero volume/i.test(String(e.message)) || tryN >= 12) throw e;
+          if (e.crowdFail || !/zero volume/i.test(String(e.message)) || tryN >= 12) throw e;
           await sleep(10000);
         }
       }
@@ -456,7 +484,7 @@ async function assignByTasks(projectIds, docIds, stage, userIds) {
     } catch (e) { /* не страшно */ }
   }
   if (!done.size) throw new Error('в проекте с задачами не нашла задач этапа ' + stage + ' для этих документов. ' + info.join(' | '));
-  return { n: done.size, mode: [...modes].join(', '), diag: diag.slice(0, 2).join('; ') };
+  return { n: done.size, mode: [...modes].join(', '), diag: diag.slice(0, 2).join('; '), crowd, tasks: tasksDone.length };
 }
 /* режим назначения задачи — поле с mode / strategy / distribution в названии (на 1–2 уровня вглубь) */
 function taskMode(t, depth = 0) {
@@ -585,9 +613,9 @@ SC_HANDLERS['sc-assign'] = async (m) => {
   let how = 'assign';
   if (taskDocs.size) {
     if (!m.projectIds || !m.projectIds.length) throw new Error('проект работает с задачами, а id проекта не передан');
-    let lastErr = null, n = 0; var taskMode_ = '', taskDiag_ = '';
+    let lastErr = null, n = 0; var taskMode_ = '', taskDiag_ = '', taskCrowd_ = null, taskN_ = 0;
     for (let round = 0; round < 6; round++) {       // задачи появляются не сразу после загрузки файла
-      try { const r = await assignByTasks(m.projectIds, [...taskDocs], stage, m.userIds); n = r.n; taskMode_ = r.mode; taskDiag_ = r.diag; lastErr = null; break; }
+      try { const r = await assignByTasks(m.projectIds, [...taskDocs], stage, m.userIds); n = r.n; taskMode_ = r.mode; taskDiag_ = r.diag; taskCrowd_ = r.crowd; taskN_ = r.tasks; lastErr = null; break; }
       catch (e) { lastErr = e; if (!/не нашла задач/.test(String(e.message))) break; await sleep(5000); }
     }
     if (lastErr) throw lastErr;
@@ -597,8 +625,69 @@ SC_HANDLERS['sc-assign'] = async (m) => {
     const first = errs[[...left][0]] || '';
     throw new Error((done.length ? 'назначено ' + done.length + ' из ' + m.documentIds.length + ', не получилось: ' : '') + first);
   }
-  return { ok: true, how, docs: done.length, mode: typeof taskMode_ !== 'undefined' ? taskMode_ : '', diag: typeof taskDiag_ !== 'undefined' ? taskDiag_ : '' };
+  return { ok: true, how, docs: done.length, mode: typeof taskMode_ !== 'undefined' ? taskMode_ : '', diag: typeof taskDiag_ !== 'undefined' ? taskDiag_ : '',
+    crowd: typeof taskCrowd_ !== 'undefined' ? taskCrowd_ : null, tasks: typeof taskN_ !== 'undefined' ? taskN_ : 0 };
 };
+/* ===== ВРЕМЕННО: тестовый прогон назначения (Настройки → «Люди на английский»). Убрать блок целиком, когда отладим ===== */
+const asgTestErr = (e) => String(e.message).replace(/Error processing request\.|Correlation id: [\w-]+,?|Trace id: \w+/g, '').trim().slice(0, 220);
+const asgTestTask = (pid, tid) => '/projectTask/' + encodeURIComponent(pid) + '/' + encodeURIComponent(tid);
+async function asgTestTasks(pid) {
+  let list, lastErr = null;
+  for (const cur of ['USD', 'RUB', 'EUR', '']) {
+    try { list = await (await scFetch('/projectTask/' + encodeURIComponent(pid) + '/list' + (cur ? '?currency=' + cur : ''))).json(); lastErr = null; break; }
+    catch (e) { lastErr = e; if (!/currency/i.test(String(e.message))) break; }
+  }
+  if (lastErr) throw lastErr;
+  return Array.isArray(list) ? list : (list && (list.items || list.tasks || list.result || list.data)) || [];
+}
+/* задачи проекта: этап, язык, документы, статус, режим, кто уже приглашён */
+SC_HANDLERS['sc-asgtest-list'] = async (m) => {
+  const pr = await SC_HANDLERS['sc-resolve-project']({ ref: m.ref });
+  const card = await (await scFetch('/project/' + encodeURIComponent(pr.id))).json();
+  const names = {};
+  (card.documents || []).forEach((d) => { names[d.id] = d.name; names[String(d.id).replace(/_[^_]*$/, '')] = d.name; });
+  const list = await asgTestTasks(pr.id);
+  return { project: { id: pr.id, name: pr.name }, tasks: list.map((t) => ({
+    id: t.id || t.taskId || t.projectTaskId, stage: taskStage(t), stageType: String(t.stageType || ''), lang: t.targetLanguage || '',
+    status: String(t.status || ''), mode: String(t.invitationStrategyType != null ? t.invitationStrategyType : ''),
+    docs: (t.documentIds || []).map((id) => names[id] || names[String(id).replace(/_[^_]*$/, '')] || id),
+    people: (t.individualAssignments || []).length, created: t.createDate || ''
+  })) };
+};
+/* по каждой задаче: режим «все, кто примет» → приглашение → режим ещё раз → перечитать, что реально стоит. Ничего не откатывает само */
+SC_HANDLERS['sc-asgtest-run'] = async (m) => {
+  const out = [];
+  for (const x of m.tasks || []) {
+    const base = asgTestTask(m.projectId, x.id), steps = [];
+    const crowdUrl = base + '/set-invitation-strategy-type?invitationStrategyType=crowd';
+    const step = async (name, fn) => { try { await fn(); steps.push({ name, ok: true }); return true; } catch (e) { steps.push({ name, ok: false, err: asgTestErr(e) }); return false; } };
+    await step('режим «все, кто примет» — до приглашения', () => scFetch(crowdUrl, { method: 'PUT', timeout: 30000 }));
+    const invited = await step('приглашение: ' + x.userIds.length + ' чел.', () => scFetch(base + '/individual-assignment',
+      { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: x.userIds }), timeout: 30000 }));
+    await step('режим «все, кто примет» — после приглашения', () => scFetch(crowdUrl, { method: 'PUT', timeout: 30000 }));
+    let real = '', people = null, status = '';
+    try {
+      const tj = await (await scFetch(base + '?currency=USD', { timeout: 30000 })).json();
+      real = String(tj.invitationStrategyType != null ? tj.invitationStrategyType : ''); people = (tj.individualAssignments || []).length; status = String(tj.status || '');
+    } catch (e) { steps.push({ name: 'перечитать задачу', ok: false, err: asgTestErr(e) }); }
+    out.push({ id: x.id, invited, steps, mode: real, people, status });
+  }
+  return out;
+};
+/* отозвать приглашения этих людей с задач */
+SC_HANDLERS['sc-asgtest-undo'] = async (m) => {
+  const out = [];
+  for (const x of m.tasks || []) {
+    let ok = 0; const errs = [];
+    for (const uid of x.userIds) {
+      try { await scFetch(asgTestTask(m.projectId, x.id) + '/individual-assignment?userId=' + encodeURIComponent(uid), { method: 'DELETE', timeout: 30000 }); ok++; }
+      catch (e) { errs.push(asgTestErr(e)); }
+    }
+    out.push({ id: x.id, ok, of: x.userIds.length, err: errs[0] || '' });
+  }
+  return out;
+};
+/* ===== конец временного блока ===== */
 /* сообщение в рабочий чат по вебхуку (Band / Mattermost / Slack-совместимый: JSON {"text": …}).
    «простой» запрос без предварительной проверки: ответ чата не читается, поэтому успех не гарантирован */
 SC_HANDLERS['band-send'] = async (m) => {
