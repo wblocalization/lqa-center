@@ -574,9 +574,11 @@
       /* окончания только из таблицы: -nin -ni -yə -də -dən -m, через дефис или сразу за кавычкой */
       s = s.replace(new RegExp('(^|[^\\p{L}\\d.\\/@_-])(WB|Wildberries)(' + BR_Q + '?)(-?)(\\p{L}+)', 'giu'), function (all, pre, br, q, dash, suf) {
         if (!q && !dash) return all;                                  /* WBClub, Wildberriesdə — слитно не трогаем */
+        /* сначала — окончание ли это: текст капсом («WILDBERRIES-DƏ») тоже окончание, а не отдельное слово */
+        var low = suf.toLocaleLowerCase('az'), caps = suf !== low && suf === suf.toLocaleUpperCase('az');
+        if (AZ_OK.indexOf(low) >= 0) return all;
+        for (var i = 0; i < AZ_SUF.length; i++) if (AZ_SUF[i][0].test(low)) return pre + br + q + (q ? '' : '-') + (caps ? AZ_SUF[i][1].toLocaleUpperCase('az') : AZ_SUF[i][1]);
         if (dash && /^\p{Lu}/u.test(suf)) return pre + br + q + ' ' + suf;  /* WB-Klub → WB Klub */
-        if (AZ_OK.indexOf(suf.toLowerCase()) >= 0) return all;
-        for (var i = 0; i < AZ_SUF.length; i++) if (AZ_SUF[i][0].test(suf.toLowerCase())) return pre + br + q + (q ? '' : '-') + AZ_SUF[i][1];
         return all;
       });
       /* юрлица — ровно как в справочнике */
