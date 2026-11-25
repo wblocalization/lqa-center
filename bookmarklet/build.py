@@ -65,6 +65,24 @@ def main():
                 z.write(f, f.relative_to(ext))
         z.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
     print("extension/, weblate-extension.zip и store/weblate-extension-store.zip обновлены")
+    # Локальная программа без расширения (local/): тот же код окна + запуск двойным кликом
+    loc = ROOT / "local"
+    if (loc / "weblate_local.py").is_file():
+        top = Path("weblate-local")
+        with zipfile.ZipFile(ROOT / "weblate-local.zip", "w", zipfile.ZIP_DEFLATED) as z:
+            for f in sorted(loc.iterdir()):
+                if not f.is_file():
+                    continue
+                info = zipfile.ZipInfo.from_file(f, top / f.name)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                if f.suffix == ".command":
+                    info.external_attr = (0o755 | 0o100000) << 16   # на Mac файл должен остаться запускаемым
+                z.writestr(info, f.read_bytes())
+            for f in sorted(ext.rglob("*")):
+                if f.is_file() and f.name not in ("manifest.json", "offscreen.html"):
+                    z.write(f, top / "ext" / f.relative_to(ext))
+            z.writestr(str(top / "ext" / "manifest.json"), json.dumps({"version": manifest["version"]}) + "\n")
+        print("weblate-local.zip обновлён")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,8 @@
 (function () {
   if (window.__wlExport) { window.__wlExport.show(); return; }
 
+  /* адрес Weblate для ссылок в отчётах: в локальной программе (без расширения) страница открыта не на Weblate */
+  var WL_ORIGIN = window.__WLX_ORIGIN || location.origin;
   var QUERY_ALL = 'state:<translated';
   var QUERY_EMPTY = 'state:empty';
 
@@ -4752,7 +4754,7 @@
     list.forEach(function (u) {
       (u.vars || []).forEach(function (x) {
         rows.push([u.c, langName(u.lang) + ' (' + u.lang + ')', x.ctx || '', x.src || '', x.tr || '', x.hard ? 'ошибка' : 'проверь',
-          x.probs.map(function (p) { return p.text; }).join('; '), planOf(x), x.salvage || '', location.origin + strHref(u, x)]);
+          x.probs.map(function (p) { return p.text; }).join('; '), planOf(x), x.salvage || '', WL_ORIGIN + strHref(u, x)]);
       });
     });
     return rows;
@@ -4784,7 +4786,7 @@
       u.vars.forEach(function (x) {
         var st = ST[x.upState || (x.hard ? 'skip' : 'soft')];
         var why = x.probs.map(function (pr) { return pr.text; }).join('; ');
-        txt.push(u.c + ' · ' + langName(u.lang) + ' · ' + (x.ctx || x.src.slice(0, 50)) + ' — ' + st[1] + ' (' + why + ') ' + location.origin + strHref(u, x));
+        txt.push(u.c + ' · ' + langName(u.lang) + ' · ' + (x.ctx || x.src.slice(0, 50)) + ' — ' + st[1] + ' (' + why + ') ' + WL_ORIGIN + strHref(u, x));
         rows.push(el('tr', {}, [el('td', { text: u.c + ' · ' + langName(u.lang) }),
           el('td', {}, [el('a', { href: strHref(u, x), target: '_blank', text: (x.ctx || x.src.slice(0, 50)) + ' ↗' })]),
           el('td', { class: 'brtr' }, [el('div', { class: st[0], text: st[1] + (x.upState === 'salv' ? ': «' + x.use + '»' : '') }), el('div', { class: 'muted', text: why })])]));
@@ -5272,7 +5274,7 @@
     Object.keys(by).sort().forEach(function (k) {
       out.push(k.split('/').slice(1).join('/') + ': ' + by[k].sort(function (a, b) { return langName(a.lang).localeCompare(langName(b.lang), 'ru'); })
         .map(function (u) { return langName(u.lang) + ' ' + (u.accepted != null ? u.accepted : '✓'); }).join(', ') +
-        '\n  ' + location.origin + wlCompUrl(by[k][0].p, by[k][0].c));   /* ссылка на компонент — проверить в Weblate */
+        '\n  ' + WL_ORIGIN + wlCompUrl(by[k][0].p, by[k][0].c));   /* ссылка на компонент — проверить в Weblate */
     });
     /* те же компоненты и языки — кнопками: нажать и проверить, что загрузилось */
     var linkBox = el('div', { class: 'wllinks' }, [el('div', { class: 'lbl', text: 'Открыть в Weblate' })].concat(Object.keys(by).sort().map(function (k) {
